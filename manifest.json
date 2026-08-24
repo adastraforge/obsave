@@ -1,0 +1,10 @@
+{
+	"id": "obsave",
+	"name": "ObSave",
+	"version": "0.1.0",
+	"minAppVersion": "1.5.0",
+	"description": "Sincronización multi-repositorio y auto-respaldo sin intermediarios comerciales.",
+	"author": "Ad Astra Forge",
+	"authorUrl": "https://github.com/adastraforge",
+	"isDesktopOnly": false
+}

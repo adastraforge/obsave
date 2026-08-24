@@ -1,0 +1,36 @@
+# Ad Astra Forge — Reglas del Agente para ObSave
+
+## Identidad del Proyecto
+- **Firma:** Ad Astra Forge
+- **Plugin:** ObSave (`obsave`) — sincronización multi-repositorio y auto-respaldo para Obsidian
+- **Stack:** TypeScript, Obsidian API, esbuild, Isomorphic-Git, OAuth2 PKCE
+- **Licencia:** 100% Gratuito y Open Source
+
+## Premisas Arquitectónicas (Inviolables)
+1. Sin suscripciones, llaves pagadas ocultas ni conectores bloqueados.
+2. OAuth2 PKCE vía redirección de navegador nativo para conectores comerciales.
+3. Esquema Master & Réplicas: un repositorio Master y N réplicas espejo.
+4. Git simplificado nativo: el usuario provee URL, usuario y token; el plugin gestiona `.git`.
+
+## Build Gate (Obligatorio)
+Antes de sugerir o ejecutar `git commit` o `git push`:
+1. Ejecutar `npm run build`.
+2. Si el build falla, **detenerse** y reparar antes de continuar.
+3. No proponer commits con el proyecto en estado de compilación rota.
+
+## Documentación Viva
+Tras cambios estructurales (nuevos módulos, capas, conectores, flujos OAuth o estrategia de sync):
+1. Actualizar `.cursor/context.md` si cambia visión, fase o premisas.
+2. Actualizar `.cursor/architecture.md` si cambian capas, diagramas o contratos.
+3. Registrar decisiones en `.cursor/decision_log.md` con fecha, contexto y alternativas descartadas.
+
+## Estándares de Código
+- TypeScript estricto; interfaces en `src/types.ts`.
+- Separación de capas: UI → SyncEngine → StorageAdapters → OAuthHandler.
+- Sin dependencias comerciales bloqueadas; preferir APIs abiertas y OAuth directo.
+- Comentarios solo para lógica no obvia; el código debe ser autoexplicativo.
+- Seguir convenciones existentes del repo antes de introducir nuevos patrones.
+
+## Idioma
+- Documentación de proyecto y commits en español cuando aplique al contexto del equipo.
+- Identificadores de código en inglés (convención TypeScript/Obsidian).
