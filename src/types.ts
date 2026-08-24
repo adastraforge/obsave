@@ -61,3 +61,17 @@ export interface SyncEngineEvent {
 	message?: string;
 	timestamp: string;
 }
+
+/** Resultado del wizard de primera sincronización Git */
+export interface GitSetupResult {
+	success: boolean;
+	message: string;
+	needsVaultReopen?: boolean;
+	needsRenameDecision?: boolean;
+	localFolderName?: string;
+	remoteRepoName?: string;
+	repoConfig?: RepoConfig;
+}
+
+/** Modo del wizard de configuración inicial */
+export type WizardMode = "choose" | "new-repo" | "existing-repo" | "rename-prompt";

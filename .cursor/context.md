@@ -8,16 +8,28 @@ El usuario mantiene control total de sus datos: el vault se replica de forma tra
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
 ### Objetivo de la Fase 1
-Establecer el núcleo del plugin con:
-- Configuración persistente (`ObSaveSettings`)
-- UI mínima (pestaña de ajustes + icono de ribbon con estado)
-- Stub del motor de sincronización Master-Réplicas
-- Pipeline de build TypeScript → esbuild → `main.js`
+Núcleo del plugin con Git simplificado mediante **Isomorphic-Git** y un **Wizard de Primera Sincronización**:
+
+| Entregable | Estado |
+|------------|--------|
+| Configuración persistente (`ObSaveSettings`) | ✅ |
+| UI: pestaña de ajustes + ribbon con estado | ✅ |
+| `GitAdapter` con Isomorphic-Git | ✅ |
+| Wizard PASO 1-A (repo nuevo) | ✅ |
+| Wizard PASO 1-B (repo existente + fusión inteligente) | ✅ |
+| Resolución de conflictos por duplicado local | ✅ |
+| Pipeline build TypeScript → esbuild | ✅ |
+| `SyncEngine` stub (réplicas en Fase 3) | ✅ |
+
+### Wizard de Primera Sincronización
+- **PASO 1-A (Repo Nuevo):** Usuario + token → sugerencia de nombre de carpeta → creación en GitHub + init `.git` + push a `main`.
+- **PASO 1-B (Repo Existente):** URL + credenciales → fusión inteligente (remoto → local → push) → prompt de renombrado si los nombres difieren.
+- **Conflictos:** La versión local se duplica con sufijo `(Copia de conflicto local YYYY-MM-DD)`.
 
 ### Fuera de Alcance (Fases Posteriores)
 - Conectores OAuth2 PKCE completos (Fase 2)
 - Réplicas automáticas en la nube (Fase 3)
-- Git simplificado con Isomorphic-Git (Fase 4)
+- Sync periódico en background (Fase 3)
 
 ## Premisas Inviolables
 1. **Gratuidad y transparencia** — sin paywalls ni conectores bloqueados.
@@ -31,18 +43,23 @@ Establecer el núcleo del plugin con:
 | Lenguaje          | TypeScript              |
 | Host              | Obsidian Plugin API     |
 | Bundler           | esbuild                 |
-| Git (futuro)      | Isomorphic-Git          |
-| Auth (futuro)     | OAuth2 PKCE             |
+| Git               | Isomorphic-Git          |
+| Auth GitHub       | Personal Access Token   |
+| Auth cloud (futuro)| OAuth2 PKCE            |
 
 ## Estructura de Código (Fase 1)
 ```
 src/
-├── main.ts              # ObSavePlugin — punto de entrada
-├── types.ts             # Interfaces compartidas
+├── main.ts                    # ObSavePlugin — punto de entrada
+├── types.ts                   # Interfaces compartidas
+├── adapters/
+│   ├── GitAdapter.ts          # Git simplificado + wizard backend
+│   ├── githubApi.ts           # REST GitHub (crear repo)
+│   └── vaultPaths.ts          # Rutas, renombrado, conflictos
 ├── engine/
-│   └── SyncEngine.ts    # Motor Master-Réplicas (stub)
+│   └── SyncEngine.ts          # Motor Master-Réplicas (stub)
 └── ui/
-    └── ObSaveSettingTab.ts
+    └── ObSaveSettingTab.ts    # Wizard + ajustes
 ```
 
 ## Contacto y Licencia

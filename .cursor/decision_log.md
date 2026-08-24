@@ -51,3 +51,30 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Dependencia de servicio centralizado de Ad Astra Forge para sync.
 
 ---
+
+## DEC-005 | 2026-08-24 | Wizard de primera sincronización simplificado
+
+**Contexto:** Los usuarios de Obsidian no deben configurar Git manualmente ni entender remotes, ramas o CLI.
+
+**Decisión:** Implementar un asistente de dos vías en la pestaña de ajustes:
+- **1-A Repo Nuevo:** usuario + token → nombre sugerido de carpeta → creación automática en GitHub + init local.
+- **1-B Repo Existente:** URL + credenciales → fusión inteligente remoto→local→push, con prompt de renombrado si los nombres difieren.
+
+**Alternativas descartadas:**
+- Formulario técnico con campos de remote/branch/ref (demasiado complejo para MVP).
+- Forzar renombrado silencioso sin consentimiento del usuario.
+
+---
+
+## DEC-006 | 2026-08-24 | Conflictos: duplicar versión local con sufijo de fecha
+
+**Contexto:** Al fusionar un repo existente con una bóveda local, pueden existir archivos con el mismo path pero contenido distinto.
+
+**Decisión:** Aplicar estrategia conservadora: conservar la versión remota en el path original y duplicar la versión local con el sufijo `(Copia de conflicto local YYYY-MM-DD)` antes del push.
+
+**Alternativas descartadas:**
+- Sobrescribir local sin aviso (pérdida de datos).
+- Abortar sync completo ante cualquier conflicto (mala UX).
+- Merge interactivo tipo Git CLI (fuera del espíritu "simplificado").
+
+---
