@@ -78,3 +78,20 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Merge interactivo tipo Git CLI (fuera del espíritu "simplificado").
 
 ---
+
+## DEC-007 | 2026-08-24 | Pipeline de release automático Obsidian
+
+**Contexto:** ObSave requiere publicar versiones reproducibles para BRAT y usuarios finales, con artefactos `main.js` + `manifest.json` verificados.
+
+**Decisión:** Establecer regla de **Release Automático de Obsidian** en `.cursorrules` e `ia-ops.md`:
+1. Build gate (`npm run build` exit 0).
+2. Sincronizar versión en `manifest.json` y `package.json`.
+3. Publicar vía `gh release create` o, si no hay `gh CLI`, workflow `.github/workflows/release.yml` disparado por tags `v*`.
+
+**Release oficial:** `v1.0.0` — Fase 1 MVP Git Core listo para BRAT.
+
+**Alternativas descartadas:**
+- Releases manuales sin CI (propenso a olvidar artefactos o versiones desincronizadas).
+- Solo commit de código sin GitHub Release (BRAT funciona, pero sin trazabilidad de versiones).
+
+---

@@ -7,8 +7,10 @@ El usuario mantiene control total de sus datos: el vault se replica de forma tra
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **lista para pruebas vía BRAT** (`v1.0.0`).  
-> Repositorio: `https://github.com/adastraforge/obsave` — artefactos en raíz: `manifest.json` + `main.js`.
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.0`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.0`  
+> BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js`  
+> Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
 
 ### Objetivo de la Fase 1
 Núcleo del plugin con Git simplificado mediante **Isomorphic-Git** y un **Wizard de Primera Sincronización**:

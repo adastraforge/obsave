@@ -18,6 +18,22 @@ Antes de sugerir o ejecutar `git commit` o `git push`:
 2. Si el build falla, **detenerse** y reparar antes de continuar.
 3. No proponer commits con el proyecto en estado de compilación rota.
 
+## Release Automático de Obsidian (Obligatorio)
+Cada vez que se solicite un **release** o **versión de producción**, el agente debe:
+1. Ejecutar `npm run build` y verificar **exit code 0**.
+2. Sincronizar la versión en `manifest.json` y `package.json`.
+3. Incluir `main.js` y `manifest.json` en el repositorio (`git add -f main.js` si aplica).
+4. Publicar el Release en GitHub con:
+   ```bash
+   gh release create <tag> main.js manifest.json --title '<titulo>' --notes '<notas>'
+   ```
+5. Si `gh CLI` no está disponible, crear/disparar el workflow en `.github/workflows/release.yml` mediante **tags de git**:
+   ```bash
+   git tag -a <tag> -m "<titulo>"
+   git push origin <tag>
+   ```
+6. Actualizar `.cursor/context.md` y `.cursor/decision_log.md` confirmando el release oficial.
+
 ## Documentación Viva
 Tras cambios estructurales (nuevos módulos, capas, conectores, flujos OAuth o estrategia de sync):
 1. Actualizar `.cursor/context.md` si cambia visión, fase o premisas.
