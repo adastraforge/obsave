@@ -7,10 +7,16 @@ El usuario mantiene control total de sus datos: el vault se replica de forma tra
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.2`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.2`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.3`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.3`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Correcciones v1.0.3
+- **Persistencia:** `mergeStoredSettings()` preserva `masterRepo` y credenciales de `data.json` al cargar.
+- **Sin renombrado físico:** el nombre del repo se guarda solo en metadatos ObSave; la carpeta del vault no se mueve.
+- **Git push:** fetch + merge remoto antes de push; reintento ante rechazo non-fast-forward.
+- **UI:** versión en footer; autocompletado de usuario GitHub desde URL en Paso 1-B.
 
 ### UI y sync (v1.0.2)
 - **Badge de versión:** cabecera de ajustes muestra `ObSave vX.Y.Z — Sincronización multi-repositorio`.

@@ -139,3 +139,31 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Confirmación modal extra (MVP: acción directa con notice).
 
 ---
+
+## DEC-011 | 2026-08-24 | Sin renombrado físico de bóveda + persistencia data.json
+
+**Contexto:** Renombrar la carpeta del vault en caliente rompe la referencia de Obsidian a `data.json` y resetea la configuración al actualizar el plugin.
+
+**Decisión:**
+- Eliminar renombrado físico del vault; actualizar solo `masterRepo.label` y metadatos internos.
+- `mergeStoredSettings()` carga `data.json` preservando `masterRepo` y credenciales sin sobrescribir con defaults.
+
+**Release:** `v1.0.3`
+
+**Alternativas descartadas:**
+- Renombrar carpeta y pedir reabrir bóveda (UX frágil, pierde contexto del plugin).
+
+---
+
+## DEC-012 | 2026-08-24 | Reconciliación Git antes de push
+
+**Contexto:** Push inicial fallaba con error non-fast-forward cuando el remoto tenía commits previos.
+
+**Decisión:** En `GitAdapter`, ejecutar `fetch` + `merge` de `origin/main` antes de cada `push`; reintentar integración si el push es rechazado.
+
+**Release:** `v1.0.3`
+
+**Alternativas descartadas:**
+- `git push --force` (riesgo de sobrescribir historial remoto).
+
+---

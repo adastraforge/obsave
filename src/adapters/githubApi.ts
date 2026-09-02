@@ -34,6 +34,18 @@ export function parseGitHubUrl(rawUrl: string): ParsedGitHubUrl {
 	);
 }
 
+/** Extrae el segmento `usuario` de una URL GitHub válida (o null si no aplica) */
+export function extractGitHubOwner(rawUrl: string): string | null {
+	const trimmed = rawUrl.trim();
+	if (!trimmed) return null;
+
+	try {
+		return parseGitHubUrl(trimmed).owner;
+	} catch {
+		return null;
+	}
+}
+
 export function buildAuthenticatedUrl(
 	httpsUrl: string,
 	username: string,

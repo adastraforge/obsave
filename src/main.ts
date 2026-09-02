@@ -2,6 +2,7 @@ import { Notice, Plugin, setIcon } from "obsidian";
 import { GitAdapter } from "./adapters/GitAdapter";
 import { SyncEngine } from "./engine/SyncEngine";
 import { ObSaveSettingTab } from "./ui/ObSaveSettingTab";
+import { mergeStoredSettings } from "./settingsMerge";
 import {
 	DEFAULT_SETTINGS,
 	type ObSaveSettings,
@@ -62,11 +63,8 @@ export default class ObSavePlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			await this.loadData(),
-		);
+		const stored = await this.loadData<Partial<ObSaveSettings>>();
+		this.settings = mergeStoredSettings(stored);
 		this.settings.syncIntervalMinutes = this.clampSyncInterval(
 			this.settings.syncIntervalMinutes,
 		);

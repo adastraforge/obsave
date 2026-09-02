@@ -1,4 +1,5 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting, TextComponent } from "obsidian";
+import { extractGitHubOwner } from "../adapters/githubApi";
 import { GitAdapter } from "../adapters/GitAdapter";
 import { getVaultFolderName } from "../adapters/vaultPaths";
 import type ObSavePlugin from "../main";
@@ -8,9 +9,6 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	plugin: ObSavePlugin;
 	private gitAdapter: GitAdapter;
 	private wizardMode: WizardMode = "choose";
-	private pendingExistingUrl = "";
-	private pendingUsername = "";
-	private pendingToken = "";
 
 	constructor(app: App, plugin: ObSavePlugin) {
 		super(app, plugin);
@@ -22,10 +20,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		const version = this.plugin.manifest.version;
-		containerEl.createEl("h2", {
-			text: `ObSave v${version} — Sincronización multi-repositorio`,
-		});
+		containerEl.createEl("h2", { text: "ObSave — Sincronización multi-repositorio" });
 		containerEl.createEl("p", {
 			text: "Ad Astra Forge",
 			cls: "setting-item-description",
@@ -36,6 +31,16 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		} else {
 			this.renderConfiguredView(containerEl);
 		}
+
+		this.renderVersionFooter(containerEl);
+	}
+
+	private renderVersionFooter(containerEl: HTMLElement): void {
+		containerEl.createEl("hr");
+		containerEl.createEl("p", {
+			text: `ObSave v${this.plugin.manifest.version}`,
+			cls: "setting-item-description obsave-version-footer",
+		});
 	}
 
 	private renderConfiguredView(containerEl: HTMLElement): void {
@@ -82,9 +87,6 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			case "existing-repo":
 				this.renderExistingRepoForm(containerEl);
 				break;
-			case "rename-prompt":
-				this.renderRenamePrompt(containerEl);
-				break;
 		}
 	}
 
@@ -92,7 +94,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Repositorio nuevo")
 			.setDesc(
-				"Crea un repo en GitHub con el nombre de tu bóveda (o uno personalizado).",
+				"Crea un repo en GitHub. El nombre puede diferir de la carpeta local de la bóveda.",
 			)
 			.addButton((btn) =>
 				btn.setButtonText("Crear nuevo").onClick(() => {
@@ -145,9 +147,9 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName("Nombre del repositorio / carpeta")
+			.setName("Nombre del repositorio")
 			.setDesc(
-				`Sugerido: "${suggestedName}". Si lo cambias, la carpeta local se renombrará para coincidir.`,
+				`Sugerido: "${suggestedName}". Solo afecta el repo en GitHub; la carpeta local no se renombra.`,
 			)
 			.addText((text) =>
 				text
@@ -207,25 +209,33 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			cls: "setting-item-heading",
 		});
 
+		let usernameText: TextComponent | undefined;
+
 		new Setting(containerEl)
 			.setName("URL del repositorio")
 			.setDesc("https://github.com/usuario/repo o git@github.com:usuario/repo")
-			.addText((text) =>
+			.addText((text) => {
 				text
 					.setPlaceholder("https://github.com/usuario/mi-vault")
 					.onChange((v) => {
 						remoteUrl = v;
-					}),
-			);
+						const owner = extractGitHubOwner(v);
+						if (owner && usernameText) {
+							username = owner;
+							usernameText.setValue(owner);
+						}
+					});
+			});
 
 		new Setting(containerEl)
 			.setName("Usuario de GitHub")
-			.setDesc("Opcional si el token identifica la cuenta.")
-			.addText((text) =>
+			.setDesc("Opcional si el token identifica la cuenta. Se autocompleta desde la URL.")
+			.addText((text) => {
+				usernameText = text;
 				text.setPlaceholder("usuario").onChange((v) => {
 					username = v;
-				}),
-			);
+				});
+			});
 
 		new Setting(containerEl)
 			.setName("Token de acceso")
@@ -254,18 +264,6 @@ export class ObSaveSettingTab extends PluginSettingTab {
 							return;
 						}
 
-						const mismatch =
-							this.gitAdapter.checkExistingRepoNameMismatch(remoteUrl);
-
-						if (mismatch.needsRenameDecision) {
-							this.pendingExistingUrl = remoteUrl;
-							this.pendingUsername = username;
-							this.pendingToken = token;
-							this.wizardMode = "rename-prompt";
-							this.display();
-							return;
-						}
-
 						btn.setDisabled(true);
 						btn.setButtonText("Fusionando…");
 
@@ -274,7 +272,6 @@ export class ObSaveSettingTab extends PluginSettingTab {
 								remoteUrl,
 								username,
 								token,
-								renameLocalToMatchRemote: false,
 							});
 							await this.handleSetupResult(result);
 						} catch (error) {
@@ -289,83 +286,9 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			);
 	}
 
-	private renderRenamePrompt(containerEl: HTMLElement): void {
-		const mismatch = this.gitAdapter.checkExistingRepoNameMismatch(
-			this.pendingExistingUrl,
-		);
-
-		containerEl.createEl("p", {
-			text: "Los nombres no coinciden",
-			cls: "setting-item-heading",
-		});
-
-		containerEl.createEl("p", {
-			text: `Carpeta local: "${mismatch.localFolderName}" — Repositorio remoto: "${mismatch.remoteRepoName}". ¿Desea renombrar la carpeta local para igualar al repositorio?`,
-			cls: "setting-item-description",
-		});
-
-		new Setting(containerEl)
-			.setName("Renombrar carpeta local")
-			.setDesc(
-				`Renombrará la bóveda a "${mismatch.remoteRepoName}". Deberá reabrir la bóveda en Obsidian.`,
-			)
-			.addButton((btn) =>
-				btn.setButtonText("Renombrar y continuar").onClick(async () => {
-					btn.setDisabled(true);
-					try {
-						const result = await this.gitAdapter.setupExistingRepository({
-							remoteUrl: this.pendingExistingUrl,
-							username: this.pendingUsername,
-							token: this.pendingToken,
-							renameLocalToMatchRemote: true,
-						});
-						await this.handleSetupResult(result);
-					} catch (error) {
-						const msg =
-							error instanceof Error ? error.message : "Error desconocido";
-						new Notice(`ObSave: ${msg}`);
-					} finally {
-						btn.setDisabled(false);
-					}
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName("Mantener nombre local")
-			.setDesc("Conserva el nombre actual de la carpeta y continúa la fusión.")
-			.addButton((btn) =>
-				btn.setButtonText("Mantener y continuar").onClick(async () => {
-					btn.setDisabled(true);
-					try {
-						const result = await this.gitAdapter.setupExistingRepository({
-							remoteUrl: this.pendingExistingUrl,
-							username: this.pendingUsername,
-							token: this.pendingToken,
-							renameLocalToMatchRemote: false,
-						});
-						await this.handleSetupResult(result);
-					} catch (error) {
-						const msg =
-							error instanceof Error ? error.message : "Error desconocido";
-						new Notice(`ObSave: ${msg}`);
-					} finally {
-						btn.setDisabled(false);
-					}
-				}),
-			);
-
-		new Setting(containerEl).addButton((btn) =>
-			btn.setButtonText("Volver").onClick(() => {
-				this.wizardMode = "existing-repo";
-				this.display();
-			}),
-		);
-	}
-
 	private async handleSetupResult(result: {
 		success: boolean;
 		message: string;
-		needsVaultReopen?: boolean;
 		repoConfig?: import("../types").RepoConfig;
 	}): Promise<void> {
 		if (!result.success) {
@@ -379,14 +302,6 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		}
 
 		new Notice(result.message);
-
-		if (result.needsVaultReopen) {
-			new Notice(
-				"ObSave: la bóveda fue renombrada. Reabra la bóveda desde Obsidian (Archivo → Abrir bóveda).",
-				10000,
-			);
-		}
-
 		this.wizardMode = "choose";
 		this.display();
 	}
@@ -413,11 +328,6 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}),
 		);
-
-		containerEl.createEl("p", {
-			text: "Fase 1: Git Core Simplificado con Isomorphic-Git",
-			cls: "setting-item-description",
-		});
 	}
 
 	private renderConnectionManagement(containerEl: HTMLElement): void {
@@ -436,9 +346,6 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					btn.setDisabled(true);
 					try {
 						await this.plugin.disconnectRepository();
-						this.pendingExistingUrl = "";
-						this.pendingUsername = "";
-						this.pendingToken = "";
 						this.wizardMode = "choose";
 						new Notice("ObSave: repositorio desconectado.");
 						this.display();

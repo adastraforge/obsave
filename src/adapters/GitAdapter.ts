@@ -14,8 +14,7 @@ import {
 	ensureGitIgnore,
 	formatConflictDate,
 	getVaultBasePath,
-	getVaultFolderName,
-	renameVaultFolder,
+	resolveRepoLabel,
 	walkVaultFiles,
 	writeVaultFile,
 } from "./vaultPaths";
@@ -25,6 +24,7 @@ export type { GitSetupResult };
 
 const DEFAULT_BRANCH = "main";
 const REMOTE_NAME = "origin";
+const REMOTE_TRACKING_REF = `refs/remotes/${REMOTE_NAME}/${DEFAULT_BRANCH}`;
 const AUTHOR = {
 	name: "ObSave",
 	email: "obsave@adastraforge.local",
@@ -40,7 +40,6 @@ export interface ExistingRepoWizardInput {
 	remoteUrl: string;
 	username: string;
 	token: string;
-	renameLocalToMatchRemote?: boolean;
 }
 
 export class GitAdapter {
@@ -48,32 +47,23 @@ export class GitAdapter {
 
 	/** PASO 1-A — Crear repo nuevo en GitHub y sincronizar bóveda local */
 	async setupNewRepository(input: NewRepoWizardInput): Promise<GitSetupResult> {
-		const repoName = input.repoName.trim();
+		const repoName = resolveRepoLabel(this.app, input.repoName);
 		if (!repoName) {
 			return { success: false, message: "El nombre del repositorio es obligatorio." };
 		}
 
-		const currentFolder = getVaultFolderName(this.app);
-		let needsVaultReopen = false;
-		let basePath = getVaultBasePath(this.app);
-
-		if (repoName !== currentFolder) {
-			basePath = await renameVaultFolder(this.app, repoName);
-			needsVaultReopen = true;
-		}
-
+		const basePath = getVaultBasePath(this.app);
 		const owner = input.username.trim() || (await resolveGitHubUsername(input.token));
 		const created = await createGitHubRepo(repoName, input.token);
 		const authUrl = buildAuthenticatedUrl(created.httpsUrl, owner, input.token);
 
 		await this.initializeLocalRepo(basePath, authUrl, owner, input.token);
 		await this.commitAll(basePath, "ObSave: sincronización inicial");
-		await this.push(basePath, owner, input.token);
+		await this.pushSafe(basePath, owner, input.token);
 
 		return {
 			success: true,
 			message: `Repositorio "${repoName}" creado y sincronizado con GitHub.`,
-			needsVaultReopen,
 			repoConfig: this.buildRepoConfig({
 				label: repoName,
 				owner,
@@ -85,46 +75,12 @@ export class GitAdapter {
 		};
 	}
 
-	/** Comprueba si hace falta decisión de renombrado (PASO 1-B) */
-	checkExistingRepoNameMismatch(remoteUrl: string): {
-		needsRenameDecision: boolean;
-		localFolderName: string;
-		remoteRepoName: string;
-	} {
-		const parsed = parseGitHubUrl(remoteUrl);
-		const localFolderName = getVaultFolderName(this.app);
-		return {
-			needsRenameDecision: parsed.repo !== localFolderName,
-			localFolderName,
-			remoteRepoName: parsed.repo,
-		};
-	}
-
 	/** PASO 1-B — Conectar repo existente con fusión inteligente */
 	async setupExistingRepository(
 		input: ExistingRepoWizardInput,
 	): Promise<GitSetupResult> {
 		const parsed = parseGitHubUrl(input.remoteUrl);
-		const localFolder = getVaultFolderName(this.app);
-		let needsVaultReopen = false;
-		let basePath = getVaultBasePath(this.app);
-
-		if (parsed.repo !== localFolder) {
-			if (input.renameLocalToMatchRemote === undefined) {
-				return {
-					success: false,
-					message: "Se requiere decisión de renombrado.",
-					needsRenameDecision: true,
-					localFolderName: localFolder,
-					remoteRepoName: parsed.repo,
-				};
-			}
-
-			if (input.renameLocalToMatchRemote) {
-				basePath = await renameVaultFolder(this.app, parsed.repo);
-				needsVaultReopen = true;
-			}
-		}
+		const basePath = getVaultBasePath(this.app);
 
 		const username =
 			input.username.trim() || (await resolveGitHubUsername(input.token));
@@ -136,7 +92,6 @@ export class GitAdapter {
 		return {
 			success: true,
 			message: `Repositorio "${parsed.repo}" conectado con fusión inteligente completada.`,
-			needsVaultReopen,
 			repoConfig: this.buildRepoConfig({
 				label: parsed.repo,
 				owner: parsed.owner,
@@ -203,6 +158,10 @@ export class GitAdapter {
 		};
 	}
 
+	private onAuth(username: string, token: string) {
+		return () => ({ username, password: token });
+	}
+
 	private async initializeLocalRepo(
 		basePath: string,
 		authUrl: string,
@@ -251,20 +210,63 @@ export class GitAdapter {
 			}
 		}
 
-		// Verificar conectividad
 		await git.fetch({
 			fs,
 			http,
 			dir: basePath,
 			remote: REMOTE_NAME,
-			onAuth: () => ({ username, password: token }),
+			onAuth: this.onAuth(username, token),
 		});
 	}
 
 	/**
-	 * Fusión inteligente: Descargar remoto → resolver conflictos → Subir local
+	 * Fusión inteligente: fetch → merge remoto → reconciliar archivos → push seguro
 	 */
 	private async smartMerge(
+		basePath: string,
+		username: string,
+		token: string,
+	): Promise<void> {
+		await this.fetchRemote(basePath, username, token);
+
+		let remoteCommit: string | undefined;
+		try {
+			remoteCommit = await git.resolveRef({
+				fs,
+				dir: basePath,
+				ref: REMOTE_TRACKING_REF,
+			});
+		} catch {
+			remoteCommit = undefined;
+		}
+
+		const localFiles = await walkVaultFiles(basePath);
+		const dateStr = formatConflictDate(new Date());
+
+		if (remoteCommit) {
+			await this.mergeRemoteBranch(basePath, username, token);
+
+			const remoteFiles = await this.listFilesInCommit(basePath, remoteCommit);
+
+			for (const [relativePath, remoteContent] of remoteFiles) {
+				const localContent = localFiles.get(relativePath);
+
+				if (localContent && !localContent.equals(remoteContent)) {
+					const conflictPath = conflictCopyPath(relativePath, dateStr);
+					await writeVaultFile(basePath, conflictPath, localContent);
+					await writeVaultFile(basePath, relativePath, remoteContent);
+				} else if (!localContent) {
+					await writeVaultFile(basePath, relativePath, remoteContent);
+				}
+			}
+		}
+
+		await this.stageAll(basePath);
+		await this.commitAll(basePath, "ObSave: fusión inteligente");
+		await this.pushSafe(basePath, username, token);
+	}
+
+	private async fetchRemote(
 		basePath: string,
 		username: string,
 		token: string,
@@ -274,47 +276,91 @@ export class GitAdapter {
 			http,
 			dir: basePath,
 			remote: REMOTE_NAME,
-			onAuth: () => ({ username, password: token }),
+			onAuth: this.onAuth(username, token),
 		});
+	}
 
-		let remoteCommit: string | undefined;
+	/** Integra commits remotos antes de push para evitar rechazos non-fast-forward */
+	private async mergeRemoteBranch(
+		basePath: string,
+		username: string,
+		token: string,
+	): Promise<void> {
+		await this.fetchRemote(basePath, username, token);
+
+		let hasRemote = false;
 		try {
-			remoteCommit = await git.resolveRef({
+			await git.resolveRef({ fs, dir: basePath, ref: REMOTE_TRACKING_REF });
+			hasRemote = true;
+		} catch {
+			hasRemote = false;
+		}
+
+		if (!hasRemote) return;
+
+		const currentBranch = await git.currentBranch({ fs, dir: basePath });
+		if (!currentBranch) {
+			await git.checkout({ fs, dir: basePath, ref: DEFAULT_BRANCH });
+		}
+
+		try {
+			await git.merge({
 				fs,
 				dir: basePath,
-				ref: `refs/remotes/${REMOTE_NAME}/${DEFAULT_BRANCH}`,
+				ours: DEFAULT_BRANCH,
+				theirs: REMOTE_TRACKING_REF,
+				author: AUTHOR,
 			});
 		} catch {
-			remoteCommit = undefined;
-		}
-
-		const localFiles = await walkVaultFiles(basePath);
-		const dateStr = formatConflictDate(new Date());
-
-		if (!remoteCommit) {
+			// Conflicto a nivel Git: conservar working tree y crear commit de reconciliación
 			await this.stageAll(basePath);
-			await this.commitAll(basePath, "ObSave: sincronización inicial");
-			await this.push(basePath, username, token);
-			return;
+			await this.commitAll(basePath, "ObSave: reconciliación con remoto");
 		}
+	}
 
-		const remoteFiles = await this.listFilesInCommit(basePath, remoteCommit);
+	private async pushSafe(
+		basePath: string,
+		username: string,
+		token: string,
+	): Promise<void> {
+		await this.mergeRemoteBranch(basePath, username, token);
+		await this.stageAll(basePath);
+		await this.commitAll(basePath, "ObSave: sincronización");
 
-		for (const [relativePath, remoteContent] of remoteFiles) {
-			const localContent = localFiles.get(relativePath);
+		const auth = this.onAuth(username, token);
 
-			if (localContent && !localContent.equals(remoteContent)) {
-				const conflictPath = conflictCopyPath(relativePath, dateStr);
-				await writeVaultFile(basePath, conflictPath, localContent);
-				await writeVaultFile(basePath, relativePath, remoteContent);
-			} else if (!localContent) {
-				await writeVaultFile(basePath, relativePath, remoteContent);
+		try {
+			await git.push({
+				fs,
+				http,
+				dir: basePath,
+				remote: REMOTE_NAME,
+				ref: DEFAULT_BRANCH,
+				onAuth: auth,
+			});
+			return;
+		} catch (firstError) {
+			await this.fetchRemote(basePath, username, token);
+			await this.mergeRemoteBranch(basePath, username, token);
+			await this.stageAll(basePath);
+			await this.commitAll(basePath, "ObSave: integración remota post-rechazo");
+
+			try {
+				await git.push({
+					fs,
+					http,
+					dir: basePath,
+					remote: REMOTE_NAME,
+					ref: DEFAULT_BRANCH,
+					onAuth: auth,
+				});
+				return;
+			} catch {
+				throw firstError instanceof Error
+					? firstError
+					: new Error("Push rechazado: no se pudo integrar con el remoto.");
 			}
 		}
-
-		await this.stageAll(basePath);
-		await this.commitAll(basePath, "ObSave: fusión inteligente");
-		await this.push(basePath, username, token);
 	}
 
 	private async listFilesInCommit(
@@ -371,21 +417,6 @@ export class GitAdapter {
 			dir: basePath,
 			message,
 			author: AUTHOR,
-		});
-	}
-
-	private async push(
-		basePath: string,
-		username: string,
-		token: string,
-	): Promise<void> {
-		await git.push({
-			fs,
-			http,
-			dir: basePath,
-			remote: REMOTE_NAME,
-			ref: DEFAULT_BRANCH,
-			onAuth: () => ({ username, password: token }),
 		});
 	}
 }

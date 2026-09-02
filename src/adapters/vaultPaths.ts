@@ -22,72 +22,16 @@ export function getVaultFolderName(app: App): string {
 }
 
 /**
- * Renombra la carpeta física del vault usando FileSystemAdapter como gateway.
- * Retorna la ruta absoluta nueva (el adapter de Obsidian sigue apuntando a la
- * ruta anterior hasta que el usuario reabra la bóveda).
+ * Metadatos del repositorio en ObSave — no renombra la carpeta física del vault.
+ * Obsidian pierde referencia a data.json si se mueve la bóveda en caliente.
  */
-export async function renameVaultFolder(
+export function resolveRepoLabel(
 	app: App,
-	newName: string,
-): Promise<string> {
-	const adapter = getVaultAdapter(app);
-	const sanitized = newName.trim();
-
-	if (!sanitized) {
-		throw new Error("El nombre de la carpeta no puede estar vacío.");
-	}
-
-	if (/[<>:"/\\|?*]/.test(sanitized)) {
-		throw new Error("El nombre contiene caracteres no permitidos.");
-	}
-
-	const oldBasePath = adapter.getBasePath();
-	const parentDir = path.dirname(oldBasePath);
-	const newBasePath = path.join(parentDir, sanitized);
-
-	if (path.basename(oldBasePath) === sanitized) {
-		return oldBasePath;
-	}
-
-	await adapter.exists("");
-	await renameDirectoryViaAdapter(adapter, parentDir, path.basename(oldBasePath), sanitized);
-
-	return newBasePath;
-}
-
-/** Renombrado de directorio hermano al vault — misma semántica que FileSystemAdapter.rename */
-async function renameDirectoryViaAdapter(
-	vaultAdapter: FileSystemAdapter,
-	parentDir: string,
-	oldFolderName: string,
-	newFolderName: string,
-): Promise<void> {
-	const oldFullPath = path.join(parentDir, oldFolderName);
-	const newFullPath = path.join(parentDir, newFolderName);
-
-	const fs = require("fs") as typeof import("fs");
-
-	if (fs.existsSync(newFullPath)) {
-		throw new Error(
-			`Ya existe una carpeta llamada "${newFolderName}" en ${parentDir}.`,
-		);
-	}
-
-	await new Promise<void>((resolve, reject) => {
-		fs.rename(oldFullPath, newFullPath, (err: NodeJS.ErrnoException | null) => {
-			if (err) {
-				reject(
-					new Error(
-						`No se pudo renombrar la bóveda: ${err.message}. Cierre otros programas que usen la carpeta e intente de nuevo.`,
-					),
-				);
-				return;
-			}
-			resolve();
-		});
-	});
-
-	void vaultAdapter;
+	preferredRepoName: string,
+): string {
+	const sanitized = preferredRepoName.trim();
+	if (sanitized) return sanitized;
+	return getVaultFolderName(app);
 }
 
 export function conflictCopyPath(relativePath: string, dateStr: string): string {
