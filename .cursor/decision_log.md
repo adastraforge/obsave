@@ -450,3 +450,15 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.22`
 
 ---
+
+## DEC-031 | 2026-09-02 | Body PKCE desktop sin client_secret
+
+**Contexto:** Clientes OAuth desktop PKCE no deben enviar `client_secret` al token endpoint; el payload debe ser estrictamente de 5 campos.
+
+**Decisión:**
+1. `buildDesktopPkceTokenBody()` construye Form Data con solo `client_id`, `code`, `grant_type`, `redirect_uri`, `code_verifier`.
+2. Log explícito de campos enviados; guardado explícito de tokens en `providerConfig.gdrive.enabled`.
+
+**Release:** `v1.0.23`
+
+---

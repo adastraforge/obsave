@@ -266,11 +266,18 @@ export class ObSaveSettingTab extends PluginSettingTab {
 									);
 									this.plugin.settings.activeProvider = "gdrive";
 									this.plugin.settings.providerConfig.gdrive = {
-										...config,
 										enabled: true,
+										accessToken: config.accessToken,
+										refreshToken: config.refreshToken,
+										expiresAt: config.expiresAt,
+										email: config.email,
+										displayName: config.displayName,
+										folderId: config.folderId,
 									};
 									await this.plugin.saveSettings();
-									new Notice("¡Google Drive conectado exitosamente!");
+									new Notice(
+										"¡Conectado exitosamente con Google Drive!",
+									);
 									this.display();
 								},
 							});

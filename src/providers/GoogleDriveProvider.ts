@@ -50,6 +50,29 @@ function parseGoogleOAuthError(responseText: string): string {
 	}
 }
 
+/** Form body PKCE desktop — solo 5 campos; nunca incluye client_secret. */
+function buildDesktopPkceTokenBody(
+	clientId: string,
+	code: string,
+	codeVerifier: string,
+): string {
+	const params = new URLSearchParams();
+	params.set("client_id", clientId);
+	params.set("code", code);
+	params.set("grant_type", "authorization_code");
+	params.set("redirect_uri", GOOGLE_DRIVE_REDIRECT_URI);
+	params.set("code_verifier", codeVerifier);
+	return params.toString();
+}
+
+const PKCE_TOKEN_FIELD_NAMES = [
+	"client_id",
+	"code",
+	"grant_type",
+	"redirect_uri",
+	"code_verifier",
+] as const;
+
 /** Conector Google Drive — OAuth2 PKCE con callback HTTP local. */
 export class GoogleDriveProvider implements IStorageProvider {
 	readonly id = "gdrive";
@@ -246,13 +269,16 @@ export class GoogleDriveProvider implements IStorageProvider {
 		const resolvedClientId = clientId ?? this.requireClientId();
 		console.log("[ObSave OAuth] Solicitando tokens con el code recibido...");
 
-		const body = new URLSearchParams({
-			client_id: resolvedClientId,
+		const body = buildDesktopPkceTokenBody(
+			resolvedClientId,
 			code,
-			grant_type: "authorization_code",
-			redirect_uri: GOOGLE_DRIVE_REDIRECT_URI,
-			code_verifier: codeVerifier,
-		}).toString();
+			codeVerifier,
+		);
+
+		console.log(
+			"[ObSave OAuth] Payload PKCE desktop (sin client_secret):",
+			PKCE_TOKEN_FIELD_NAMES.join(", "),
+		);
 
 		const response = await requestUrl({
 			url: GOOGLE_DRIVE_TOKEN_URL,
@@ -274,7 +300,13 @@ export class GoogleDriveProvider implements IStorageProvider {
 			throw new Error(errorDescription);
 		}
 
-		return response.json as GoogleTokenResponse;
+		const tokens = response.json as GoogleTokenResponse;
+		console.log("[ObSave OAuth] Tokens PKCE recibidos (HTTP 200)", {
+			hasAccessToken: !!tokens.access_token,
+			hasRefreshToken: !!tokens.refresh_token,
+		});
+
+		return tokens;
 	}
 
 	private async refreshAccessToken(): Promise<string> {

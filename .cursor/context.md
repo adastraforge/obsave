@@ -7,10 +7,14 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.22`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.22`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.23`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.23`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### PKCE desktop token body v1.0.23
+- **`exchangeCodeForTokens`:** `buildDesktopPkceTokenBody()` — 5 campos estrictos, sin `client_secret`.
+- Guardado explícito de tokens en `providerConfig.gdrive`; Notice «¡Conectado exitosamente con Google Drive!».
 
 ### Token exchange OAuth v1.0.22
 - **`localCallbackServer`:** puerto fijo 42000, `close()` + `unref()` inmediato tras callback.
