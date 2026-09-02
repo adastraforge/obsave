@@ -1,0 +1,92 @@
+import type { SyncStatus } from "./types";
+
+/** Proveedor de nube activo (único — sin réplicas espejo) */
+export type CloudProviderId = "github" | "gdrive" | "onedrive" | "icloud";
+
+export interface GitHubProviderConfig {
+	label: string;
+	remoteUrl?: string;
+	username?: string;
+	token?: string;
+}
+
+/** Skeleton Fase 2 — OAuth2 PKCE */
+export interface GoogleDriveProviderConfig {
+	folderId?: string;
+}
+
+/** Skeleton Fase 2 — OAuth2 PKCE */
+export interface OneDriveProviderConfig {
+	driveId?: string;
+}
+
+/** Skeleton Fase 2 */
+export interface ICloudProviderConfig {
+	containerPath?: string;
+}
+
+export interface ProviderConfigMap {
+	github?: GitHubProviderConfig | null;
+	gdrive?: GoogleDriveProviderConfig | null;
+	onedrive?: OneDriveProviderConfig | null;
+	icloud?: ICloudProviderConfig | null;
+}
+
+/** Ajustes persistentes del plugin ObSave */
+export interface ObSaveSettings {
+	activeProvider: CloudProviderId | null;
+	providerConfig: ProviderConfigMap;
+	syncIntervalMinutes: number;
+	lastSyncAt: string | null;
+	syncStatus: SyncStatus;
+}
+
+export const DEFAULT_SETTINGS: ObSaveSettings = {
+	activeProvider: null,
+	providerConfig: {},
+	syncIntervalMinutes: 15,
+	lastSyncAt: null,
+	syncStatus: "idle",
+};
+
+/** Formato legacy pre-proveedor-único (migración desde data.json) */
+export interface LegacyRepoConfig {
+	label: string;
+	remoteUrl?: string;
+	username?: string;
+	token?: string;
+}
+
+export interface LegacyStoredSettings extends Partial<ObSaveSettings> {
+	masterRepo?: LegacyRepoConfig | null;
+	replicaRepos?: unknown[];
+}
+
+export function getGitHubConfig(
+	settings: ObSaveSettings,
+): GitHubProviderConfig | null {
+	return settings.providerConfig.github ?? null;
+}
+
+export function isProviderConfigured(settings: ObSaveSettings): boolean {
+	if (!settings.activeProvider) {
+		return false;
+	}
+
+	if (settings.activeProvider === "github") {
+		return !!settings.providerConfig.github?.token;
+	}
+
+	return settings.providerConfig[settings.activeProvider] != null;
+}
+
+export function legacyRepoToGitHubConfig(
+	repo: LegacyRepoConfig,
+): GitHubProviderConfig {
+	return {
+		label: repo.label,
+		remoteUrl: repo.remoteUrl,
+		username: repo.username,
+		token: repo.token,
+	};
+}

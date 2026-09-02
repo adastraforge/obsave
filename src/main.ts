@@ -1,11 +1,18 @@
 import { Notice, Plugin, setIcon } from "obsidian";
-import { GitAdapter } from "./adapters/GitAdapter";
 import { SyncEngine } from "./engine/SyncEngine";
+import {
+	createProviderRegistry,
+	GitHubProvider,
+	type IStorageProvider,
+} from "./providers";
+import type { CloudProviderId } from "./settings";
 import { ObSaveFileDecorators } from "./ui/fileDecorators";
 import { ObSaveSettingTab } from "./ui/ObSaveSettingTab";
 import { mergeStoredSettings } from "./settingsMerge";
 import {
 	DEFAULT_SETTINGS,
+	getGitHubConfig,
+	isProviderConfigured,
 	type ObSaveSettings,
 	type SyncStatus,
 } from "./types";
@@ -16,7 +23,8 @@ const MAX_SYNC_INTERVAL = 15;
 export default class ObSavePlugin extends Plugin {
 	settings: ObSaveSettings = DEFAULT_SETTINGS;
 	syncEngine!: SyncEngine;
-	private gitAdapter!: GitAdapter;
+	private githubProvider!: GitHubProvider;
+	private providers!: Map<CloudProviderId, IStorageProvider>;
 	private fileDecorators!: ObSaveFileDecorators;
 	private ribbonEl: HTMLElement | null = null;
 	private syncIntervalId: number | null = null;
@@ -24,13 +32,12 @@ export default class ObSavePlugin extends Plugin {
 	async onload(): Promise<void> {
 		await this.loadSettings();
 
-		this.gitAdapter = new GitAdapter(this.app);
-		this.syncEngine = new SyncEngine(this.settings, this.gitAdapter);
-		this.fileDecorators = new ObSaveFileDecorators(
-			this,
-			() => this.settings.masterRepo,
-			this.gitAdapter,
-		);
+		this.githubProvider = new GitHubProvider(this.app);
+		this.providers = createProviderRegistry(this.app, this.githubProvider);
+		this.syncEngine = new SyncEngine(this.settings, this.providers);
+		this.applyProviderConfigToRuntime();
+
+		this.fileDecorators = new ObSaveFileDecorators(this, this.githubProvider);
 		this.fileDecorators.install();
 
 		this.registerEvent(
@@ -80,7 +87,9 @@ export default class ObSavePlugin extends Plugin {
 		this.updateRibbonIcon(this.settings.syncStatus);
 
 		this.startSyncInterval();
-		void this.triggerSync(false);
+		if (isProviderConfigured(this.settings)) {
+			void this.triggerSync(false);
+		}
 
 		console.log("ObSave plugin loaded — Ad Astra Forge");
 	}
@@ -97,6 +106,7 @@ export default class ObSavePlugin extends Plugin {
 		this.settings.syncIntervalMinutes = this.clampSyncInterval(
 			this.settings.syncIntervalMinutes,
 		);
+		this.applyProviderConfigToRuntime();
 	}
 
 	async saveSettings(): Promise<void> {
@@ -104,9 +114,21 @@ export default class ObSavePlugin extends Plugin {
 			this.settings.syncIntervalMinutes,
 		);
 		this.syncEngine?.updateSettings(this.settings);
+		this.applyProviderConfigToRuntime();
 		await this.saveData(this.settings);
 		this.startSyncInterval();
 		void this.refreshDecoratorsImmediate();
+	}
+
+	private applyProviderConfigToRuntime(): void {
+		const githubConfig = getGitHubConfig(this.settings);
+		if (githubConfig) {
+			void this.githubProvider.connect(githubConfig);
+		}
+	}
+
+	getGitHubProvider(): GitHubProvider {
+		return this.githubProvider;
 	}
 
 	/** Refresco diferido de puntos de estado en el Explorador. */
@@ -128,12 +150,15 @@ export default class ObSavePlugin extends Plugin {
 		await this.triggerSync(true);
 	}
 
-	/** Desconecta el repositorio Master y limpia credenciales Git de la sesión */
-	async disconnectRepository(): Promise<void> {
-		await this.gitAdapter.clearGitSession();
+	/** Desconecta el proveedor activo y limpia credenciales de sesión */
+	async disconnectProvider(): Promise<void> {
+		const active = this.settings.activeProvider;
+		if (active) {
+			await this.providers.get(active)?.disconnect();
+			this.settings.providerConfig[active] = null;
+		}
 
-		this.settings.masterRepo = null;
-		this.settings.replicaRepos = [];
+		this.settings.activeProvider = null;
 		this.settings.lastSyncAt = null;
 		this.settings.syncStatus = "idle";
 		await this.saveSettings();

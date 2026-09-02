@@ -1,33 +1,34 @@
 import { App, Notice, PluginSettingTab, Setting, TextComponent } from "obsidian";
 import { extractGitHubOwner } from "../adapters/githubApi";
-import { GitAdapter } from "../adapters/GitAdapter";
+import { GitHubProvider } from "../providers/GitHubProvider";
 import { getVaultFolderName } from "../adapters/vaultPaths";
+import { isProviderConfigured } from "../types";
 import { formatLocalDateTime } from "../utils/dateFormat";
 import type ObSavePlugin from "../main";
 import type { WizardMode } from "../types";
 
 export class ObSaveSettingTab extends PluginSettingTab {
 	plugin: ObSavePlugin;
-	private gitAdapter: GitAdapter;
+	private githubProvider: GitHubProvider;
 	private wizardMode: WizardMode = "choose";
 
 	constructor(app: App, plugin: ObSavePlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
-		this.gitAdapter = new GitAdapter(app);
+		this.githubProvider = plugin.getGitHubProvider();
 	}
 
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "ObSave — Sincronización multi-repositorio" });
+		containerEl.createEl("h2", { text: "ObSave — Sincronización en la nube" });
 		containerEl.createEl("p", {
 			text: "Ad Astra Forge",
 			cls: "setting-item-description",
 		});
 
-		if (!this.plugin.settings.masterRepo) {
+		if (!isProviderConfigured(this.plugin.settings)) {
 			this.renderSetupWizard(containerEl);
 		} else {
 			this.renderConfiguredView(containerEl);
@@ -45,11 +46,16 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	}
 
 	private renderConfiguredView(containerEl: HTMLElement): void {
-		const master = this.plugin.settings.masterRepo!;
+		const providerId = this.plugin.settings.activeProvider!;
+		const github = this.plugin.settings.providerConfig.github;
 
 		new Setting(containerEl)
-			.setName("Repositorio Master")
-			.setDesc(`${master.label} — ${master.remoteUrl ?? master.provider}`)
+			.setName("Proveedor activo")
+			.setDesc(
+				providerId === "github" && github
+					? `GitHub — ${github.label} (${github.remoteUrl ?? "sin URL"})`
+					: providerId,
+			)
 			.setDisabled(true);
 
 		new Setting(containerEl)
@@ -59,7 +65,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Sincronizar ahora")
-			.setDesc("Ejecuta un ciclo de sync con el repositorio Master.")
+			.setDesc("Ejecuta un ciclo de sync con el proveedor configurado.")
 			.addButton((btn) =>
 				btn.setButtonText("Sincronizar").onClick(async () => {
 					await this.plugin.runSync();
@@ -181,7 +187,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 						btn.setButtonText("Sincronizando…");
 
 						try {
-							const result = await this.gitAdapter.setupNewRepository({
+							const result = await this.githubProvider.setupNewRepository({
 								username,
 								token,
 								repoName,
@@ -269,7 +275,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 						btn.setButtonText("Fusionando…");
 
 						try {
-							const result = await this.gitAdapter.setupExistingRepository({
+							const result = await this.githubProvider.setupExistingRepository({
 								remoteUrl,
 								username,
 								token,
@@ -290,15 +296,16 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	private async handleSetupResult(result: {
 		success: boolean;
 		message: string;
-		repoConfig?: import("../types").RepoConfig;
+		githubConfig?: import("../settings").GitHubProviderConfig;
 	}): Promise<void> {
 		if (!result.success) {
 			new Notice(`ObSave: ${result.message}`);
 			return;
 		}
 
-		if (result.repoConfig) {
-			this.plugin.settings.masterRepo = result.repoConfig;
+		if (result.githubConfig) {
+			this.plugin.settings.activeProvider = "github";
+			this.plugin.settings.providerConfig.github = result.githubConfig;
 			await this.plugin.saveSettings();
 		}
 
@@ -336,19 +343,19 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		containerEl.createEl("h3", { text: "Gestión de Conexión" });
 
 		new Setting(containerEl)
-			.setName("Desconectar repositorio")
+			.setName("Desconectar proveedor")
 			.setDesc(
-				"Elimina la configuración del Master, credenciales guardadas y vuelve al asistente de primera sincronización. No borra la carpeta .git local.",
+				"Elimina la configuración del proveedor activo, credenciales guardadas y vuelve al asistente de primera sincronización. No borra la carpeta .git local (GitHub).",
 			)
 			.addButton((btn) => {
-				btn.setButtonText("Desconectar repositorio");
+				btn.setButtonText("Desconectar proveedor");
 				btn.buttonEl.addClass("mod-warning");
 				btn.onClick(async () => {
 					btn.setDisabled(true);
 					try {
-						await this.plugin.disconnectRepository();
+						await this.plugin.disconnectProvider();
 						this.wizardMode = "choose";
-						new Notice("ObSave: repositorio desconectado.");
+						new Notice("ObSave: proveedor desconectado.");
 						this.display();
 					} catch (error) {
 						const msg =

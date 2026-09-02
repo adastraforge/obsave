@@ -8,19 +8,16 @@ import {
 	createGitHubRepo,
 	parseGitHubUrl,
 	resolveGitHubUsername,
-} from "./githubApi";
+} from "../adapters/githubApi";
 import {
 	ensureGitIgnore,
 	getVaultBasePath,
 	resolveRepoLabel,
 	writeVaultFile,
-} from "./vaultPaths";
-import type {
-	FileSyncStatus,
-	GitSetupResult,
-	RepoConfig,
-	SyncPerformResult,
-} from "../types";
+} from "../adapters/vaultPaths";
+import type { GitHubProviderConfig } from "../settings";
+import type { FileSyncStatus, GitSetupResult } from "../types";
+import type { IStorageProvider, SyncResult } from "./IStorageProvider";
 
 export type { GitSetupResult };
 
@@ -47,19 +44,46 @@ export interface ExistingRepoWizardInput {
 	token: string;
 }
 
-export class GitAdapter {
+export class GitHubProvider implements IStorageProvider {
+	readonly id = "github";
+	readonly name = "GitHub";
+
+	private config: GitHubProviderConfig | null = null;
+
 	constructor(private app: App) {}
+
+	async connect(config: GitHubProviderConfig): Promise<boolean> {
+		if (!config.token) {
+			return false;
+		}
+		this.config = config;
+		return true;
+	}
+
+	getConfig(): GitHubProviderConfig | null {
+		return this.config;
+	}
+
+	async sync(): Promise<SyncResult> {
+		if (!this.config) {
+			throw new Error("GitHub no está conectado.");
+		}
+		return this.performSync(this.config);
+	}
+
+	async disconnect(): Promise<void> {
+		await this.clearGitSession();
+		this.config = null;
+	}
 
 	/**
 	 * Mapa de estado por nota `.md` para decoradores del explorador.
 	 * Rojo: nuevo local; amarillo: cambios pendientes; verde: al día con remoto.
 	 */
-	async getMarkdownFileStatuses(
-		masterRepo: RepoConfig | null,
-	): Promise<Map<string, FileSyncStatus>> {
+	async getMarkdownFileStatuses(): Promise<Map<string, FileSyncStatus>> {
 		const statuses = new Map<string, FileSyncStatus>();
 
-		if (!masterRepo?.token) {
+		if (!this.config?.token) {
 			return statuses;
 		}
 
@@ -111,16 +135,16 @@ export class GitAdapter {
 	 * Sync Git — Last-Write-Wins, sin duplicación de archivos:
 	 * a) fetch  b) merge+checkout remoto  c) commit local  d) push (+ reintento)
 	 */
-	async performSync(masterRepo: RepoConfig): Promise<SyncPerformResult> {
+	private async performSync(config: GitHubProviderConfig): Promise<SyncResult> {
 		const basePath = getVaultBasePath(this.app);
-		const username = masterRepo.username ?? "";
-		const token = masterRepo.token ?? "";
+		const username = config.username ?? "";
+		const token = config.token ?? "";
 
 		if (!token) {
 			throw new Error("No hay token de GitHub configurado.");
 		}
 
-		await this.ensureRepoReady(basePath, masterRepo, username, token);
+		await this.ensureRepoReady(basePath, config, username, token);
 
 		await this.fetchRemote(basePath, username, token);
 
@@ -415,15 +439,15 @@ export class GitAdapter {
 
 	private async ensureRepoReady(
 		basePath: string,
-		masterRepo: RepoConfig,
+		config: GitHubProviderConfig,
 		username: string,
 		token: string,
 	): Promise<void> {
-		if (!masterRepo.remoteUrl) {
-			throw new Error("URL del repositorio Master no configurada.");
+		if (!config.remoteUrl) {
+			throw new Error("URL del repositorio GitHub no configurada.");
 		}
 		const authUrl = buildAuthenticatedUrl(
-			masterRepo.remoteUrl,
+			config.remoteUrl,
 			username,
 			token,
 		);
@@ -454,7 +478,7 @@ export class GitAdapter {
 		return {
 			success: true,
 			message: `Repositorio "${repoName}" creado y sincronizado con GitHub.`,
-			repoConfig: this.buildRepoConfig({
+			githubConfig: this.buildGitHubConfig({
 				label: repoName,
 				owner,
 				repo: created.repo,
@@ -483,7 +507,7 @@ export class GitAdapter {
 		return {
 			success: true,
 			message: `Repositorio "${parsed.repo}" conectado con fusión inteligente completada.`,
-			repoConfig: this.buildRepoConfig({
+			githubConfig: this.buildGitHubConfig({
 				label: parsed.repo,
 				owner: parsed.owner,
 				repo: parsed.repo,
@@ -528,23 +552,19 @@ export class GitAdapter {
 		}
 	}
 
-	private buildRepoConfig(params: {
+	private buildGitHubConfig(params: {
 		label: string;
 		owner: string;
 		repo: string;
 		httpsUrl: string;
 		username: string;
 		token: string;
-	}): RepoConfig {
+	}): GitHubProviderConfig {
 		return {
-			id: `git-${params.owner}-${params.repo}`,
-			role: "master",
-			provider: "git",
 			label: params.label,
 			remoteUrl: params.httpsUrl,
 			username: params.username,
 			token: params.token,
-			enabled: true,
 		};
 	}
 

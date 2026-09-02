@@ -253,3 +253,19 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Solo `::before` en `.nav-file-title` (selectores inconsistentes entre versiones de Obsidian).
 
 ---
+
+## DEC-018 | 2026-08-24 | Arquitectura de Proveedor Único Simplificado
+
+**Contexto:** El modelo Master-Réplicas añadía complejidad prematura; la Fase 2 requiere conectores OAuth independientes con un contrato unificado.
+
+**Decisión:**
+1. Eliminar `masterRepo`, `replicaRepos` y roles espejo de settings; adoptar `activeProvider` + `providerConfig`.
+2. Introducir **`IStorageProvider`** (`connect`, `sync`, `disconnect`) y registrar GitHub, Google Drive, OneDrive, iCloud.
+3. Migrar `GitAdapter` → **`GitHubProvider`**; skeletons para conectores OAuth Fase 2.
+4. `SyncEngine` delega al proveedor activo del registro.
+
+**Alternativas descartadas:**
+- Mantener réplicas espejo en Fase 1 (sin implementación real, confusión de UX).
+- Un adapter monolítico sin interfaz común (bloquea Fase 2 OAuth).
+
+---

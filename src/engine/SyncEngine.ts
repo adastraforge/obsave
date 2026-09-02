@@ -1,16 +1,11 @@
-import type { GitAdapter } from "../adapters/GitAdapter";
-import type {
-	ObSaveSettings,
-	SyncEngineEvent,
-	SyncStatus,
-	SyncTrigger,
-} from "../types";
+import type { CloudProviderId, ObSaveSettings } from "../settings";
+import type { IStorageProvider } from "../providers/IStorageProvider";
+import type { SyncEngineEvent, SyncStatus, SyncTrigger } from "../types";
 
 type SyncEngineListener = (event: SyncEngineEvent) => void;
 
 /**
- * Motor de sincronización Master-Réplicas.
- * Delega el ciclo Git real a GitAdapter.performSync().
+ * Motor de sincronización — delega al proveedor de nube activo (único).
  */
 export class SyncEngine {
 	private status: SyncStatus = "idle";
@@ -18,7 +13,7 @@ export class SyncEngine {
 
 	constructor(
 		private settings: ObSaveSettings,
-		private gitAdapter: GitAdapter,
+		private providers: Map<CloudProviderId, IStorageProvider>,
 	) {}
 
 	on(listener: SyncEngineListener): () => void {
@@ -41,11 +36,24 @@ export class SyncEngine {
 			return;
 		}
 
-		if (!this.settings.masterRepo) {
+		const providerId = this.settings.activeProvider;
+		if (!providerId) {
 			this.emit({
 				type: "sync-error",
 				status: "error",
-				message: "No hay repositorio Master configurado.",
+				message: "No hay proveedor de nube configurado.",
+				timestamp: new Date().toISOString(),
+				trigger,
+			});
+			return;
+		}
+
+		const provider = this.providers.get(providerId);
+		if (!provider) {
+			this.emit({
+				type: "sync-error",
+				status: "error",
+				message: `Proveedor "${providerId}" no registrado.`,
 				timestamp: new Date().toISOString(),
 				trigger,
 			});
@@ -55,7 +63,7 @@ export class SyncEngine {
 		this.setStatus("syncing");
 
 		try {
-			const result = await this.gitAdapter.performSync(this.settings.masterRepo);
+			const result = await provider.sync();
 
 			this.setStatus("idle");
 			this.emit({

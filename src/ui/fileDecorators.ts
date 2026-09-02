@@ -1,6 +1,6 @@
 import type { Plugin } from "obsidian";
-import type { GitAdapter } from "../adapters/GitAdapter";
-import type { FileSyncStatus, RepoConfig } from "../types";
+import type { GitHubProvider } from "../providers/GitHubProvider";
+import type { FileSyncStatus } from "../types";
 
 const DOT_CLASS = "obsave-dot";
 
@@ -18,8 +18,7 @@ export class ObSaveFileDecorators {
 
 	constructor(
 		private plugin: Plugin,
-		private getMasterRepo: () => RepoConfig | null,
-		private gitAdapter: GitAdapter,
+		private githubProvider: GitHubProvider,
 	) {}
 
 	install(): void {
@@ -36,9 +35,7 @@ export class ObSaveFileDecorators {
 
 	/** Refresco inmediato (p. ej. tras performSync). */
 	async refresh(): Promise<void> {
-		const statuses = await this.gitAdapter.getMarkdownFileStatuses(
-			this.getMasterRepo(),
-		);
+		const statuses = await this.githubProvider.getMarkdownFileStatuses();
 		this.applyDecorations(statuses);
 	}
 

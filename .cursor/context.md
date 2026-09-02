@@ -3,7 +3,7 @@
 ## Marca y Visión
 **Ad Astra Forge** desarrolla **ObSave**, un plugin open-source y gratuito para Obsidian orientado a la sincronización multi-repositorio y auto-respaldo **sin intermediarios comerciales**.
 
-El usuario mantiene control total de sus datos: el vault se replica de forma transparente entre un repositorio **Master** y múltiples **Réplicas** (Google Drive, OneDrive, GitHub, iCloud, S3, etc.).
+El usuario mantiene control total de sus datos: el vault se sincroniza con **un único proveedor de nube** a la vez (GitHub, Google Drive, OneDrive o iCloud).
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
@@ -11,6 +11,12 @@ El usuario mantiene control total de sus datos: el vault se replica de forma tra
 > GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.8`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Arquitectura proveedor único (Fase 2 prep)
+- **`activeProvider`:** `'github' | 'gdrive' | 'onedrive' | 'icloud'` — un solo backend activo, sin réplicas espejo.
+- **`IStorageProvider`:** contrato común (`connect`, `sync`, `disconnect`) en `src/providers/`.
+- **Implementado:** `GitHubProvider` (Isomorphic-Git). **Skeletons Fase 2:** Google Drive, OneDrive, iCloud.
+- **Migración:** `data.json` legacy con `masterRepo` → `activeProvider: 'github'`.
 
 ### Decoradores v1.0.8
 - **`styles.css`:** puntos `.obsave-dot-new|modified|synced` incluidos en release (3 artefactos obligatorios).
@@ -80,7 +86,7 @@ Núcleo del plugin con Git simplificado mediante **Isomorphic-Git** y un **Wizar
 ## Premisas Inviolables
 1. **Gratuidad y transparencia** — sin paywalls ni conectores bloqueados.
 2. **OAuth2 PKCE directo** — redirección nativa del navegador, sin `obsidian://` frágil.
-3. **Master & Réplicas** — un origen de verdad y espejos automáticos.
+3. **Proveedor único de nube** — un backend activo por bóveda; sin réplicas espejo automáticas.
 4. **Git simplificado** — el usuario solo configura credenciales; el plugin gestiona el repo.
 
 ## Stack Tecnológico
@@ -97,13 +103,19 @@ Núcleo del plugin con Git simplificado mediante **Isomorphic-Git** y un **Wizar
 ```
 src/
 ├── main.ts                    # ObSavePlugin — punto de entrada
-├── types.ts                   # Interfaces compartidas
+├── settings.ts                # ObSaveSettings + configs por proveedor
+├── types.ts                   # Tipos de sync y eventos UI
+├── providers/
+│   ├── IStorageProvider.ts    # Contrato común Fase 2
+│   ├── GitHubProvider.ts      # Git / GitHub (Fase 1)
+│   ├── GoogleDriveProvider.ts # Skeleton OAuth PKCE
+│   ├── OneDriveProvider.ts    # Skeleton OAuth PKCE
+│   └── ICloudProvider.ts      # Skeleton Fase 2
 ├── adapters/
-│   ├── GitAdapter.ts          # Git simplificado + wizard backend
 │   ├── githubApi.ts           # REST GitHub (crear repo)
-│   └── vaultPaths.ts          # Rutas, renombrado, conflictos
+│   └── vaultPaths.ts          # Rutas vault y utilidades Git
 ├── engine/
-│   └── SyncEngine.ts          # Motor Master-Réplicas (stub)
+│   └── SyncEngine.ts          # Orquestador proveedor único
 └── ui/
     ├── ObSaveSettingTab.ts    # Wizard + ajustes
     └── fileDecorators.ts      # Badges de estado en Explorador
