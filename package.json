@@ -1,6 +1,6 @@
 {
 	"name": "obsave",
-	"version": "1.0.13",
+	"version": "1.0.14",
 	"description": "Plugin Obsidian de sincronización multi-repositorio y auto-respaldo — Ad Astra Forge",
 	"main": "main.js",
 	"scripts": {

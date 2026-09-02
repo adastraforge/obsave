@@ -7,10 +7,16 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.13`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.13`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.14`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.14`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Fix carga plugin v1.0.14
+- **`esbuild.config.mjs`:** `platform: 'browser'`, externos Node explícitos; build producción sin `inlineDynamicImports` (incompatible con `format: cjs` en esbuild 0.21).
+- **`GoogleDriveLazyProvider`:** carga diferida de `GoogleDriveProvider` solo en OAuth/sync/botón conectar.
+- **`runtimeBridge` / `localCallbackServer`:** `window.require('http')` dentro del flujo OAuth; errores capturados sin bloquear carga.
+- **`main.ts`:** init defensivo; config GDrive pendiente sin módulos Node hasta acción del usuario.
 
 ### Fix carga plugin v1.0.13
 - **`runtimeBridge.ts`:** `require()` diferido de `http` y `electron`; fallback `window.open`.

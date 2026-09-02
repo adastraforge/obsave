@@ -3,7 +3,7 @@ import { SyncEngine } from "./engine/SyncEngine";
 import {
 	createProviderRegistry,
 	GitHubProvider,
-	GoogleDriveProvider,
+	GoogleDriveLazyProvider,
 	type IStorageProvider,
 } from "./providers";
 import type { CloudProviderId } from "./settings";
@@ -26,7 +26,7 @@ export default class ObSavePlugin extends Plugin {
 	settings: ObSaveSettings = DEFAULT_SETTINGS;
 	syncEngine!: SyncEngine;
 	private githubProvider!: GitHubProvider;
-	private googleDriveProvider!: GoogleDriveProvider;
+	private googleDriveLazy!: GoogleDriveLazyProvider;
 	private providers!: Map<CloudProviderId, IStorageProvider>;
 	private fileDecorators!: ObSaveFileDecorators;
 	private ribbonEl: HTMLElement | null = null;
@@ -36,28 +36,27 @@ export default class ObSavePlugin extends Plugin {
 		await this.loadSettings();
 
 		this.githubProvider = new GitHubProvider(this.app);
-		this.googleDriveProvider = new GoogleDriveProvider();
-
-		try {
-			this.googleDriveProvider.setConfigChangeListener((config) => {
-				this.settings.providerConfig.gdrive = config;
-				void this.saveSettings();
-			});
-		} catch (error) {
-			console.warn("[ObSave] Google Drive: listener no registrado:", error);
-		}
+		this.googleDriveLazy = new GoogleDriveLazyProvider();
+		this.googleDriveLazy.setConfigChangeListener((config) => {
+			this.settings.providerConfig.gdrive = config;
+			void this.saveSettings();
+		});
+		this.applyPendingGoogleDriveConfig();
 
 		this.providers = createProviderRegistry(
 			this.app,
 			this.githubProvider,
-			this.googleDriveProvider,
+			this.googleDriveLazy,
 		);
 		this.syncEngine = new SyncEngine(this.settings, this.providers);
 
 		try {
-			this.applyProviderConfigToRuntime();
+			const githubConfig = getGitHubConfig(this.settings);
+			if (githubConfig) {
+				void this.githubProvider.connect(githubConfig);
+			}
 		} catch (error) {
-			console.warn("[ObSave] Error aplicando configuración de proveedores:", error);
+			console.warn("[ObSave] GitHub connect omitido:", error);
 		}
 
 		this.fileDecorators = new ObSaveFileDecorators(this, this.githubProvider);
@@ -129,11 +128,7 @@ export default class ObSavePlugin extends Plugin {
 		this.settings.syncIntervalMinutes = this.clampSyncInterval(
 			this.settings.syncIntervalMinutes,
 		);
-		try {
-			this.applyProviderConfigToRuntime();
-		} catch (error) {
-			console.warn("[ObSave] Error aplicando config al cargar:", error);
-		}
+		this.applyPendingGoogleDriveConfig();
 	}
 
 	async saveSettings(): Promise<void> {
@@ -141,29 +136,27 @@ export default class ObSavePlugin extends Plugin {
 			this.settings.syncIntervalMinutes,
 		);
 		this.syncEngine?.updateSettings(this.settings);
-		try {
-			this.applyProviderConfigToRuntime();
-		} catch (error) {
-			console.warn("[ObSave] Error aplicando config al guardar:", error);
-		}
-		await this.saveData(this.settings);
-		this.startSyncInterval();
-		void this.refreshDecoratorsImmediate();
-	}
+		this.applyPendingGoogleDriveConfig();
 
-	private applyProviderConfigToRuntime(): void {
 		const githubConfig = getGitHubConfig(this.settings);
 		if (githubConfig) {
 			void this.githubProvider.connect(githubConfig);
 		}
 
+		await this.saveData(this.settings);
+		this.startSyncInterval();
+		void this.refreshDecoratorsImmediate();
+	}
+
+	/** Guarda config GDrive sin cargar módulos OAuth/Node hasta sync o botón conectar. */
+	private applyPendingGoogleDriveConfig(): void {
 		try {
 			const gdriveConfig = getGoogleDriveConfig(this.settings);
-			if (gdriveConfig?.refreshToken) {
-				void this.googleDriveProvider.connect(gdriveConfig);
-			}
+			this.googleDriveLazy?.setPendingConfig(
+				gdriveConfig?.refreshToken ? gdriveConfig : null,
+			);
 		} catch (error) {
-			console.warn("[ObSave] Google Drive connect omitido:", error);
+			console.warn("[ObSave] Config Google Drive diferida omitida:", error);
 		}
 	}
 
@@ -171,12 +164,12 @@ export default class ObSavePlugin extends Plugin {
 		return this.githubProvider;
 	}
 
-	getGoogleDriveProvider(): GoogleDriveProvider {
-		return this.googleDriveProvider;
+	getGoogleDriveLazy(): GoogleDriveLazyProvider {
+		return this.googleDriveLazy;
 	}
 
 	isGoogleDriveAvailable(): boolean {
-		return !!this.googleDriveProvider;
+		return !!this.googleDriveLazy;
 	}
 
 	/** Refresco diferido de puntos de estado en el Explorador. */

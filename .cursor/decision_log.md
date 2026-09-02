@@ -338,3 +338,21 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Import estático de Node builtins en módulos OAuth (rompe carga en runtime Obsidian).
 
 ---
+
+## DEC-023 | 2026-09-02 | Fix fatal load v1.0.14 — lazy GDrive + esbuild browser
+
+**Contexto:** v1.0.13 seguía provocando "Failed to load plugin" por evaluación temprana del grafo OAuth/Node al cargar `main.js`.
+
+**Decisión:**
+1. **`GoogleDriveLazyProvider`:** proxy `IStorageProvider` con `import()` diferido; sin export barrel de `GoogleDriveProvider`.
+2. **`esbuild.config.mjs`:** `platform: 'browser'`, lista explícita de externos Node; producción vía `esbuild.build()`.
+3. **`main.ts`:** solo UI/config en `onload`; GDrive via `setPendingConfig` hasta sync o botón OAuth.
+4. OAuth: `window.require('http')` exclusivamente al iniciar callback; try/catch en toda la cadena.
+
+**Release:** `v1.0.14`
+
+**Alternativas descartadas:**
+- `inlineDynamicImports` con `format: cjs` (no soportado en esbuild 0.21).
+- Init de `GoogleDriveProvider` en `onload` aunque falle silenciosamente.
+
+---

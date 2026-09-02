@@ -249,18 +249,13 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					.setButtonText("Conectar con Google Drive")
 					.setCta()
 					.onClick(async () => {
-						if (!this.plugin.isGoogleDriveAvailable()) {
-							new Notice("ObSave: Google Drive no está disponible en este entorno.");
-							return;
-						}
-
 						btn.setDisabled(true);
 						btn.setButtonText("Esperando autorización…");
 
 						try {
 							const config =
 								await this.plugin
-									.getGoogleDriveProvider()
+									.getGoogleDriveLazy()
 									.authenticateWithPkce();
 
 							this.plugin.settings.activeProvider = "gdrive";

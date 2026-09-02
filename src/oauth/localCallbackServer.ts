@@ -28,21 +28,42 @@ function parseCallbackPath(reqUrl: string): {
 }
 
 /**
- * Servidor HTTP efímero en 127.0.0.1:42000/callback para capturar el código OAuth.
- * `http` se carga solo al invocar esta función (no en el load del plugin).
+ * Servidor HTTP efímero en 127.0.0.1:42000/callback.
+ * `window.require('http')` solo se invoca al iniciar el servidor OAuth.
  */
 export function waitForOAuthCallback(
 	port = GOOGLE_DRIVE_CALLBACK_PORT,
 ): Promise<OAuthCallbackResult> {
 	return new Promise((resolve, reject) => {
-		const http = loadNodeHttp();
+		let http: ReturnType<typeof loadNodeHttp>;
+		try {
+			http = loadNodeHttp();
+		} catch (error) {
+			reject(
+				error instanceof Error
+					? error
+					: new Error("No se pudo cargar el módulo http."),
+			);
+			return;
+		}
+
+		if (!http) {
+			reject(
+				new Error(
+					"Servidor OAuth local no disponible (window.require/http ausente).",
+				),
+			);
+			return;
+		}
+
 		let settled = false;
+		let server: { close: () => void } | null = null;
 
 		const finish = (result: OAuthCallbackResult): void => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeoutId);
-			server.close();
+			server?.close();
 			resolve(result);
 		};
 
@@ -50,22 +71,23 @@ export function waitForOAuthCallback(
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeoutId);
-			server.close();
+			server?.close();
 			reject(error);
 		};
 
-		const server = http.createServer((req, res) => {
-			const reqUrl = req.url ?? "";
-			if (!reqUrl.startsWith("/callback")) {
-				res.writeHead(404);
-				res.end("Not found");
-				return;
-			}
+		try {
+			server = http.createServer((req, res) => {
+				const reqUrl = req.url ?? "";
+				if (!reqUrl.startsWith("/callback")) {
+					res.writeHead(404);
+					res.end("Not found");
+					return;
+				}
 
-			const { code, error, errorDescription } = parseCallbackPath(reqUrl);
+				const { code, error, errorDescription } = parseCallbackPath(reqUrl);
 
-			res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-			res.end(`<!DOCTYPE html>
+				res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+				res.end(`<!DOCTYPE html>
 <html lang="es">
 <head><meta charset="utf-8"><title>ObSave</title></head>
 <body style="font-family: system-ui; text-align: center; padding: 3rem;">
@@ -75,35 +97,42 @@ export function waitForOAuthCallback(
 </body>
 </html>`);
 
-			if (error) {
-				finish({ error, errorDescription, code });
-				return;
-			}
+				if (error) {
+					finish({ error, errorDescription, code });
+					return;
+				}
 
-			if (!code) {
-				fail(new Error("Callback OAuth sin código de autorización."));
-				return;
-			}
+				if (!code) {
+					fail(new Error("Callback OAuth sin código de autorización."));
+					return;
+				}
 
-			finish({ code });
-		});
+				finish({ code });
+			});
 
-		server.on("error", (err) => {
+			server.on("error", (err) => {
+				fail(
+					err instanceof Error
+						? err
+						: new Error("No se pudo iniciar el servidor OAuth local."),
+				);
+			});
+
+			const timeoutId = setTimeout(() => {
+				fail(new Error("Tiempo de espera agotado para la autorización OAuth."));
+			}, CALLBACK_TIMEOUT_MS);
+
+			server.listen(port, "127.0.0.1", () => {
+				console.log(
+					`[ObSave] OAuth callback escuchando en 127.0.0.1:${port}/callback`,
+				);
+			});
+		} catch (error) {
 			fail(
-				err instanceof Error
-					? err
-					: new Error("No se pudo iniciar el servidor OAuth local."),
+				error instanceof Error
+					? error
+					: new Error("Error al crear servidor OAuth local."),
 			);
-		});
-
-		const timeoutId = setTimeout(() => {
-			fail(new Error("Tiempo de espera agotado para la autorización OAuth."));
-		}, CALLBACK_TIMEOUT_MS);
-
-		server.listen(port, "127.0.0.1", () => {
-			console.log(
-				`[ObSave] OAuth callback escuchando en 127.0.0.1:${port}/callback`,
-			);
-		});
+		}
 	});
 }
