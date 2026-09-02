@@ -251,17 +251,22 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					.setButtonText("Conectar con Google Drive")
 					.setCta()
 					.onClick(async () => {
+						console.log("[ObSave UI] Botón Conectar Clickeado");
+						new Notice("Iniciando flujo de autorización...");
+
 						btn.setDisabled(true);
 						btn.setButtonText("Conectando…");
 
 						let connected = false;
 						try {
-							console.log("[ObSave OAuth] Botón conectar pulsado");
 							const config =
 								await this.plugin
 									.getGoogleDriveLazy()
 									.authenticateWithPkce();
 
+							console.log(
+								"[ObSave OAuth] Tokens obtenidos con éxito, guardando settings...",
+							);
 							this.plugin.settings.activeProvider = "gdrive";
 							this.plugin.settings.providerConfig.gdrive = {
 								...config,
@@ -270,12 +275,13 @@ export class ObSaveSettingTab extends PluginSettingTab {
 							await this.plugin.saveSettings();
 
 							connected = true;
-							console.log("[ObSave OAuth] Configuración guardada en Obsidian");
 							new Notice("¡Google Drive conectado correctamente!");
 							this.display();
-						} catch (error) {
-							console.error("[ObSave OAuth] Fallo en flujo de conexión:", error);
-							new Notice("Error al conectar con Google Drive");
+						} catch (e) {
+							console.error("[ObSave UI Error]", e);
+							const message =
+								e instanceof Error ? e.message : String(e);
+							new Notice("Error en OAuth: " + message);
 						} finally {
 							if (!connected) {
 								btn.setDisabled(false);

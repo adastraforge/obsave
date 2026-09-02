@@ -78,14 +78,17 @@ export class GoogleDriveProvider implements IStorageProvider {
 		console.log("[ObSave OAuth] Iniciando flujo PKCE");
 
 		const clientId = this.requireClientId();
+
+		console.log("[ObSave OAuth] Generando PKCE verifier y challenge...");
 		const codeVerifier = generateCodeVerifier();
 		const codeChallenge = await generateCodeChallenge(codeVerifier);
 		const state = generateCodeVerifier();
 
-		console.log("[ObSave OAuth] Servidor callback y navegador");
 		const callbackPromise = waitForOAuthCallback();
 		const authUrl = this.buildAuthUrl(codeChallenge, state);
 
+		console.log("[ObSave OAuth] Abriendo URL de autorización:", authUrl);
+		console.log("[ObSave OAuth] Esperando respuesta en el puerto 42000...");
 		await this.openExternal(authUrl);
 
 		const callback = await callbackPromise;
@@ -200,6 +203,8 @@ export class GoogleDriveProvider implements IStorageProvider {
 		clientId?: string,
 	): Promise<GoogleTokenResponse> {
 		const resolvedClientId = clientId ?? this.requireClientId();
+		console.log("[ObSave OAuth] Solicitando tokens con el code recibido...");
+
 		const body = new URLSearchParams({
 			client_id: resolvedClientId,
 			grant_type: "authorization_code",
@@ -216,13 +221,15 @@ export class GoogleDriveProvider implements IStorageProvider {
 			throw: false,
 		});
 
-		if (response.status >= 400) {
-			console.error("[ObSave OAuth] Token endpoint respondió error", {
-				status: response.status,
-				body: response.text,
-			});
+		console.log("[ObSave OAuth] Respuesta token endpoint", {
+			status: response.status,
+		});
+
+		if (response.status !== 200) {
+			const responseText = response.text;
+			console.error("[ObSave Token Error Body]", responseText);
 			throw new Error(
-				`Error al intercambiar código OAuth (${response.status}): ${response.text}`,
+				`Error al intercambiar código OAuth (${response.status}): ${responseText}`,
 			);
 		}
 

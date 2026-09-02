@@ -411,3 +411,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.18`
 
 ---
+
+## DEC-028 | 2026-09-02 | Logging exhaustivo OAuth Google Drive
+
+**Contexto:** Depurar fallos silenciosos en el flujo OAuth requiere trazas visibles en consola Obsidian y notices en UI.
+
+**Decisión:**
+1. UI: `[ObSave UI] Botón Conectar Clickeado`, Notice inicial, catch con `[ObSave UI Error]` y mensaje detallado.
+2. Provider: logs PKCE, URL, puerto 42000, solicitud de tokens y cuerpo de error Google.
+3. Post-éxito: log guardado settings + `display()` obligatorio.
+
+**Release:** `v1.0.20`
+
+---
