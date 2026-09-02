@@ -7,10 +7,15 @@ El usuario mantiene control total de sus datos: el vault se replica de forma tra
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.1`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.1`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.2`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.2`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### UI y sync (v1.0.2)
+- **Badge de versión:** cabecera de ajustes muestra `ObSave vX.Y.Z — Sincronización multi-repositorio`.
+- **Slider nativo:** intervalo 1–15 min con descripción `Cada X minutos`.
+- **Desconectar:** sección "Gestión de Conexión" resetea Master, credenciales y vuelve al wizard.
 
 ### Sincronización automática (v1.0.1)
 - **Al iniciar:** sync automático en `onload()` (comportamiento fijo, sin toggle).

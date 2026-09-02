@@ -148,6 +148,41 @@ export class GitAdapter {
 		};
 	}
 
+	/** Limpia credenciales del remoto origin en .git (sin borrar el repo local) */
+	async clearGitSession(): Promise<void> {
+		const basePath = getVaultBasePath(this.app);
+		const gitDir = path.join(basePath, ".git");
+		if (!fs.existsSync(gitDir)) return;
+
+		const remotes = await git.listRemotes({ fs, dir: basePath });
+		const origin = remotes.find((r) => r.remote === REMOTE_NAME);
+		if (!origin?.url) return;
+
+		const cleanUrl = this.stripCredentialsFromRemoteUrl(origin.url);
+		if (cleanUrl === origin.url) return;
+
+		await git.deleteRemote({ fs, dir: basePath, remote: REMOTE_NAME });
+		await git.addRemote({
+			fs,
+			dir: basePath,
+			remote: REMOTE_NAME,
+			url: cleanUrl,
+		});
+	}
+
+	private stripCredentialsFromRemoteUrl(url: string): string {
+		if (url.startsWith("git@")) return url;
+
+		try {
+			const parsed = new URL(url);
+			parsed.username = "";
+			parsed.password = "";
+			return parsed.toString();
+		} catch {
+			return url.replace(/^https?:\/\/[^@]+@/i, "https://");
+		}
+	}
+
 	private buildRepoConfig(params: {
 		label: string;
 		owner: string;

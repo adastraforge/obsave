@@ -1,4 +1,5 @@
 import { Notice, Plugin, setIcon } from "obsidian";
+import { GitAdapter } from "./adapters/GitAdapter";
 import { SyncEngine } from "./engine/SyncEngine";
 import { ObSaveSettingTab } from "./ui/ObSaveSettingTab";
 import {
@@ -87,6 +88,19 @@ export default class ObSavePlugin extends Plugin {
 
 	async runSync(): Promise<void> {
 		await this.triggerSync();
+	}
+
+	/** Desconecta el repositorio Master y limpia credenciales Git de la sesión */
+	async disconnectRepository(): Promise<void> {
+		const gitAdapter = new GitAdapter(this.app);
+		await gitAdapter.clearGitSession();
+
+		this.settings.masterRepo = null;
+		this.settings.replicaRepos = [];
+		this.settings.lastSyncAt = null;
+		this.settings.syncStatus = "idle";
+		await this.saveSettings();
+		this.updateRibbonIcon("idle");
 	}
 
 	clampSyncInterval(minutes: number): number {

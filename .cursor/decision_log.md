@@ -123,3 +123,19 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Recalcular ruta con `path.join(dirname(getBasePath()), name)` sin usar el retorno del rename (frágil post-rename).
 
 ---
+
+## DEC-010 | 2026-08-24 | UI v1.0.2: badge de versión y desconexión segura
+
+**Contexto:** Los testers BRAT necesitan identificar la versión activa y poder reiniciar la configuración sin reinstalar el plugin.
+
+**Decisión:**
+- Mostrar `this.plugin.manifest.version` en la cabecera de ajustes.
+- Sección "Gestión de Conexión" con botón `mod-warning` que limpia Master/credenciales, sanitiza `origin` en `.git` y recarga el wizard.
+
+**Release:** `v1.0.2`
+
+**Alternativas descartadas:**
+- Borrar `.git` al desconectar (destructivo; el usuario podría querer conservar historial local).
+- Confirmación modal extra (MVP: acción directa con notice).
+
+---

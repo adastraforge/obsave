@@ -22,9 +22,12 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "ObSave" });
+		const version = this.plugin.manifest.version;
+		containerEl.createEl("h2", {
+			text: `ObSave v${version} — Sincronización multi-repositorio`,
+		});
 		containerEl.createEl("p", {
-			text: "Sincronización multi-repositorio — Ad Astra Forge",
+			text: "Ad Astra Forge",
 			cls: "setting-item-description",
 		});
 
@@ -59,6 +62,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 		containerEl.createEl("hr");
 		this.renderCommonSettings(containerEl);
+		this.renderConnectionManagement(containerEl);
 	}
 
 	private renderSetupWizard(containerEl: HTMLElement): void {
@@ -414,5 +418,38 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			text: "Fase 1: Git Core Simplificado con Isomorphic-Git",
 			cls: "setting-item-description",
 		});
+	}
+
+	private renderConnectionManagement(containerEl: HTMLElement): void {
+		containerEl.createEl("hr");
+		containerEl.createEl("h3", { text: "Gestión de Conexión" });
+
+		new Setting(containerEl)
+			.setName("Desconectar repositorio")
+			.setDesc(
+				"Elimina la configuración del Master, credenciales guardadas y vuelve al asistente de primera sincronización. No borra la carpeta .git local.",
+			)
+			.addButton((btn) => {
+				btn.setButtonText("Desconectar repositorio");
+				btn.buttonEl.addClass("mod-warning");
+				btn.onClick(async () => {
+					btn.setDisabled(true);
+					try {
+						await this.plugin.disconnectRepository();
+						this.pendingExistingUrl = "";
+						this.pendingUsername = "";
+						this.pendingToken = "";
+						this.wizardMode = "choose";
+						new Notice("ObSave: repositorio desconectado.");
+						this.display();
+					} catch (error) {
+						const msg =
+							error instanceof Error ? error.message : "Error desconocido";
+						new Notice(`ObSave: ${msg}`);
+					} finally {
+						btn.setDisabled(false);
+					}
+				});
+			});
 	}
 }
