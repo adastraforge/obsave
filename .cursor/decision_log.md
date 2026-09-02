@@ -385,3 +385,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.16`
 
 ---
+
+## DEC-026 | 2026-09-02 | Callback OAuth HTML y resolución de promesa
+
+**Contexto:** Tras autorizar en Google, la ventana de callback no cerraba correctamente y la UI permanecía en estado «Esperando autorización» si la promesa se resolvía antes de completar la respuesta HTTP.
+
+**Decisión:**
+1. **`localCallbackServer`:** HTML visual con `window.open('', '_self', ''); window.close();`; `finish()` en callback de `res.end()`.
+2. **`GoogleDriveProvider`:** intercambio de tokens con try/catch; `persistConfig` dispara `saveSettings` vía listener.
+3. **`ObSaveSettingTab`:** «Conectando…» / «Cuenta de Google Conectada (email)»; Notice genérico en error.
+
+**Release:** `v1.0.17`
+
+---

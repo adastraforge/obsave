@@ -98,11 +98,17 @@ export class GoogleDriveProvider implements IStorageProvider {
 			throw new Error("No se recibió código de autorización.");
 		}
 
-		const tokens = await this.exchangeCodeForTokens(
-			callback.code,
-			codeVerifier,
-			clientId,
-		);
+		let tokens: GoogleTokenResponse;
+		try {
+			tokens = await this.exchangeCodeForTokens(
+				callback.code,
+				codeVerifier,
+				clientId,
+			);
+		} catch (error) {
+			console.error("[ObSave] Error al intercambiar código OAuth:", error);
+			throw new Error("Error al conectar con Google Drive");
+		}
 
 		if (!tokens.refresh_token) {
 			throw new Error(
@@ -110,7 +116,14 @@ export class GoogleDriveProvider implements IStorageProvider {
 			);
 		}
 
-		const userInfo = await this.fetchUserInfo(tokens.access_token);
+		let userInfo: GoogleUserInfo;
+		try {
+			userInfo = await this.fetchUserInfo(tokens.access_token);
+		} catch (error) {
+			console.error("[ObSave] Error al obtener perfil Google:", error);
+			throw new Error("Error al conectar con Google Drive");
+		}
+
 		const config: GoogleDriveProviderConfig = {
 			accessToken: tokens.access_token,
 			refreshToken: tokens.refresh_token,
@@ -159,13 +172,14 @@ export class GoogleDriveProvider implements IStorageProvider {
 		await openExternalUrl(url);
 	}
 
-	private async exchangeCodeForTokens(
+	async exchangeCodeForTokens(
 		code: string,
 		codeVerifier: string,
-		clientId: string,
+		clientId?: string,
 	): Promise<GoogleTokenResponse> {
+		const resolvedClientId = clientId ?? this.requireClientId();
 		const body = new URLSearchParams({
-			client_id: clientId,
+			client_id: resolvedClientId,
 			grant_type: "authorization_code",
 			code,
 			code_verifier: codeVerifier,

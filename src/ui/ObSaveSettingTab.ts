@@ -214,9 +214,11 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 		const existing = this.plugin.settings.providerConfig.gdrive;
 		if (existing?.refreshToken) {
+			const accountLabel =
+				existing.email ?? existing.displayName ?? "Google";
 			containerEl.createEl("p", {
-				text: `Cuenta conectada: ${existing.displayName ?? existing.email ?? "Google"}`,
-				cls: "setting-item-description",
+				text: `Cuenta de Google Conectada (${accountLabel})`,
+				cls: "setting-item-description obsave-gdrive-connected",
 			});
 
 			new Setting(containerEl)
@@ -250,8 +252,9 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					.setCta()
 					.onClick(async () => {
 						btn.setDisabled(true);
-						btn.setButtonText("Esperando autorización…");
+						btn.setButtonText("Conectando…");
 
+						let connected = false;
 						try {
 							const config =
 								await this.plugin
@@ -262,19 +265,21 @@ export class ObSaveSettingTab extends PluginSettingTab {
 							this.plugin.settings.providerConfig.gdrive = config;
 							await this.plugin.saveSettings();
 
+							connected = true;
+							const accountLabel =
+								config.email ?? config.displayName ?? "Google";
 							new Notice(
-								`ObSave: conectado como ${config.displayName ?? config.email ?? "Google"}.`,
+								`ObSave: Cuenta de Google Conectada (${accountLabel}).`,
 							);
 							this.display();
 						} catch (error) {
-							const msg =
-								error instanceof Error
-									? error.message
-									: "Error desconocido de OAuth";
-							new Notice(`ObSave: ${msg}`);
+							console.error("[ObSave] OAuth Google Drive:", error);
+							new Notice("Error al conectar con Google Drive");
 						} finally {
-							btn.setDisabled(false);
-							btn.setButtonText("Conectar con Google Drive");
+							if (!connected) {
+								btn.setDisabled(false);
+								btn.setButtonText("Conectar con Google Drive");
+							}
 						}
 					}),
 			);
