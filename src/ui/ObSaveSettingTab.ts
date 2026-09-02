@@ -215,7 +215,10 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		const existing = this.plugin.settings.providerConfig.gdrive;
 		if (existing?.refreshToken && existing.enabled !== false) {
 			const accountLabel =
-				existing.email ?? existing.displayName ?? "Google";
+				existing.accountEmail ??
+				existing.email ??
+				existing.displayName ??
+				"Google";
 			containerEl.createEl("p", {
 				text: `Cuenta de Google Conectada (${accountLabel})`,
 				cls: "setting-item-description obsave-gdrive-connected",
@@ -272,6 +275,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 										expiresAt: config.expiresAt,
 										email: config.email,
 										displayName: config.displayName,
+										accountEmail: config.accountEmail,
 										folderId: config.folderId,
 									};
 									await this.plugin.saveSettings();

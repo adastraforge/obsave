@@ -7,10 +7,14 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.25`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.25`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.26`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.26`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Perfil userinfo defensivo v1.0.26
+- **Scopes OAuth:** `drive.file email profile`.
+- **`fetchUserProfile`:** fallback sin excepción en 401/403; `accountEmail` en settings.
 
 ### Validación credenciales OAuth v1.0.25
 - **`requireGoogleCredentials()`:** valida CLIENT_ID y CLIENT_SECRET inyectados en build.

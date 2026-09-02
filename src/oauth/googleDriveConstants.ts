@@ -3,7 +3,7 @@ export const GOOGLE_DRIVE_REDIRECT_URI =
 	"http://127.0.0.1:42000/callback";
 
 export const GOOGLE_DRIVE_OAUTH_SCOPE =
-	"https://www.googleapis.com/auth/drive.file";
+	"https://www.googleapis.com/auth/drive.file email profile";
 
 export const GOOGLE_DRIVE_AUTH_URL =
 	"https://accounts.google.com/o/oauth2/v2/auth";

@@ -77,6 +77,11 @@ function buildTokenExchangeBody(
 	return bodyParams.toString();
 }
 
+const DEFAULT_USER_PROFILE: GoogleUserInfo = {
+	email: "Cuenta Conectada",
+	name: "Google Drive User",
+};
+
 const TOKEN_EXCHANGE_FIELD_NAMES = [
 	"client_id",
 	"client_secret",
@@ -200,10 +205,11 @@ export class GoogleDriveProvider implements IStorageProvider {
 			}
 
 			console.log("[ObSave OAuth] Obteniendo perfil de usuario");
-			const userInfo = await this.fetchUserInfo(tokens.access_token);
+			const userProfile = await this.fetchUserProfile(tokens.access_token);
 			console.log("[ObSave OAuth] Perfil obtenido", {
-				email: userInfo.email ?? null,
-				name: userInfo.name ?? null,
+				email: userProfile.email,
+				name: userProfile.name,
+				accountEmail: userProfile.accountEmail ?? null,
 			});
 
 			const config: GoogleDriveProviderConfig = {
@@ -211,8 +217,9 @@ export class GoogleDriveProvider implements IStorageProvider {
 				accessToken: tokens.access_token,
 				refreshToken: tokens.refresh_token,
 				expiresAt: Date.now() + tokens.expires_in * 1000,
-				email: userInfo.email,
-				displayName: userInfo.name ?? userInfo.email,
+				email: userProfile.email,
+				displayName: userProfile.name,
+				accountEmail: userProfile.accountEmail,
 			};
 
 			this.config = config;
@@ -396,7 +403,11 @@ export class GoogleDriveProvider implements IStorageProvider {
 		return this.config.accessToken;
 	}
 
-	private async fetchUserInfo(accessToken: string): Promise<GoogleUserInfo> {
+	private async fetchUserProfile(accessToken: string): Promise<{
+		email: string;
+		name: string;
+		accountEmail?: string;
+	}> {
 		const response = await requestUrl({
 			url: GOOGLE_DRIVE_USERINFO_URL,
 			method: "GET",
@@ -404,13 +415,21 @@ export class GoogleDriveProvider implements IStorageProvider {
 			throw: false,
 		});
 
-		if (response.status >= 400) {
-			throw new Error(
-				`No se pudo obtener perfil Google (${response.status}).`,
+		if (response.status !== 200) {
+			console.warn(
+				`[ObSave OAuth] userinfo respondió ${response.status} — perfil por defecto`,
 			);
+			return { ...DEFAULT_USER_PROFILE };
 		}
 
-		return response.json as GoogleUserInfo;
+		const data = response.json as GoogleUserInfo;
+		const accountEmail = data.email?.trim() || undefined;
+
+		return {
+			email: accountEmail ?? DEFAULT_USER_PROFILE.email!,
+			name: data.name?.trim() || DEFAULT_USER_PROFILE.name!,
+			accountEmail,
+		};
 	}
 
 	private persistConfig(config: GoogleDriveProviderConfig): void {

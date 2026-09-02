@@ -20,6 +20,8 @@ export interface GoogleDriveProviderConfig {
 	expiresAt?: number;
 	email?: string;
 	displayName?: string;
+	/** Email real devuelto por userinfo (si el scope lo permitió) */
+	accountEmail?: string;
 	folderId?: string;
 }
 

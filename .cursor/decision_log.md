@@ -490,3 +490,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.25`
 
 ---
+
+## DEC-034 | 2026-09-02 | Scopes email/profile y userinfo defensivo
+
+**Contexto:** userinfo fallaba con 401/403 por scope insuficiente y abortaba el flujo OAuth tras tokens válidos.
+
+**Decisión:**
+1. Scope ampliado: `drive.file email profile`.
+2. `fetchUserProfile` retorna perfil por defecto si userinfo no es 200.
+3. `accountEmail` persistido en `providerConfig.gdrive` cuando userinfo OK.
+
+**Release:** `v1.0.26`
+
+---
