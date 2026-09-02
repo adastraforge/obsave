@@ -10,14 +10,9 @@ import {
 	resolveGitHubUsername,
 } from "./githubApi";
 import {
-	conflictCopyPath,
 	ensureGitIgnore,
-	formatConflictDate,
 	getVaultBasePath,
-	prefixedConflictPath,
-	readVaultFileBuffer,
 	resolveRepoLabel,
-	walkVaultFiles,
 	writeVaultFile,
 } from "./vaultPaths";
 import type { GitSetupResult, RepoConfig, SyncPerformResult } from "../types";
@@ -33,7 +28,6 @@ const AUTHOR = {
 	email: "obsave@adastraforge.local",
 };
 
-/** Rutas excluidas del escaneo de sync (config interna ObSave) */
 const SYNC_EXCLUDED_PREFIXES = [".obsidian/", ".git/"];
 
 export interface NewRepoWizardInput {
@@ -52,8 +46,8 @@ export class GitAdapter {
 	constructor(private app: App) {}
 
 	/**
-	 * Ciclo de sincronización Git (remoto primero, luego local, luego push):
-	 * 1) fetch  2) merge+checkout  3) commit local  4) fallback [Local]/[Sync]  5) push
+	 * Sync Git — Last-Write-Wins, sin duplicación de archivos:
+	 * a) fetch  b) merge+checkout remoto  c) commit local  d) push (+ reintento)
 	 */
 	async performSync(masterRepo: RepoConfig): Promise<SyncPerformResult> {
 		const basePath = getVaultBasePath(this.app);
@@ -66,9 +60,6 @@ export class GitAdapter {
 
 		await this.ensureRepoReady(basePath, masterRepo, username, token);
 
-		const conflictNotices: string[] = [];
-
-		// PASO 1 — fetch
 		await this.fetchRemote(basePath, username, token);
 
 		const matrix = await git.statusMatrix({ fs, dir: basePath });
@@ -87,70 +78,22 @@ export class GitAdapter {
 			};
 		}
 
-		// PASO 2 — reconciliar remoto → local
-		let downloadedCount = 0;
-		try {
-			downloadedCount = await this.reconcileRemote(basePath, username, token);
-		} catch (reconcileError) {
-			console.warn("[ObSave] Reconciliación falló, aplicando fallback:", reconcileError);
-			const notices = await this.applyMdConflictFallback(basePath, username, token);
-			conflictNotices.push(...notices);
-			downloadedCount = notices.length;
-		}
-
-		// Detectar conflictos .md residuales tras checkout
-		const postReconcileNotices = await this.applyMdConflictFallback(
+		const downloadedCount = await this.integrateRemoteChanges(
 			basePath,
 			username,
 			token,
 		);
-		for (const notice of postReconcileNotices) {
-			if (!conflictNotices.includes(notice)) {
-				conflictNotices.push(notice);
-			}
-		}
+		const uploadedCount = await this.commitLocalChanges(basePath);
+		const pushed = await this.pushWithRetry(basePath, username, token);
 
-		// PASO 3 — escanear y commitear cambios locales
-		let uploadedCount = 0;
-		try {
-			uploadedCount = await this.commitLocalChanges(basePath);
-		} catch (commitError) {
-			console.warn("[ObSave] Commit local falló, aplicando fallback:", commitError);
-			const notices = await this.applyMdConflictFallback(basePath, username, token);
-			conflictNotices.push(...notices);
-			uploadedCount = await this.commitLocalChanges(basePath);
-		}
-
-		// PASO 5 — push seguro
-		let pushed = false;
-		try {
-			pushed = await this.pushSafe(basePath, username, token);
-		} catch (pushError) {
-			console.warn("[ObSave] Push falló, aplicando fallback y reintentando:", pushError);
-			const notices = await this.applyMdConflictFallback(basePath, username, token);
-			conflictNotices.push(...notices);
-			uploadedCount += await this.commitLocalChanges(basePath);
-			pushed = await this.pushSafe(basePath, username, token);
-		}
-
-		const message = this.buildSyncMessage(
-			uploadedCount,
-			downloadedCount,
-			pushed,
-			conflictNotices,
-		);
+		const message = this.buildSyncMessage(uploadedCount, downloadedCount, pushed);
 		console.log(`[ObSave] ${message}`);
 
 		return {
 			message,
 			downloadedCount,
 			uploadedCount,
-			noChanges:
-				uploadedCount === 0 &&
-				downloadedCount === 0 &&
-				!pushed &&
-				conflictNotices.length === 0,
-			conflictNotices,
+			noChanges: uploadedCount === 0 && downloadedCount === 0 && !pushed,
 		};
 	}
 
@@ -158,10 +101,12 @@ export class GitAdapter {
 		uploaded: number,
 		downloaded: number,
 		pushed: boolean,
-		conflictNotices: string[] = [],
 	): string {
-		const parts: string[] = [];
+		if (uploaded === 0 && downloaded === 0 && !pushed) {
+			return "ObSave: Bóveda al día (sin cambios)";
+		}
 
+		const parts: string[] = [];
 		if (downloaded > 0) {
 			parts.push(
 				`Se descargaron ${downloaded} cambio${downloaded === 1 ? "" : "s"} de GitHub`,
@@ -173,24 +118,93 @@ export class GitAdapter {
 			);
 		}
 
-		if (parts.length === 0 && !pushed && conflictNotices.length === 0) {
-			return "ObSave: Bóveda al día (sin cambios)";
-		}
-
-		let message =
-			parts.length > 0
-				? `ObSave: ${parts.join(". ")}`
-				: "ObSave: Bóveda al día (sin cambios)";
-
-		if (conflictNotices.length > 0) {
-			message = `${message}. ${conflictNotices.join(". ")}`;
-		}
-
-		return message;
+		return parts.length > 0
+			? `ObSave: ${parts.join(". ")}`
+			: "ObSave: Bóveda al día (sin cambios)";
 	}
 
-	/** PASO A — Escanea, stagea y commitea cambios locales */
-	private async commitLocalChanges(basePath: string): Promise<number> {
+	/** b) Integrar commits remotos: merge (no FF) + checkout force + LWW en conflictos */
+	private async integrateRemoteChanges(
+		basePath: string,
+		username: string,
+		token: string,
+	): Promise<number> {
+		const localHeadBefore = await this.resolveRefSafe(basePath, LOCAL_HEAD_REF);
+		const remoteHead = await this.resolveRefSafe(basePath, REMOTE_TRACKING_REF);
+
+		if (!remoteHead || localHeadBefore === remoteHead) return 0;
+
+		let downloadedCount = 0;
+		if (localHeadBefore) {
+			downloadedCount = await this.countRemoteDiffFiles(
+				basePath,
+				localHeadBefore,
+				remoteHead,
+			);
+		}
+
+		try {
+			await git.merge({
+				fs,
+				dir: basePath,
+				ours: DEFAULT_BRANCH,
+				theirs: REMOTE_TRACKING_REF,
+				fastForwardOnly: false,
+				author: AUTHOR,
+			});
+		} catch (mergeError) {
+			console.warn("[ObSave] Merge conflictivo — aplicando Last-Write-Wins:", mergeError);
+			await this.applyLastWriteWins(basePath, remoteHead);
+			await this.commitLocalChanges(basePath, "sync: last-write-wins merge");
+		}
+
+		await git.checkout({
+			fs,
+			dir: basePath,
+			ref: DEFAULT_BRANCH,
+			force: true,
+		});
+
+		console.log(
+			`[ObSave] Remoto integrado: ${downloadedCount} cambio(s), rutas originales preservadas`,
+		);
+		return downloadedCount;
+	}
+
+	/**
+	 * Last-Write-Wins: gana la versión con timestamp más reciente.
+	 * Escribe siempre en la ruta original — sin prefijos [Local]/[Sync].
+	 */
+	private async applyLastWriteWins(
+		basePath: string,
+		remoteHead: string,
+	): Promise<void> {
+		const { commit } = await git.readCommit({ fs, dir: basePath, oid: remoteHead });
+		const remoteTimeMs = commit.committer.timestamp * 1000;
+		const remoteFiles = await this.listFilesInCommit(basePath, remoteHead);
+
+		for (const [filePath, remoteContent] of remoteFiles) {
+			if (!this.shouldTrackPath(filePath)) continue;
+
+			const fullPath = path.join(basePath, filePath);
+			let useRemote = true;
+
+			if (fs.existsSync(fullPath)) {
+				const localMtime = fs.statSync(fullPath).mtimeMs;
+				useRemote = remoteTimeMs >= localMtime;
+			}
+
+			if (useRemote) {
+				await writeVaultFile(basePath, filePath, remoteContent);
+			}
+		}
+	}
+
+	/** c) Escanea, stagea y commitea cambios locales pendientes */
+	private async commitLocalChanges(
+		basePath: string,
+		message?: string,
+	): Promise<number> {
 		const matrix = await git.statusMatrix({ fs, dir: basePath });
 		let stagedCount = 0;
 
@@ -216,124 +230,24 @@ export class GitAdapter {
 		await git.commit({
 			fs,
 			dir: basePath,
-			message: `sync: auto-commit local [${timestamp}]`,
+			message: message ?? `sync: auto-commit local [${timestamp}]`,
 			author: AUTHOR,
 		});
 
-		console.log(`[ObSave] PASO A: ${stagedCount} archivo(s) commiteados localmente`);
+		console.log(`[ObSave] ${stagedCount} archivo(s) commiteados localmente`);
 		return stagedCount;
 	}
 
-	/** PASO 2 — Fetch ya ejecutado; merge remoto + checkout forzado al working directory */
-	private async reconcileRemote(
-		basePath: string,
-		username: string,
-		token: string,
-	): Promise<number> {
-		const localHeadBefore = await this.resolveRefSafe(basePath, LOCAL_HEAD_REF);
-		const remoteHead = await this.resolveRefSafe(basePath, REMOTE_TRACKING_REF);
-
-		if (!remoteHead) return 0;
-		if (localHeadBefore === remoteHead) return 0;
-
-		let downloadedCount = 0;
-		if (localHeadBefore) {
-			downloadedCount = await this.countRemoteDiffFiles(
-				basePath,
-				localHeadBefore,
-				remoteHead,
-			);
-		}
-
-		try {
-			await git.merge({
-				fs,
-				dir: basePath,
-				ours: DEFAULT_BRANCH,
-				theirs: REMOTE_TRACKING_REF,
-				author: AUTHOR,
-			});
-		} catch (mergeError) {
-			console.warn("[ObSave] Merge con conflictos:", mergeError);
-			throw mergeError;
-		}
-
-		await git.checkout({
-			fs,
-			dir: basePath,
-			ref: DEFAULT_BRANCH,
-			force: true,
-		});
-
-		console.log(
-			`[ObSave] PASO 2: ${downloadedCount} cambio(s) integrados desde remoto`,
-		);
-		return downloadedCount;
-	}
-
-	/**
-	 * PASO 4 — Conflict Fallback para archivos .md:
-	 * [Local] conserva copia local, [Sync] escribe versión remota.
-	 */
-	private async applyMdConflictFallback(
-		basePath: string,
-		username: string,
-		token: string,
-	): Promise<string[]> {
-		const remoteHead = await this.resolveRefSafe(basePath, REMOTE_TRACKING_REF);
-		if (!remoteHead) return [];
-
-		const remoteFiles = await this.listFilesInCommit(basePath, remoteHead);
-		const notices: string[] = [];
-
-		for (const [filePath, remoteContent] of remoteFiles) {
-			if (!filePath.endsWith(".md")) continue;
-			if (!this.shouldTrackPath(filePath)) continue;
-
-			const localContent = await readVaultFileBuffer(basePath, filePath);
-			if (!localContent || localContent.equals(remoteContent)) continue;
-
-			const localCopyPath = prefixedConflictPath(filePath, "Local");
-			const syncCopyPath = prefixedConflictPath(filePath, "Sync");
-			const fileName = path.basename(filePath);
-
-			await writeVaultFile(basePath, localCopyPath, localContent);
-			await writeVaultFile(basePath, syncCopyPath, remoteContent);
-
-			const notice = `ObSave: Conflicto detectado en ${fileName}. Se crearon copias [Local] y [Sync]`;
-			notices.push(notice);
-			console.warn(`[ObSave] ${notice}`);
-		}
-
-		return notices;
-	}
-
-	/** PASO 5 — Push seguro si HEAD local está adelante del remoto */
-	private async pushSafe(
+	/** d) Push con reintento: fetch + merge + push ante PushRejected */
+	private async pushWithRetry(
 		basePath: string,
 		username: string,
 		token: string,
 	): Promise<boolean> {
-		await this.fetchRemote(basePath, username, token);
+		const auth = this.onAuth(username, token);
 
-		const localHead = await this.resolveRefSafe(basePath, LOCAL_HEAD_REF);
-		const remoteHead = await this.resolveRefSafe(basePath, REMOTE_TRACKING_REF);
-
-		if (!localHead) return false;
-		if (localHead === remoteHead) return false;
-
-		if (remoteHead) {
-			const mergeBase = await git
-				.findMergeBase({
-					fs,
-					dir: basePath,
-					oids: [localHead, remoteHead],
-				})
-				.catch(() => []);
-
-			if (mergeBase.length > 0 && mergeBase[0] === localHead) {
-				return false;
-			}
+		if (!(await this.shouldPush(basePath))) {
+			return false;
 		}
 
 		try {
@@ -343,41 +257,46 @@ export class GitAdapter {
 				dir: basePath,
 				remote: REMOTE_NAME,
 				ref: DEFAULT_BRANCH,
-				onAuth: this.onAuth(username, token),
+				onAuth: auth,
 			});
-			console.log("[ObSave] PASO 5: push completado");
+			console.log("[ObSave] Push completado");
 			return true;
-		} catch (firstError) {
+		} catch (pushError) {
+			console.warn("[ObSave] Push rechazado, reintentando tras merge:", pushError);
 			await this.fetchRemote(basePath, username, token);
-			try {
-				await git.merge({
-					fs,
-					dir: basePath,
-					ours: DEFAULT_BRANCH,
-					theirs: REMOTE_TRACKING_REF,
-					author: AUTHOR,
-				});
-			} catch {
-				await this.applyMdConflictFallback(basePath, username, token);
-			}
-			await git.checkout({
-				fs,
-				dir: basePath,
-				ref: DEFAULT_BRANCH,
-				force: true,
-			});
+			await this.integrateRemoteChanges(basePath, username, token);
 			await this.commitLocalChanges(basePath);
+
 			await git.push({
 				fs,
 				http,
 				dir: basePath,
 				remote: REMOTE_NAME,
 				ref: DEFAULT_BRANCH,
-				onAuth: this.onAuth(username, token),
+				onAuth: auth,
 			});
-			console.log("[ObSave] PASO 5: push completado tras reconciliación");
+			console.log("[ObSave] Push completado tras reconciliación");
 			return true;
 		}
+	}
+
+	private async shouldPush(basePath: string): Promise<boolean> {
+		const localHead = await this.resolveRefSafe(basePath, LOCAL_HEAD_REF);
+		const remoteHead = await this.resolveRefSafe(basePath, REMOTE_TRACKING_REF);
+
+		if (!localHead) return false;
+		if (!remoteHead) return true;
+		if (localHead === remoteHead) return false;
+
+		const mergeBase = await git
+			.findMergeBase({ fs, dir: basePath, oids: [localHead, remoteHead] })
+			.catch(() => []);
+
+		if (mergeBase.length > 0 && mergeBase[0] === localHead) {
+			return false;
+		}
+
+		return true;
 	}
 
 	private shouldTrackPath(filepath: string): boolean {
@@ -453,7 +372,6 @@ export class GitAdapter {
 		return new Promise((resolve) => setTimeout(resolve, ms));
 	}
 
-	/** PASO 1-A — Crear repo nuevo en GitHub y sincronizar bóveda local */
 	async setupNewRepository(input: NewRepoWizardInput): Promise<GitSetupResult> {
 		const repoName = resolveRepoLabel(this.app, input.repoName);
 		if (!repoName) {
@@ -467,9 +385,9 @@ export class GitAdapter {
 
 		await this.initializeLocalRepo(basePath, authUrl, owner, input.token);
 		await this.fetchRemote(basePath, owner, input.token);
-		await this.reconcileRemote(basePath, owner, input.token).catch(() => {});
+		await this.integrateRemoteChanges(basePath, owner, input.token);
 		await this.commitLocalChanges(basePath);
-		await this.pushSafe(basePath, owner, input.token);
+		await this.pushWithRetry(basePath, owner, input.token);
 
 		return {
 			success: true,
@@ -485,19 +403,20 @@ export class GitAdapter {
 		};
 	}
 
-	/** PASO 1-B — Conectar repo existente con fusión inteligente */
 	async setupExistingRepository(
 		input: ExistingRepoWizardInput,
 	): Promise<GitSetupResult> {
 		const parsed = parseGitHubUrl(input.remoteUrl);
 		const basePath = getVaultBasePath(this.app);
-
 		const username =
 			input.username.trim() || (await resolveGitHubUsername(input.token));
 		const authUrl = buildAuthenticatedUrl(parsed.httpsUrl, username, input.token);
 
 		await this.initializeLocalRepo(basePath, authUrl, username, input.token);
-		await this.smartMerge(basePath, username, input.token);
+		await this.fetchRemote(basePath, username, input.token);
+		await this.integrateRemoteChanges(basePath, username, input.token);
+		await this.commitLocalChanges(basePath);
+		await this.pushWithRetry(basePath, username, input.token);
 
 		return {
 			success: true,
@@ -626,66 +545,6 @@ export class GitAdapter {
 			remote: REMOTE_NAME,
 			onAuth: this.onAuth(username, token),
 		});
-	}
-
-	private async smartMerge(
-		basePath: string,
-		username: string,
-		token: string,
-	): Promise<void> {
-		await this.fetchRemote(basePath, username, token);
-
-		let remoteCommit: string | undefined;
-		try {
-			remoteCommit = await git.resolveRef({
-				fs,
-				dir: basePath,
-				ref: REMOTE_TRACKING_REF,
-			});
-		} catch {
-			remoteCommit = undefined;
-		}
-
-		const localFiles = await walkVaultFiles(basePath);
-		const dateStr = formatConflictDate(new Date());
-
-		if (remoteCommit) {
-			try {
-				await git.merge({
-					fs,
-					dir: basePath,
-					ours: DEFAULT_BRANCH,
-					theirs: REMOTE_TRACKING_REF,
-					author: AUTHOR,
-				});
-			} catch {
-				/* fusión inicial tolerante */
-			}
-
-			await git.checkout({
-				fs,
-				dir: basePath,
-				ref: DEFAULT_BRANCH,
-				force: true,
-			});
-
-			const remoteFiles = await this.listFilesInCommit(basePath, remoteCommit);
-
-			for (const [relativePath, remoteContent] of remoteFiles) {
-				const localContent = localFiles.get(relativePath);
-
-				if (localContent && !localContent.equals(remoteContent)) {
-					const conflictPath = conflictCopyPath(relativePath, dateStr);
-					await writeVaultFile(basePath, conflictPath, localContent);
-					await writeVaultFile(basePath, relativePath, remoteContent);
-				} else if (!localContent) {
-					await writeVaultFile(basePath, relativePath, remoteContent);
-				}
-			}
-		}
-
-		await this.commitLocalChanges(basePath);
-		await this.pushSafe(basePath, username, token);
 	}
 
 	private async fetchRemote(

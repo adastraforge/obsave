@@ -7,10 +7,15 @@ El usuario mantiene control total de sus datos: el vault se replica de forma tra
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.5`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.5`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.6`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.6`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Last-Write-Wins v1.0.6
+- **Sin duplicación:** eliminados prefijos `[Local]` / `[Sync]` y copias con sufijo de fecha en sync.
+- **Política LWW:** gana la versión con timestamp más reciente; rutas originales intactas (`Prueba_1.md`, etc.).
+- **Merge:** `fastForwardOnly: false` + `checkout({ force: true })`; push con reintento fetch+merge.
 
 ### Pipeline remoto-first v1.0.5
 - **Orden:** fetch → merge/checkout remoto → commit local → push.

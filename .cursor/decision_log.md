@@ -202,3 +202,20 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Mantener sufijo `(Copia de conflicto local YYYY-MM-DD)` en sync periódico (reemplazado por [Local]/[Sync] en performSync).
 
 ---
+
+## DEC-015 | 2026-08-24 | Last-Write-Wins — eliminación de duplicados
+
+**Contexto:** Los prefijos `[Local]`/`[Sync]` duplicaban archivos en la bóveda y el push seguía fallando por fast-forward en escenarios divergentes.
+
+**Decisión:**
+1. Eliminar toda lógica de duplicación (`[Local]`, `[Sync]`, copias con sufijo de fecha en `performSync`).
+2. Adoptar **Last-Write-Wins**: comparar timestamp del commit remoto vs `mtime` local; escribir solo en la ruta original.
+3. `git.merge({ fastForwardOnly: false })` + `checkout({ force: true })`; push con reintento `fetch` + `merge` ante `PushRejected`.
+
+**Release:** `v1.0.6`
+
+**Alternativas descartadas:**
+- Duplicar archivos en conflictos (saturaba la bóveda y confundía al usuario).
+- `git push --force` (destructivo para el remoto compartido).
+
+---
