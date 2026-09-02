@@ -4,7 +4,10 @@ import { GitHubProvider } from "../providers/GitHubProvider";
 import { getVaultFolderName } from "../adapters/vaultPaths";
 import type { CloudProviderId } from "../settings";
 import { isProviderConfigured, hasProviderCredentials } from "../types";
-import { formatLocalDateTime } from "../utils/dateFormat";
+import {
+	formatLocalDateTime,
+	formatRelativeSyncTime,
+} from "../utils/dateFormat";
 import type ObSavePlugin from "../main";
 import type { WizardMode } from "../types";
 
@@ -15,27 +18,34 @@ interface ProviderOption {
 	comingSoon?: boolean;
 }
 
+const PROVIDER_LABELS: Record<CloudProviderId, string> = {
+	github: "GitHub",
+	gdrive: "Google Drive",
+	onedrive: "OneDrive",
+	icloud: "iCloud",
+};
+
 const PROVIDER_OPTIONS: ProviderOption[] = [
 	{
 		id: "github",
 		name: "GitHub",
-		description: "Sincronización Git con Personal Access Token.",
+		description: "Respalda tu bóveda en un repositorio Git privado.",
 	},
 	{
 		id: "gdrive",
 		name: "Google Drive",
-		description: "Respaldo en Drive vía OAuth2 PKCE.",
+		description: "Guarda una copia segura en tu nube de Google.",
 	},
 	{
 		id: "onedrive",
 		name: "OneDrive",
-		description: "OAuth2 PKCE — Fase 2.",
+		description: "Microsoft OneDrive — próximamente.",
 		comingSoon: true,
 	},
 	{
 		id: "icloud",
 		name: "iCloud",
-		description: "Conector nativo — Fase 2.",
+		description: "Apple iCloud — próximamente.",
 		comingSoon: true,
 	},
 ];
@@ -44,6 +54,8 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	plugin: ObSavePlugin;
 	private githubProvider: GitHubProvider;
 	private wizardMode: WizardMode = "select-provider";
+	/** Muestra el selector de proveedores aunque haya uno activo. */
+	private showProviderPicker = false;
 
 	constructor(app: App, plugin: ObSavePlugin) {
 		super(app, plugin);
@@ -54,87 +66,207 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+		containerEl.addClass("obsave-settings");
 
-		containerEl.createEl("h2", { text: "ObSave — Sincronización en la nube" });
+		this.renderHeader(containerEl);
+
+		const hasActiveProvider = isProviderConfigured(this.plugin.settings);
+		const showDashboard =
+			hasActiveProvider &&
+			this.wizardMode === "select-provider" &&
+			!this.showProviderPicker;
+
+		if (showDashboard) {
+			this.renderDashboard(containerEl);
+		} else {
+			this.renderSetupFlow(containerEl);
+		}
+
+		this.renderFooter(containerEl);
+	}
+
+	private renderHeader(containerEl: HTMLElement): void {
+		containerEl.createEl("h2", { text: "ObSave" });
 		containerEl.createEl("p", {
-			text: "Ad Astra Forge",
+			text: "Asistente de sincronización en la nube",
 			cls: "setting-item-description",
 		});
-
-		if (!isProviderConfigured(this.plugin.settings)) {
-			this.renderSetupWizard(containerEl);
-		} else {
-			this.renderConfiguredView(containerEl);
-		}
-
-		this.renderVersionFooter(containerEl);
 	}
 
-	private renderVersionFooter(containerEl: HTMLElement): void {
-		containerEl.createEl("hr");
+	private renderFooter(containerEl: HTMLElement): void {
 		containerEl.createEl("p", {
-			text: `ObSave v${this.plugin.manifest.version}`,
-			cls: "setting-item-description obsave-version-footer",
+			text: `ObSave v${this.plugin.manifest.version} by Ad Astra Forge`,
+			cls: "obsave-footer",
 		});
 	}
 
-	private renderConfiguredView(containerEl: HTMLElement): void {
+	private renderSectionHeading(containerEl: HTMLElement, title: string): void {
+		containerEl.createEl("h3", {
+			text: title,
+			cls: "obsave-section-heading",
+		});
+	}
+
+	/* ── Panel principal (proveedor conectado) ── */
+
+	private renderDashboard(containerEl: HTMLElement): void {
+		this.renderGeneralSection(containerEl);
+		this.renderSyncSection(containerEl);
+	}
+
+	private renderGeneralSection(containerEl: HTMLElement): void {
+		this.renderSectionHeading(containerEl, "General");
+
 		const providerId = this.plugin.settings.activeProvider!;
-		const github = this.plugin.settings.providerConfig.github;
-		const gdrive = this.plugin.settings.providerConfig.gdrive;
+		const accountLabel = this.getActiveAccountLabel(providerId);
+		const card = containerEl.createDiv({ cls: "obsave-status-card" });
 
-		let providerDesc = String(providerId);
-		if (providerId === "github" && github) {
-			providerDesc = `GitHub — ${github.label} (${github.remoteUrl ?? "sin URL"})`;
-		} else if (providerId === "gdrive" && gdrive) {
-			providerDesc = `Google Drive — ${gdrive.displayName ?? gdrive.email ?? "Cuenta conectada"}`;
+		const row = card.createDiv({ cls: "obsave-status-row" });
+		row.createSpan({ cls: "obsave-status-label", text: "Proveedor activo" });
+		row.createSpan({
+			cls: "obsave-status-value",
+			text: PROVIDER_LABELS[providerId],
+		});
+
+		const accountRow = card.createDiv({ cls: "obsave-status-row" });
+		accountRow.createSpan({ cls: "obsave-status-label", text: "Cuenta" });
+		accountRow.createSpan({ cls: "obsave-status-value", text: accountLabel });
+
+		const actions = card.createDiv({ cls: "obsave-status-actions" });
+
+		const changeBtn = actions.createEl("button", {
+			text: "Cambiar proveedor",
+			cls: "mod-muted",
+		});
+		changeBtn.addEventListener("click", () => {
+			this.showProviderPicker = true;
+			this.wizardMode = "select-provider";
+			this.display();
+		});
+
+		const disconnectBtn = actions.createEl("button", {
+			text: "Desconectar",
+			cls: "mod-warning obsave-btn-disconnect",
+		});
+		disconnectBtn.addEventListener("click", async () => {
+			disconnectBtn.disabled = true;
+			try {
+				await this.plugin.disconnectProvider();
+				this.showProviderPicker = false;
+				this.wizardMode = "select-provider";
+				new Notice("ObSave: cuenta desvinculada.");
+				this.display();
+			} catch (error) {
+				const msg =
+					error instanceof Error ? error.message : "Error desconocido";
+				new Notice(`ObSave: ${msg}`);
+			} finally {
+				disconnectBtn.disabled = false;
+			}
+		});
+	}
+
+	private getActiveAccountLabel(providerId: CloudProviderId): string {
+		const { providerConfig } = this.plugin.settings;
+
+		if (providerId === "gdrive") {
+			const g = providerConfig.gdrive;
+			return (
+				g?.accountEmail ??
+				g?.email ??
+				g?.displayName ??
+				"Cuenta vinculada"
+			);
 		}
 
-		new Setting(containerEl)
-			.setName("Proveedor activo")
-			.setDesc(providerDesc)
-			.setDisabled(true);
-
-		if (providerId === "gdrive" && gdrive?.email) {
-			new Setting(containerEl)
-				.setName("Cuenta Google")
-				.setDesc(gdrive.email)
-				.setDisabled(true);
+		if (providerId === "github") {
+			const gh = providerConfig.github;
+			return gh?.username ?? gh?.label ?? gh?.remoteUrl ?? "Cuenta vinculada";
 		}
+
+		return "Cuenta vinculada";
+	}
+
+	private renderSyncSection(containerEl: HTMLElement): void {
+		this.renderSectionHeading(containerEl, "Sincronización");
+
+		const lastSync = this.plugin.settings.lastSyncAt;
+		const relative = formatRelativeSyncTime(lastSync);
+		const exact = formatLocalDateTime(lastSync);
 
 		new Setting(containerEl)
 			.setName("Última sincronización")
-			.setDesc(formatLocalDateTime(this.plugin.settings.lastSyncAt))
+			.setDesc(exact === "Nunca" ? "Nunca" : `${relative} (${exact})`)
 			.setDisabled(true);
 
 		new Setting(containerEl)
 			.setName("Sincronizar ahora")
-			.setDesc("Ejecuta un ciclo de sync con el proveedor configurado.")
+			.setDesc("Envía los cambios de tu bóveda al proveedor conectado.")
 			.addButton((btn) =>
-				btn.setButtonText("Sincronizar").onClick(async () => {
-					await this.plugin.runSync();
-				}),
+				btn
+					.setButtonText("Sincronizar ahora")
+					.setCta()
+					.onClick(async () => {
+						btn.setDisabled(true);
+						btn.setButtonText("Sincronizando…");
+						try {
+							await this.plugin.runSync();
+						} finally {
+							btn.setDisabled(false);
+							btn.setButtonText("Sincronizar ahora");
+							this.display();
+						}
+					}),
 			);
 
-		containerEl.createEl("hr");
-		this.renderCommonSettings(containerEl);
-		this.renderConnectionManagement(containerEl);
+		const intervalSetting = new Setting(containerEl)
+			.setName("Sincronización automática")
+			.setDesc(
+				`Cada ${this.plugin.settings.syncIntervalMinutes} minuto${this.plugin.settings.syncIntervalMinutes === 1 ? "" : "s"}`,
+			);
+
+		intervalSetting.addSlider((slider) =>
+			slider
+				.setLimits(1, 15, 1)
+				.setValue(this.plugin.settings.syncIntervalMinutes)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.syncIntervalMinutes = value;
+					intervalSetting.setDesc(
+						`Cada ${value} minuto${value === 1 ? "" : "s"}`,
+					);
+					await this.plugin.saveSettings();
+				}),
+		);
 	}
 
-	private renderSetupWizard(containerEl: HTMLElement): void {
-		containerEl.createEl("h3", { text: "Asistente de primera sincronización" });
+	/* ── Flujo de configuración inicial / cambio de proveedor ── */
+
+	private renderSetupFlow(containerEl: HTMLElement): void {
+		if (
+			isProviderConfigured(this.plugin.settings) &&
+			this.showProviderPicker &&
+			this.wizardMode === "select-provider"
+		) {
+			new Setting(containerEl).addButton((btn) =>
+				btn.setButtonText("← Volver al panel").onClick(() => {
+					this.showProviderPicker = false;
+					this.display();
+				}),
+			);
+		}
 
 		switch (this.wizardMode) {
 			case "select-provider":
 				containerEl.createEl("p", {
-					text: "Elige dónde quieres respaldar tu bóveda. Solo un proveedor puede estar activo a la vez.",
+					text: "Elige dónde quieres respaldar tu bóveda.",
 					cls: "setting-item-description",
 				});
 				this.renderProviderSelection(containerEl);
 				break;
 			case "choose":
 				containerEl.createEl("p", {
-					text: "Configura GitHub. Solo necesitas usuario y token — ObSave gestiona Git por ti.",
+					text: "Configura tu cuenta de GitHub para respaldar la bóveda.",
 					cls: "setting-item-description",
 				});
 				this.renderBackToProviderSelection(containerEl);
@@ -150,7 +282,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 				break;
 			case "gdrive-setup":
 				containerEl.createEl("p", {
-					text: "Conecta tu cuenta de Google para respaldar la bóveda en Drive.",
+					text: "Haz clic abajo para vincular tu cuenta de Google Drive en el navegador.",
 					cls: "setting-item-description",
 				});
 				this.renderBackToProviderSelection(containerEl);
@@ -175,13 +307,20 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			header.createEl("strong", { text: option.name });
 
 			if (connected) {
-				const badge = header.createSpan({
+				header.createSpan({
 					cls: "obsave-provider-badge is-connected",
+					text: "Conectado",
 				});
-				badge.setText("🟢 Conectado");
 			} else if (comingSoon) {
-				const badge = header.createSpan({ cls: "obsave-provider-badge is-soon" });
-				badge.setText("Próximamente");
+				header.createSpan({
+					cls: "obsave-provider-badge is-soon",
+					text: "Próximamente",
+				});
+			} else {
+				header.createSpan({
+					cls: "obsave-provider-badge is-unconfigured",
+					text: "Sin configurar",
+				});
 			}
 
 			card.createEl("p", {
@@ -198,65 +337,65 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	}
 
 	private onProviderSelected(providerId: CloudProviderId): void {
+		this.showProviderPicker = false;
+
 		if (providerId === "github") {
+			if (hasProviderCredentials(this.plugin.settings, "github")) {
+				void this.activateStoredProvider("github");
+				return;
+			}
 			this.wizardMode = "choose";
 		} else if (providerId === "gdrive") {
 			this.wizardMode = "gdrive-setup";
 		}
+
+		this.display();
+	}
+
+	private async activateStoredProvider(providerId: CloudProviderId): Promise<void> {
+		this.plugin.settings.activeProvider = providerId;
+		await this.plugin.saveSettings();
+		new Notice(`ObSave: ${PROVIDER_LABELS[providerId]} activado.`);
 		this.display();
 	}
 
 	private renderGoogleDriveSetup(containerEl: HTMLElement): void {
-		containerEl.createEl("p", {
-			text: "PASO 2 — Google Drive",
-			cls: "setting-item-heading",
-		});
-
 		const existing = this.plugin.settings.providerConfig.gdrive;
+
 		if (existing?.refreshToken && existing.enabled !== false) {
 			const accountLabel =
 				existing.accountEmail ??
 				existing.email ??
 				existing.displayName ??
 				"Google";
+
 			containerEl.createEl("p", {
-				text: `Cuenta de Google Conectada (${accountLabel})`,
+				text: `Cuenta vinculada: ${accountLabel}`,
 				cls: "setting-item-description obsave-gdrive-connected",
 			});
 
 			new Setting(containerEl)
-				.setName("Activar Google Drive")
-				.setDesc("Usa esta cuenta como proveedor activo de ObSave.")
+				.setName("Usar esta cuenta")
+				.setDesc("Activa Google Drive como proveedor de respaldo.")
 				.addButton((btn) =>
 					btn
 						.setButtonText("Activar")
 						.setCta()
 						.onClick(async () => {
-							this.plugin.settings.activeProvider = "gdrive";
-							await this.plugin.saveSettings();
-							new Notice("ObSave: Google Drive activado.");
-							this.display();
+							await this.activateStoredProvider("gdrive");
 						}),
 				);
 			return;
 		}
 
-		containerEl.createEl("p", {
-			text: "Se abrirá el navegador para autorizar el acceso. ObSave escuchará el callback en http://127.0.0.1:42000/callback.",
-			cls: "setting-item-description",
-		});
-
 		new Setting(containerEl)
-			.setName("Autenticación OAuth2")
-			.setDesc("PKCE — scope drive.file (solo archivos creados por ObSave).")
+			.setName("Vincular Google Drive")
+			.setDesc("Se abrirá el navegador para autorizar el acceso.")
 			.addButton((btn) =>
 				btn
 					.setButtonText("Conectar con Google Drive")
 					.setCta()
 					.onClick(async () => {
-						console.log("[ObSave UI] Botón Conectar Clickeado");
-						new Notice("Iniciando flujo de autorización...");
-
 						btn.setDisabled(true);
 						btn.setButtonText("Conectando…");
 
@@ -264,9 +403,6 @@ export class ObSaveSettingTab extends PluginSettingTab {
 						try {
 							await this.plugin.getGoogleDriveLazy().authenticateWithPkce({
 								onAuthSuccess: async (config) => {
-									console.log(
-										"[ObSave OAuth] Tokens obtenidos con éxito, guardando settings...",
-									);
 									this.plugin.settings.activeProvider = "gdrive";
 									this.plugin.settings.providerConfig.gdrive = {
 										enabled: true,
@@ -282,10 +418,11 @@ export class ObSaveSettingTab extends PluginSettingTab {
 									new Notice(
 										"¡Conectado exitosamente con Google Drive!",
 									);
+									this.showProviderPicker = false;
+									this.wizardMode = "select-provider";
 									this.display();
 								},
 							});
-
 							connected = true;
 						} catch (e) {
 							console.error("[ObSave UI Error]", e);
@@ -301,40 +438,29 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 	private renderBackToProviderSelection(containerEl: HTMLElement): void {
 		new Setting(containerEl).addButton((btn) =>
-			btn
-				.setButtonText("← Volver a selección de proveedor")
-				.onClick(() => {
-					this.wizardMode = "select-provider";
-					this.display();
-				}),
+			btn.setButtonText("← Volver").onClick(() => {
+				this.wizardMode = "select-provider";
+				this.display();
+			}),
 		);
 	}
 
 	private renderChooseMode(containerEl: HTMLElement): void {
-		containerEl.createEl("p", {
-			text: "PASO 2 — Tipo de bóveda en GitHub",
-			cls: "setting-item-heading",
-		});
-
 		new Setting(containerEl)
-			.setName("Bóveda nueva")
-			.setDesc(
-				"Crea un repo en GitHub. El nombre puede diferir de la carpeta local de la bóveda.",
-			)
+			.setName("Repositorio nuevo")
+			.setDesc("Crea un repositorio en GitHub para esta bóveda.")
 			.addButton((btn) =>
-				btn.setButtonText("Crear nueva").onClick(() => {
+				btn.setButtonText("Crear nuevo").onClick(() => {
 					this.wizardMode = "new-repo";
 					this.display();
 				}),
 			);
 
 		new Setting(containerEl)
-			.setName("Bóveda existente")
-			.setDesc(
-				"Conecta una URL de GitHub existente. ObSave fusionará remoto y local automáticamente.",
-			)
+			.setName("Repositorio existente")
+			.setDesc("Conecta un repositorio de GitHub que ya tengas.")
 			.addButton((btn) =>
-				btn.setButtonText("Conectar existente").onClick(() => {
+				btn.setButtonText("Usar existente").onClick(() => {
 					this.wizardMode = "existing-repo";
 					this.display();
 				}),
@@ -347,14 +473,9 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		let token = "";
 		let repoName = suggestedName;
 
-		containerEl.createEl("p", {
-			text: "PASO 3-A — Bóveda nueva en GitHub",
-			cls: "setting-item-heading",
-		});
-
 		new Setting(containerEl)
 			.setName("Usuario de GitHub")
-			.setDesc("Tu nombre de usuario (opcional si el token lo identifica).")
+			.setDesc("Opcional si tu token ya identifica la cuenta.")
 			.addText((text) =>
 				text.setPlaceholder("usuario").onChange((v) => {
 					username = v;
@@ -363,7 +484,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Token de acceso")
-			.setDesc("Personal Access Token con permisos repo.")
+			.setDesc("Personal Access Token con permiso de repositorio.")
 			.addText((text) => {
 				text.inputEl.type = "password";
 				text.setPlaceholder("ghp_…").onChange((v) => {
@@ -373,9 +494,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Nombre del repositorio")
-			.setDesc(
-				`Sugerido: "${suggestedName}". Solo afecta el repo en GitHub; la carpeta local no se renombra.`,
-			)
+			.setDesc(`Sugerido: "${suggestedName}"`)
 			.addText((text) =>
 				text
 					.setValue(suggestedName)
@@ -410,7 +529,6 @@ export class ObSaveSettingTab extends PluginSettingTab {
 								token,
 								repoName,
 							});
-
 							await this.handleSetupResult(result);
 						} catch (error) {
 							const msg =
@@ -429,16 +547,11 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		let username = "";
 		let token = "";
 
-		containerEl.createEl("p", {
-			text: "PASO 3-B — Bóveda existente en GitHub",
-			cls: "setting-item-heading",
-		});
-
 		let usernameText: TextComponent | undefined;
 
 		new Setting(containerEl)
 			.setName("URL del repositorio")
-			.setDesc("https://github.com/usuario/repo o git@github.com:usuario/repo")
+			.setDesc("https://github.com/usuario/mi-vault")
 			.addText((text) => {
 				text
 					.setPlaceholder("https://github.com/usuario/mi-vault")
@@ -454,7 +567,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Usuario de GitHub")
-			.setDesc("Opcional si el token identifica la cuenta. Se autocompleta desde la URL.")
+			.setDesc("Se autocompleta desde la URL si es posible.")
 			.addText((text) => {
 				usernameText = text;
 				text.setPlaceholder("usuario").onChange((v) => {
@@ -464,7 +577,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Token de acceso")
-			.setDesc("Personal Access Token con permisos repo.")
+			.setDesc("Personal Access Token con permiso de repositorio.")
 			.addText((text) => {
 				text.inputEl.type = "password";
 				text.setPlaceholder("ghp_…").onChange((v) => {
@@ -481,7 +594,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			)
 			.addButton((btn) =>
 				btn
-					.setButtonText("Conectar y fusionar")
+					.setButtonText("Conectar y sincronizar")
 					.setCta()
 					.onClick(async () => {
 						if (!remoteUrl.trim() || !token.trim()) {
@@ -490,14 +603,15 @@ export class ObSaveSettingTab extends PluginSettingTab {
 						}
 
 						btn.setDisabled(true);
-						btn.setButtonText("Fusionando…");
+						btn.setButtonText("Conectando…");
 
 						try {
-							const result = await this.githubProvider.setupExistingRepository({
-								remoteUrl,
-								username,
-								token,
-							});
+							const result =
+								await this.githubProvider.setupExistingRepository({
+									remoteUrl,
+									username,
+									token,
+								});
 							await this.handleSetupResult(result);
 						} catch (error) {
 							const msg =
@@ -505,7 +619,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 							new Notice(`ObSave: ${msg}`);
 						} finally {
 							btn.setDisabled(false);
-							btn.setButtonText("Conectar y fusionar");
+							btn.setButtonText("Conectar y sincronizar");
 						}
 					}),
 			);
@@ -528,61 +642,8 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		}
 
 		new Notice(result.message);
+		this.showProviderPicker = false;
 		this.wizardMode = "select-provider";
 		this.display();
-	}
-
-	private renderCommonSettings(containerEl: HTMLElement): void {
-		const intervalSetting = new Setting(containerEl)
-			.setName("Intervalo de sincronización")
-			.setDesc(
-				`Cada ${this.plugin.settings.syncIntervalMinutes} minuto${this.plugin.settings.syncIntervalMinutes === 1 ? "" : "s"}`,
-			);
-
-		intervalSetting.addSlider((slider) =>
-			slider
-				.setLimits(1, 15, 1)
-				.setValue(this.plugin.settings.syncIntervalMinutes)
-				.setDisplayFormat((value) =>
-					value === 1 ? "1 minuto" : `${value} minutos`,
-				)
-				.onChange(async (value) => {
-					this.plugin.settings.syncIntervalMinutes = value;
-					intervalSetting.setDesc(
-						`Cada ${value} minuto${value === 1 ? "" : "s"}`,
-					);
-					await this.plugin.saveSettings();
-				}),
-		);
-	}
-
-	private renderConnectionManagement(containerEl: HTMLElement): void {
-		containerEl.createEl("hr");
-		containerEl.createEl("h3", { text: "Gestión de Conexión" });
-
-		new Setting(containerEl)
-			.setName("Desconectar proveedor")
-			.setDesc(
-				"Elimina la configuración del proveedor activo, credenciales guardadas y vuelve al asistente de primera sincronización. No borra la carpeta .git local (GitHub).",
-			)
-			.addButton((btn) => {
-				btn.setButtonText("Desconectar proveedor");
-				btn.buttonEl.addClass("mod-warning");
-				btn.onClick(async () => {
-					btn.setDisabled(true);
-					try {
-						await this.plugin.disconnectProvider();
-						this.wizardMode = "select-provider";
-						new Notice("ObSave: proveedor desconectado.");
-						this.display();
-					} catch (error) {
-						const msg =
-							error instanceof Error ? error.message : "Error desconocido";
-						new Notice(`ObSave: ${msg}`);
-					} finally {
-						btn.setDisabled(false);
-					}
-				});
-			});
 	}
 }

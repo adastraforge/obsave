@@ -92,7 +92,10 @@ export default class ObSavePlugin extends Plugin {
 			if (event.type === "sync-error") {
 				this.settings.syncStatus = "error";
 				void this.saveSettings();
-				new Notice(`ObSave: ${event.message ?? "Error de sincronización"}`);
+				console.warn(`[ObSave] ${event.message ?? "Error de sincronización"}`);
+				if (event.trigger === "manual") {
+					new Notice(`ObSave: ${event.message ?? "Error de sincronización"}`);
+				}
 				void this.refreshDecoratorsImmediate();
 			}
 		});
@@ -213,6 +216,9 @@ export default class ObSavePlugin extends Plugin {
 
 	startSyncInterval(): void {
 		this.stopSyncInterval();
+		if (!isProviderConfigured(this.settings)) {
+			return;
+		}
 		const minutes = this.settings.syncIntervalMinutes;
 		this.syncIntervalId = window.setInterval(
 			() => {

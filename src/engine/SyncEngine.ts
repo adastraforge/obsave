@@ -38,13 +38,15 @@ export class SyncEngine {
 
 		const providerId = this.settings.activeProvider;
 		if (!providerId) {
-			this.emit({
-				type: "sync-error",
-				status: "error",
-				message: "No hay proveedor de nube configurado.",
-				timestamp: new Date().toISOString(),
-				trigger,
-			});
+			if (trigger === "manual") {
+				this.emit({
+					type: "sync-error",
+					status: "error",
+					message: "No hay proveedor de nube configurado.",
+					timestamp: new Date().toISOString(),
+					trigger,
+				});
+			}
 			return;
 		}
 

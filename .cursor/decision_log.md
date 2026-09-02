@@ -503,3 +503,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.26`
 
 ---
+
+## DEC-035 | 2026-09-02 | Rediseño UI/UX panel de ajustes
+
+**Contexto:** La vista de settings era técnica, con notices molestas y navegación confusa entre wizard y estado conectado.
+
+**Decisión:**
+1. Dashboard con secciones General y Sincronización; footer `ObSave vX by Ad Astra Forge`.
+2. Routing: conectado → panel; picker con badges; Cambiar proveedor sin desconectar.
+3. SyncEngine/main: sin Notice ni intervalo si no hay proveedor activo.
+
+**Release:** `v1.0.27`
+
+---
