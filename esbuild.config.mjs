@@ -10,6 +10,7 @@ ObSave — Ad Astra Forge
 const prod = process.argv[2] === "production";
 
 const googleClientId = process.env.OBSAVE_GOOGLE_CLIENT_ID ?? "";
+const googleClientSecret = process.env.OBSAVE_GOOGLE_CLIENT_SECRET ?? "";
 
 const nodeExternals = [
 	"obsidian",
@@ -51,6 +52,7 @@ const sharedOptions = {
 	},
 	define: {
 		__OBSAVE_GOOGLE_CLIENT_ID__: JSON.stringify(googleClientId),
+		__OBSAVE_GOOGLE_CLIENT_SECRET__: JSON.stringify(googleClientSecret),
 	},
 	entryPoints: ["src/main.ts"],
 	bundle: true,

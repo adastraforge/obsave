@@ -18,10 +18,17 @@ export const GOOGLE_DRIVE_USERINFO_URL =
 export const GOOGLE_DRIVE_CALLBACK_PORT = 42000;
 
 /**
- * Client ID OAuth 2.0 público (PKCE — sin client secret).
- * Definir `OBSAVE_GOOGLE_CLIENT_ID` al compilar o reemplazar aquí.
+ * Client ID OAuth 2.0 — definir `OBSAVE_GOOGLE_CLIENT_ID` al compilar.
  */
 export const GOOGLE_DRIVE_CLIENT_ID: string =
 	typeof __OBSAVE_GOOGLE_CLIENT_ID__ === "string"
 		? __OBSAVE_GOOGLE_CLIENT_ID__
+		: "";
+
+/**
+ * Client secret OAuth 2.0 — definir `OBSAVE_GOOGLE_CLIENT_SECRET` al compilar.
+ */
+export const GOOGLE_DRIVE_CLIENT_SECRET: string =
+	typeof __OBSAVE_GOOGLE_CLIENT_SECRET__ === "string"
+		? __OBSAVE_GOOGLE_CLIENT_SECRET__
 		: "";

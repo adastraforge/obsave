@@ -462,3 +462,18 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.23`
 
 ---
+
+## DEC-032 | 2026-09-02 | Inyección OBSAVE_GOOGLE_CLIENT_SECRET en build
+
+**Contexto:** Google OAuth token endpoint requiere `client_secret` para el tipo de cliente configurado en Cloud Console.
+
+**Decisión:**
+1. `esbuild.config.mjs` define `__OBSAVE_GOOGLE_CLIENT_SECRET__` desde env de build.
+2. `.github/workflows/release.yml` expone secret en paso `npm run build`.
+3. `exchangeCodeForTokens` y refresh incluyen `client_secret` en URLSearchParams.
+
+**Release:** `v1.0.24`
+
+**Nota:** El secret queda embebido en `main.js` del release — aceptable solo para clientes confidenciales distribuidos vía CI privada.
+
+---

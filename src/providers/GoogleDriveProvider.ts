@@ -2,6 +2,7 @@ import { Notice, requestUrl } from "obsidian";
 import {
 	GOOGLE_DRIVE_AUTH_URL,
 	GOOGLE_DRIVE_CLIENT_ID,
+	GOOGLE_DRIVE_CLIENT_SECRET,
 	GOOGLE_DRIVE_OAUTH_SCOPE,
 	GOOGLE_DRIVE_REDIRECT_URI,
 	GOOGLE_DRIVE_TOKEN_URL,
@@ -50,23 +51,27 @@ function parseGoogleOAuthError(responseText: string): string {
 	}
 }
 
-/** Form body PKCE desktop — solo 5 campos; nunca incluye client_secret. */
-function buildDesktopPkceTokenBody(
+/** Form body intercambio de tokens PKCE + client_secret inyectado en build. */
+function buildTokenExchangeBody(
 	clientId: string,
+	clientSecret: string,
 	code: string,
 	codeVerifier: string,
 ): string {
-	const params = new URLSearchParams();
-	params.set("client_id", clientId);
-	params.set("code", code);
-	params.set("grant_type", "authorization_code");
-	params.set("redirect_uri", GOOGLE_DRIVE_REDIRECT_URI);
-	params.set("code_verifier", codeVerifier);
-	return params.toString();
+	const bodyParams = new URLSearchParams({
+		client_id: clientId,
+		client_secret: clientSecret || "",
+		code,
+		grant_type: "authorization_code",
+		redirect_uri: GOOGLE_DRIVE_REDIRECT_URI,
+		code_verifier: codeVerifier,
+	});
+	return bodyParams.toString();
 }
 
-const PKCE_TOKEN_FIELD_NAMES = [
+const TOKEN_EXCHANGE_FIELD_NAMES = [
 	"client_id",
+	"client_secret",
 	"code",
 	"grant_type",
 	"redirect_uri",
@@ -257,6 +262,10 @@ export class GoogleDriveProvider implements IStorageProvider {
 		return GOOGLE_DRIVE_CLIENT_ID.trim();
 	}
 
+	private requireClientSecret(): string {
+		return GOOGLE_DRIVE_CLIENT_SECRET.trim();
+	}
+
 	private async openExternal(url: string): Promise<void> {
 		await openExternalUrl(url);
 	}
@@ -267,17 +276,21 @@ export class GoogleDriveProvider implements IStorageProvider {
 		clientId?: string,
 	): Promise<GoogleTokenResponse> {
 		const resolvedClientId = clientId ?? this.requireClientId();
+		const clientSecret = this.requireClientSecret();
 		console.log("[ObSave OAuth] Solicitando tokens con el code recibido...");
 
-		const body = buildDesktopPkceTokenBody(
+		const body = buildTokenExchangeBody(
 			resolvedClientId,
+			clientSecret,
 			code,
 			codeVerifier,
 		);
 
 		console.log(
-			"[ObSave OAuth] Payload PKCE desktop (sin client_secret):",
-			PKCE_TOKEN_FIELD_NAMES.join(", "),
+			"[ObSave OAuth] Payload token exchange:",
+			TOKEN_EXCHANGE_FIELD_NAMES.join(", "),
+			"| client_secret:",
+			clientSecret ? "[presente]" : "[vacío]",
 		);
 
 		const response = await requestUrl({
@@ -316,6 +329,7 @@ export class GoogleDriveProvider implements IStorageProvider {
 
 		const body = new URLSearchParams({
 			client_id: this.requireClientId(),
+			client_secret: this.requireClientSecret() || "",
 			grant_type: "refresh_token",
 			refresh_token: this.config.refreshToken,
 		}).toString();

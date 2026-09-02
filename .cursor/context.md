@@ -7,10 +7,14 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.23`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.23`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.24`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.24`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Client secret OAuth v1.0.24
+- **CI:** `OBSAVE_GOOGLE_CLIENT_SECRET` inyectado en `npm run build` vía GitHub Secrets.
+- **`esbuild`:** define `__OBSAVE_GOOGLE_CLIENT_SECRET__`; token exchange incluye `client_secret` en Form Data.
 
 ### PKCE desktop token body v1.0.23
 - **`exchangeCodeForTokens`:** `buildDesktopPkceTokenBody()` — 5 campos estrictos, sin `client_secret`.
