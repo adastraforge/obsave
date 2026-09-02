@@ -37,17 +37,28 @@ export default class ObSavePlugin extends Plugin {
 
 		this.githubProvider = new GitHubProvider(this.app);
 		this.googleDriveProvider = new GoogleDriveProvider();
-		this.googleDriveProvider.setConfigChangeListener((config) => {
-			this.settings.providerConfig.gdrive = config;
-			void this.saveSettings();
-		});
+
+		try {
+			this.googleDriveProvider.setConfigChangeListener((config) => {
+				this.settings.providerConfig.gdrive = config;
+				void this.saveSettings();
+			});
+		} catch (error) {
+			console.warn("[ObSave] Google Drive: listener no registrado:", error);
+		}
+
 		this.providers = createProviderRegistry(
 			this.app,
 			this.githubProvider,
 			this.googleDriveProvider,
 		);
 		this.syncEngine = new SyncEngine(this.settings, this.providers);
-		this.applyProviderConfigToRuntime();
+
+		try {
+			this.applyProviderConfigToRuntime();
+		} catch (error) {
+			console.warn("[ObSave] Error aplicando configuración de proveedores:", error);
+		}
 
 		this.fileDecorators = new ObSaveFileDecorators(this, this.githubProvider);
 		this.fileDecorators.install();
@@ -118,7 +129,11 @@ export default class ObSavePlugin extends Plugin {
 		this.settings.syncIntervalMinutes = this.clampSyncInterval(
 			this.settings.syncIntervalMinutes,
 		);
-		this.applyProviderConfigToRuntime();
+		try {
+			this.applyProviderConfigToRuntime();
+		} catch (error) {
+			console.warn("[ObSave] Error aplicando config al cargar:", error);
+		}
 	}
 
 	async saveSettings(): Promise<void> {
@@ -126,7 +141,11 @@ export default class ObSavePlugin extends Plugin {
 			this.settings.syncIntervalMinutes,
 		);
 		this.syncEngine?.updateSettings(this.settings);
-		this.applyProviderConfigToRuntime();
+		try {
+			this.applyProviderConfigToRuntime();
+		} catch (error) {
+			console.warn("[ObSave] Error aplicando config al guardar:", error);
+		}
 		await this.saveData(this.settings);
 		this.startSyncInterval();
 		void this.refreshDecoratorsImmediate();
@@ -138,9 +157,13 @@ export default class ObSavePlugin extends Plugin {
 			void this.githubProvider.connect(githubConfig);
 		}
 
-		const gdriveConfig = getGoogleDriveConfig(this.settings);
-		if (gdriveConfig?.refreshToken) {
-			void this.googleDriveProvider.connect(gdriveConfig);
+		try {
+			const gdriveConfig = getGoogleDriveConfig(this.settings);
+			if (gdriveConfig?.refreshToken) {
+				void this.googleDriveProvider.connect(gdriveConfig);
+			}
+		} catch (error) {
+			console.warn("[ObSave] Google Drive connect omitido:", error);
 		}
 	}
 
@@ -150,6 +173,10 @@ export default class ObSavePlugin extends Plugin {
 
 	getGoogleDriveProvider(): GoogleDriveProvider {
 		return this.googleDriveProvider;
+	}
+
+	isGoogleDriveAvailable(): boolean {
+		return !!this.googleDriveProvider;
 	}
 
 	/** Refresco diferido de puntos de estado en el Explorador. */

@@ -7,10 +7,15 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.12`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.12`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.13`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.13`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Fix carga plugin v1.0.13
+- **`runtimeBridge.ts`:** `require()` diferido de `http` y `electron`; fallback `window.open`.
+- **`localCallbackServer`:** sin import estático de `http` (evita fallo al cargar `main.js`).
+- **`main.ts`:** `try-catch` en init/config de Google Drive para no bloquear el plugin.
 
 ### OAuth2 Google Drive v1.0.12
 - **PKCE:** `code_verifier` / `code_challenge` (Web Crypto API).

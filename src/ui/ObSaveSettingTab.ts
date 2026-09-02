@@ -1,7 +1,6 @@
 import { App, Notice, PluginSettingTab, Setting, TextComponent } from "obsidian";
 import { extractGitHubOwner } from "../adapters/githubApi";
 import { GitHubProvider } from "../providers/GitHubProvider";
-import { GoogleDriveProvider } from "../providers/GoogleDriveProvider";
 import { getVaultFolderName } from "../adapters/vaultPaths";
 import type { CloudProviderId } from "../settings";
 import { isProviderConfigured, hasProviderCredentials } from "../types";
@@ -44,14 +43,12 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
 export class ObSaveSettingTab extends PluginSettingTab {
 	plugin: ObSavePlugin;
 	private githubProvider: GitHubProvider;
-	private googleDriveProvider: GoogleDriveProvider;
 	private wizardMode: WizardMode = "select-provider";
 
 	constructor(app: App, plugin: ObSavePlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 		this.githubProvider = plugin.getGitHubProvider();
-		this.googleDriveProvider = plugin.getGoogleDriveProvider();
 	}
 
 	display(): void {
@@ -252,12 +249,19 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					.setButtonText("Conectar con Google Drive")
 					.setCta()
 					.onClick(async () => {
+						if (!this.plugin.isGoogleDriveAvailable()) {
+							new Notice("ObSave: Google Drive no está disponible en este entorno.");
+							return;
+						}
+
 						btn.setDisabled(true);
 						btn.setButtonText("Esperando autorización…");
 
 						try {
 							const config =
-								await this.googleDriveProvider.authenticateWithPkce();
+								await this.plugin
+									.getGoogleDriveProvider()
+									.authenticateWithPkce();
 
 							this.plugin.settings.activeProvider = "gdrive";
 							this.plugin.settings.providerConfig.gdrive = config;

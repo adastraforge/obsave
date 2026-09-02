@@ -322,3 +322,19 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Client secret embebido (innecesario en PKCE desktop).
 
 ---
+
+## DEC-022 | 2026-08-24 | Fix "Failed to load plugin" — require diferido
+
+**Contexto:** Tras v1.0.12, Obsidian fallaba al cargar el plugin por `import`/`require` estático de `http` y `electron` en el ámbito superior del bundle OAuth.
+
+**Decisión:**
+1. **`runtimeBridge.ts`:** carga diferida de `http` (callback OAuth) y `electron.shell` con fallback `window.open`.
+2. Eliminar `import * as http from "http"` en `localCallbackServer.ts`.
+3. `main.ts`: `try-catch` en registro de listener y `connect()` de Google Drive para aislar errores secundarios.
+
+**Release:** `v1.0.13`
+
+**Alternativas descartadas:**
+- Import estático de Node builtins en módulos OAuth (rompe carga en runtime Obsidian).
+
+---

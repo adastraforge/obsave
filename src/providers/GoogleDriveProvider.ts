@@ -9,6 +9,7 @@ import {
 } from "../oauth/googleDriveConstants";
 import { waitForOAuthCallback } from "../oauth/localCallbackServer";
 import { generateCodeChallenge, generateCodeVerifier } from "../oauth/pkce";
+import { openExternalUrl } from "../oauth/runtimeBridge";
 import type { GoogleDriveProviderConfig } from "../settings";
 import type { IStorageProvider, SyncResult } from "./IStorageProvider";
 
@@ -155,8 +156,7 @@ export class GoogleDriveProvider implements IStorageProvider {
 	}
 
 	private async openExternal(url: string): Promise<void> {
-		const electron = require("electron") as typeof import("electron");
-		await electron.shell.openExternal(url);
+		await openExternalUrl(url);
 	}
 
 	private async exchangeCodeForTokens(

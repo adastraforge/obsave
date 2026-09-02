@@ -1,4 +1,4 @@
-import * as http from "http";
+import { loadNodeHttp } from "./runtimeBridge";
 import { GOOGLE_DRIVE_CALLBACK_PORT } from "./googleDriveConstants";
 
 export interface OAuthCallbackResult {
@@ -9,13 +9,33 @@ export interface OAuthCallbackResult {
 
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
 
+function parseCallbackPath(reqUrl: string): {
+	code?: string;
+	error?: string;
+	errorDescription?: string;
+} {
+	const queryIndex = reqUrl.indexOf("?");
+	if (queryIndex === -1) {
+		return {};
+	}
+
+	const params = new URLSearchParams(reqUrl.slice(queryIndex + 1));
+	return {
+		code: params.get("code") ?? undefined,
+		error: params.get("error") ?? undefined,
+		errorDescription: params.get("error_description") ?? undefined,
+	};
+}
+
 /**
  * Servidor HTTP efímero en 127.0.0.1:42000/callback para capturar el código OAuth.
+ * `http` se carga solo al invocar esta función (no en el load del plugin).
  */
 export function waitForOAuthCallback(
 	port = GOOGLE_DRIVE_CALLBACK_PORT,
 ): Promise<OAuthCallbackResult> {
 	return new Promise((resolve, reject) => {
+		const http = loadNodeHttp();
 		let settled = false;
 
 		const finish = (result: OAuthCallbackResult): void => {
@@ -35,17 +55,14 @@ export function waitForOAuthCallback(
 		};
 
 		const server = http.createServer((req, res) => {
-			if (!req.url?.startsWith("/callback")) {
+			const reqUrl = req.url ?? "";
+			if (!reqUrl.startsWith("/callback")) {
 				res.writeHead(404);
 				res.end("Not found");
 				return;
 			}
 
-			const url = new URL(req.url, `http://127.0.0.1:${port}`);
-			const error = url.searchParams.get("error") ?? undefined;
-			const errorDescription =
-				url.searchParams.get("error_description") ?? undefined;
-			const code = url.searchParams.get("code") ?? undefined;
+			const { code, error, errorDescription } = parseCallbackPath(reqUrl);
 
 			res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
 			res.end(`<!DOCTYPE html>
@@ -84,7 +101,9 @@ export function waitForOAuthCallback(
 		}, CALLBACK_TIMEOUT_MS);
 
 		server.listen(port, "127.0.0.1", () => {
-			console.log(`[ObSave] OAuth callback escuchando en 127.0.0.1:${port}/callback`);
+			console.log(
+				`[ObSave] OAuth callback escuchando en 127.0.0.1:${port}/callback`,
+			);
 		});
 	});
 }
