@@ -38,17 +38,25 @@ export interface GoogleDriveAuthContext {
 
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
-function parseGoogleOAuthError(responseText: string): string {
+const GOOGLE_CREDENTIALS_ERROR =
+	"Credenciales de Google no inyectadas en la compilación. Revisa GitHub Secrets.";
+
+function parseTokenEndpointError(
+	status: number,
+	responseText: string,
+): string {
+	let errorData: GoogleOAuthErrorBody = {};
 	try {
-		const parsed = JSON.parse(responseText) as GoogleOAuthErrorBody;
-		return (
-			parsed.error_description ??
-			parsed.error ??
-			responseText
-		);
+		errorData = JSON.parse(responseText) as GoogleOAuthErrorBody;
 	} catch {
-		return responseText || "Error desconocido de Google OAuth";
+		// cuerpo no JSON
 	}
+	const detail =
+		errorData.error_description ||
+		errorData.error ||
+		responseText ||
+		String(status);
+	return `Google OAuth [${status}]: ${detail}`;
 }
 
 /** Form body intercambio de tokens PKCE + client_secret inyectado en build. */
@@ -133,48 +141,47 @@ export class GoogleDriveProvider implements IStorageProvider {
 	async authenticateWithPkce(
 		authContext?: GoogleDriveAuthContext,
 	): Promise<GoogleDriveProviderConfig> {
-		if (authContext) {
-			this.authContext = authContext;
-		}
-
-		console.log("[ObSave OAuth] Iniciando flujo PKCE");
-
-		const clientId = this.requireClientId();
-
-		console.log("[ObSave OAuth] Generando PKCE verifier y challenge...");
-		const codeVerifier = generateCodeVerifier();
-		const codeChallenge = await generateCodeChallenge(codeVerifier);
-		const state = generateCodeVerifier();
-
-		const callbackPromise = waitForOAuthCallback();
-		const authUrl = this.buildAuthUrl(codeChallenge, state);
-
-		console.log("[ObSave OAuth] Abriendo URL de autorización:", authUrl);
-		console.log("[ObSave OAuth] Esperando respuesta en el puerto 42000...");
-		await this.openExternal(authUrl);
-
-		const callback = await callbackPromise;
-		console.log("[ObSave OAuth] Callback procesado", {
-			hasCode: !!callback.code,
-			error: callback.error ?? null,
-		});
-
-		if (callback.error) {
-			throw new Error(
-				callback.errorDescription ??
-					callback.error ??
-					"Autorización rechazada por Google.",
-			);
-		}
-
-		if (!callback.code) {
-			throw new Error("No se recibió código de autorización.");
-		}
-
-		let tokens: GoogleTokenResponse;
 		try {
+			if (authContext) {
+				this.authContext = authContext;
+			}
+
+			const { clientId } = this.requireGoogleCredentials();
+
+			console.log("[ObSave OAuth] Iniciando flujo PKCE");
+
+			console.log("[ObSave OAuth] Generando PKCE verifier y challenge...");
+			const codeVerifier = generateCodeVerifier();
+			const codeChallenge = await generateCodeChallenge(codeVerifier);
+			const state = generateCodeVerifier();
+
+			const callbackPromise = waitForOAuthCallback();
+			const authUrl = this.buildAuthUrl(codeChallenge, state);
+
+			console.log("[ObSave OAuth] Abriendo URL de autorización:", authUrl);
+			console.log("[ObSave OAuth] Esperando respuesta en el puerto 42000...");
+			await this.openExternal(authUrl);
+
+			const callback = await callbackPromise;
+			console.log("[ObSave OAuth] Callback procesado", {
+				hasCode: !!callback.code,
+				error: callback.error ?? null,
+			});
+
+			if (callback.error) {
+				throw new Error(
+					callback.errorDescription ??
+						callback.error ??
+						"Autorización rechazada por Google.",
+				);
+			}
+
+			if (!callback.code) {
+				throw new Error("No se recibió código de autorización.");
+			}
+
 			console.log("[ObSave OAuth] Intercambiando code por tokens");
-			tokens = await this.exchangeCodeForTokens(
+			const tokens = await this.exchangeCodeForTokens(
 				callback.code,
 				codeVerifier,
 				clientId,
@@ -184,53 +191,49 @@ export class GoogleDriveProvider implements IStorageProvider {
 				hasRefreshToken: !!tokens.refresh_token,
 				expiresIn: tokens.expires_in,
 			});
-		} catch (error) {
-			console.error("[ObSave OAuth] Error en intercambio de tokens:", error);
-			throw error instanceof Error
-				? error
-				: new Error("Error al conectar con Google Drive");
-		}
 
-		if (!tokens.refresh_token) {
-			console.warn("[ObSave OAuth] Google no devolvió refresh_token");
-			throw new Error(
-				"Google no devolvió refresh_token. Revoca el acceso previo en tu cuenta Google e intenta de nuevo.",
-			);
-		}
+			if (!tokens.refresh_token) {
+				console.warn("[ObSave OAuth] Google no devolvió refresh_token");
+				throw new Error(
+					"Google no devolvió refresh_token. Revoca el acceso previo en tu cuenta Google e intenta de nuevo.",
+				);
+			}
 
-		let userInfo: GoogleUserInfo;
-		try {
 			console.log("[ObSave OAuth] Obteniendo perfil de usuario");
-			userInfo = await this.fetchUserInfo(tokens.access_token);
+			const userInfo = await this.fetchUserInfo(tokens.access_token);
 			console.log("[ObSave OAuth] Perfil obtenido", {
 				email: userInfo.email ?? null,
 				name: userInfo.name ?? null,
 			});
-		} catch (error) {
-			console.error("[ObSave OAuth] Error al obtener perfil:", error);
-			throw new Error("Error al conectar con Google Drive");
+
+			const config: GoogleDriveProviderConfig = {
+				enabled: true,
+				accessToken: tokens.access_token,
+				refreshToken: tokens.refresh_token,
+				expiresAt: Date.now() + tokens.expires_in * 1000,
+				email: userInfo.email,
+				displayName: userInfo.name ?? userInfo.email,
+			};
+
+			this.config = config;
+			this.persistConfig(config);
+			this.scheduleBackgroundRefresh();
+
+			console.log(
+				"[ObSave OAuth] Autenticación completada — persistiendo estado",
+			);
+
+			if (this.authContext) {
+				await this.authContext.onAuthSuccess(config);
+			}
+
+			return config;
+		} catch (e) {
+			const message = e instanceof Error ? e.message : String(e);
+			console.error("[ObSave OAuth] authenticateWithPkce:", e);
+			new Notice("Error en OAuth: " + message);
+			throw e instanceof Error ? e : new Error(message);
 		}
-
-		const config: GoogleDriveProviderConfig = {
-			enabled: true,
-			accessToken: tokens.access_token,
-			refreshToken: tokens.refresh_token,
-			expiresAt: Date.now() + tokens.expires_in * 1000,
-			email: userInfo.email,
-			displayName: userInfo.name ?? userInfo.email,
-		};
-
-		this.config = config;
-		this.persistConfig(config);
-		this.scheduleBackgroundRefresh();
-
-		console.log("[ObSave OAuth] Autenticación completada — persistiendo estado");
-
-		if (this.authContext) {
-			await this.authContext.onAuthSuccess(config);
-		}
-
-		return config;
 	}
 
 	async sync(): Promise<SyncResult> {
@@ -253,17 +256,28 @@ export class GoogleDriveProvider implements IStorageProvider {
 		this.config = null;
 	}
 
-	private requireClientId(): string {
-		if (!GOOGLE_DRIVE_CLIENT_ID.trim()) {
-			throw new Error(
-				"Client ID de Google OAuth no configurado. Define OBSAVE_GOOGLE_CLIENT_ID al compilar.",
-			);
+	private requireGoogleCredentials(): {
+		clientId: string;
+		clientSecret: string;
+	} {
+		if (
+			!GOOGLE_DRIVE_CLIENT_ID.trim() ||
+			!GOOGLE_DRIVE_CLIENT_SECRET.trim()
+		) {
+			throw new Error(GOOGLE_CREDENTIALS_ERROR);
 		}
-		return GOOGLE_DRIVE_CLIENT_ID.trim();
+		return {
+			clientId: GOOGLE_DRIVE_CLIENT_ID.trim(),
+			clientSecret: GOOGLE_DRIVE_CLIENT_SECRET.trim(),
+		};
+	}
+
+	private requireClientId(): string {
+		return this.requireGoogleCredentials().clientId;
 	}
 
 	private requireClientSecret(): string {
-		return GOOGLE_DRIVE_CLIENT_SECRET.trim();
+		return this.requireGoogleCredentials().clientSecret;
 	}
 
 	private async openExternal(url: string): Promise<void> {
@@ -275,8 +289,14 @@ export class GoogleDriveProvider implements IStorageProvider {
 		codeVerifier: string,
 		clientId?: string,
 	): Promise<GoogleTokenResponse> {
-		const resolvedClientId = clientId ?? this.requireClientId();
-		const clientSecret = this.requireClientSecret();
+		const { clientId: resolvedClientId, clientSecret } =
+			clientId != null
+				? {
+						clientId,
+						clientSecret: this.requireGoogleCredentials().clientSecret,
+					}
+				: this.requireGoogleCredentials();
+
 		console.log("[ObSave OAuth] Solicitando tokens con el code recibido...");
 
 		const body = buildTokenExchangeBody(
@@ -307,10 +327,9 @@ export class GoogleDriveProvider implements IStorageProvider {
 
 		if (response.status !== 200) {
 			const responseText = response.text;
-			const errorDescription = parseGoogleOAuthError(responseText);
+			const message = parseTokenEndpointError(response.status, responseText);
 			console.error("[ObSave Token Error Body]", responseText);
-			new Notice("Error Google OAuth: " + errorDescription);
-			throw new Error(errorDescription);
+			throw new Error(message);
 		}
 
 		const tokens = response.json as GoogleTokenResponse;

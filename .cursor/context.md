@@ -7,10 +7,14 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.24`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.24`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.25`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.25`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Validación credenciales OAuth v1.0.25
+- **`requireGoogleCredentials()`:** valida CLIENT_ID y CLIENT_SECRET inyectados en build.
+- Errores token endpoint: `Google OAuth [status]: error_description`; Notice en `authenticateWithPkce` catch.
 
 ### Client secret OAuth v1.0.24
 - **CI:** `OBSAVE_GOOGLE_CLIENT_SECRET` inyectado en `npm run build` vía GitHub Secrets.

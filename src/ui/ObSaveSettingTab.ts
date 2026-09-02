@@ -285,9 +285,6 @@ export class ObSaveSettingTab extends PluginSettingTab {
 							connected = true;
 						} catch (e) {
 							console.error("[ObSave UI Error]", e);
-							const message =
-								e instanceof Error ? e.message : String(e);
-							new Notice("Error en OAuth: " + message);
 						} finally {
 							if (!connected) {
 								btn.setDisabled(false);

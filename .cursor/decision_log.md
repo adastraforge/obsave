@@ -477,3 +477,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Nota:** El secret queda embebido en `main.js` del release — aceptable solo para clientes confidenciales distribuidos vía CI privada.
 
 ---
+
+## DEC-033 | 2026-09-02 | Validación credenciales y errores OAuth detallados
+
+**Contexto:** Fallos por secrets ausentes en CI o errores opacos del token endpoint de Google.
+
+**Decisión:**
+1. `requireGoogleCredentials()` antes de auth y token POST.
+2. Parse JSON de error Google → `Google OAuth [status]: detail`.
+3. `authenticateWithPkce` catch global con `Notice("Error en OAuth: " + message)`.
+
+**Release:** `v1.0.25`
+
+---
