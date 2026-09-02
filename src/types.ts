@@ -44,6 +44,6 @@ export type {
 	OneDriveProviderConfig,
 	ProviderConfigMap,
 } from "./settings";
-export { DEFAULT_SETTINGS, getGitHubConfig, hasProviderCredentials, isProviderConfigured } from "./settings";
+export { DEFAULT_SETTINGS, getGitHubConfig, getGoogleDriveConfig, hasProviderCredentials, isProviderConfigured } from "./settings";
 
 export type { SyncResult } from "./providers/IStorageProvider";

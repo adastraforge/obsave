@@ -7,10 +7,17 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.11`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.11`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.12`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.12`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### OAuth2 Google Drive v1.0.12
+- **PKCE:** `code_verifier` / `code_challenge` (Web Crypto API).
+- **Callback:** servidor HTTP efímero `http://127.0.0.1:42000/callback`.
+- **Tokens:** intercambio `authorization_code` + renovación automática con `refresh_token`.
+- **Wizard:** botón «Conectar con Google Drive»; guarda `activeProvider = 'gdrive'` y perfil (email/nombre).
+- **Build:** definir `OBSAVE_GOOGLE_CLIENT_ID` al compilar (OAuth public client).
 
 ### Badges wizard v1.0.11
 - **Sin badge** en tarjetas seleccionables no conectadas (GitHub, Google Drive).

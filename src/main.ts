@@ -3,6 +3,7 @@ import { SyncEngine } from "./engine/SyncEngine";
 import {
 	createProviderRegistry,
 	GitHubProvider,
+	GoogleDriveProvider,
 	type IStorageProvider,
 } from "./providers";
 import type { CloudProviderId } from "./settings";
@@ -12,6 +13,7 @@ import { mergeStoredSettings } from "./settingsMerge";
 import {
 	DEFAULT_SETTINGS,
 	getGitHubConfig,
+	getGoogleDriveConfig,
 	isProviderConfigured,
 	type ObSaveSettings,
 	type SyncStatus,
@@ -24,6 +26,7 @@ export default class ObSavePlugin extends Plugin {
 	settings: ObSaveSettings = DEFAULT_SETTINGS;
 	syncEngine!: SyncEngine;
 	private githubProvider!: GitHubProvider;
+	private googleDriveProvider!: GoogleDriveProvider;
 	private providers!: Map<CloudProviderId, IStorageProvider>;
 	private fileDecorators!: ObSaveFileDecorators;
 	private ribbonEl: HTMLElement | null = null;
@@ -33,7 +36,16 @@ export default class ObSavePlugin extends Plugin {
 		await this.loadSettings();
 
 		this.githubProvider = new GitHubProvider(this.app);
-		this.providers = createProviderRegistry(this.app, this.githubProvider);
+		this.googleDriveProvider = new GoogleDriveProvider();
+		this.googleDriveProvider.setConfigChangeListener((config) => {
+			this.settings.providerConfig.gdrive = config;
+			void this.saveSettings();
+		});
+		this.providers = createProviderRegistry(
+			this.app,
+			this.githubProvider,
+			this.googleDriveProvider,
+		);
 		this.syncEngine = new SyncEngine(this.settings, this.providers);
 		this.applyProviderConfigToRuntime();
 
@@ -125,10 +137,19 @@ export default class ObSavePlugin extends Plugin {
 		if (githubConfig) {
 			void this.githubProvider.connect(githubConfig);
 		}
+
+		const gdriveConfig = getGoogleDriveConfig(this.settings);
+		if (gdriveConfig?.refreshToken) {
+			void this.googleDriveProvider.connect(gdriveConfig);
+		}
 	}
 
 	getGitHubProvider(): GitHubProvider {
 		return this.githubProvider;
+	}
+
+	getGoogleDriveProvider(): GoogleDriveProvider {
+		return this.googleDriveProvider;
 	}
 
 	/** Refresco diferido de puntos de estado en el Explorador. */

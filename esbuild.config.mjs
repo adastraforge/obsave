@@ -10,9 +10,14 @@ ObSave — Ad Astra Forge
 
 const prod = process.argv[2] === "production";
 
+const googleClientId = process.env.OBSAVE_GOOGLE_CLIENT_ID ?? "";
+
 const context = await esbuild.context({
 	banner: {
 		js: banner,
+	},
+	define: {
+		__OBSAVE_GOOGLE_CLIENT_ID__: JSON.stringify(googleClientId),
 	},
 	entryPoints: ["src/main.ts"],
 	bundle: true,

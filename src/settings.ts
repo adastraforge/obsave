@@ -10,8 +10,14 @@ export interface GitHubProviderConfig {
 	token?: string;
 }
 
-/** Skeleton Fase 2 — OAuth2 PKCE */
+/** Configuración OAuth2 PKCE — Google Drive */
 export interface GoogleDriveProviderConfig {
+	accessToken?: string;
+	refreshToken?: string;
+	/** Timestamp ms de expiración del access_token */
+	expiresAt?: number;
+	email?: string;
+	displayName?: string;
 	folderId?: string;
 }
 
@@ -77,7 +83,17 @@ export function isProviderConfigured(settings: ObSaveSettings): boolean {
 		return !!settings.providerConfig.github?.token;
 	}
 
+	if (settings.activeProvider === "gdrive") {
+		return !!settings.providerConfig.gdrive?.refreshToken;
+	}
+
 	return settings.providerConfig[settings.activeProvider] != null;
+}
+
+export function getGoogleDriveConfig(
+	settings: ObSaveSettings,
+): GoogleDriveProviderConfig | null {
+	return settings.providerConfig.gdrive ?? null;
 }
 
 /** Indica si el proveedor tiene credenciales almacenadas (independiente de activeProvider). */
@@ -89,7 +105,7 @@ export function hasProviderCredentials(
 		case "github":
 			return !!settings.providerConfig.github?.token;
 		case "gdrive":
-			return settings.providerConfig.gdrive != null;
+			return !!settings.providerConfig.gdrive?.refreshToken;
 		case "onedrive":
 			return settings.providerConfig.onedrive != null;
 		case "icloud":

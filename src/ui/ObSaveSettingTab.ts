@@ -1,6 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting, TextComponent } from "obsidian";
 import { extractGitHubOwner } from "../adapters/githubApi";
 import { GitHubProvider } from "../providers/GitHubProvider";
+import { GoogleDriveProvider } from "../providers/GoogleDriveProvider";
 import { getVaultFolderName } from "../adapters/vaultPaths";
 import type { CloudProviderId } from "../settings";
 import { isProviderConfigured, hasProviderCredentials } from "../types";
@@ -43,12 +44,14 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
 export class ObSaveSettingTab extends PluginSettingTab {
 	plugin: ObSavePlugin;
 	private githubProvider: GitHubProvider;
+	private googleDriveProvider: GoogleDriveProvider;
 	private wizardMode: WizardMode = "select-provider";
 
 	constructor(app: App, plugin: ObSavePlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 		this.githubProvider = plugin.getGitHubProvider();
+		this.googleDriveProvider = plugin.getGoogleDriveProvider();
 	}
 
 	display(): void {
@@ -81,15 +84,26 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	private renderConfiguredView(containerEl: HTMLElement): void {
 		const providerId = this.plugin.settings.activeProvider!;
 		const github = this.plugin.settings.providerConfig.github;
+		const gdrive = this.plugin.settings.providerConfig.gdrive;
+
+		let providerDesc = String(providerId);
+		if (providerId === "github" && github) {
+			providerDesc = `GitHub — ${github.label} (${github.remoteUrl ?? "sin URL"})`;
+		} else if (providerId === "gdrive" && gdrive) {
+			providerDesc = `Google Drive — ${gdrive.displayName ?? gdrive.email ?? "Cuenta conectada"}`;
+		}
 
 		new Setting(containerEl)
 			.setName("Proveedor activo")
-			.setDesc(
-				providerId === "github" && github
-					? `GitHub — ${github.label} (${github.remoteUrl ?? "sin URL"})`
-					: providerId,
-			)
+			.setDesc(providerDesc)
 			.setDisabled(true);
+
+		if (providerId === "gdrive" && gdrive?.email) {
+			new Setting(containerEl)
+				.setName("Cuenta Google")
+				.setDesc(gdrive.email)
+				.setDisabled(true);
+		}
 
 		new Setting(containerEl)
 			.setName("Última sincronización")
@@ -139,7 +153,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 				break;
 			case "gdrive-setup":
 				containerEl.createEl("p", {
-					text: "Configura Google Drive. La autenticación OAuth2 PKCE se completará en el siguiente paso.",
+					text: "Conecta tu cuenta de Google para respaldar la bóveda en Drive.",
 					cls: "setting-item-description",
 				});
 				this.renderBackToProviderSelection(containerEl);
@@ -201,10 +215,70 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			cls: "setting-item-heading",
 		});
 
+		const existing = this.plugin.settings.providerConfig.gdrive;
+		if (existing?.refreshToken) {
+			containerEl.createEl("p", {
+				text: `Cuenta conectada: ${existing.displayName ?? existing.email ?? "Google"}`,
+				cls: "setting-item-description",
+			});
+
+			new Setting(containerEl)
+				.setName("Activar Google Drive")
+				.setDesc("Usa esta cuenta como proveedor activo de ObSave.")
+				.addButton((btn) =>
+					btn
+						.setButtonText("Activar")
+						.setCta()
+						.onClick(async () => {
+							this.plugin.settings.activeProvider = "gdrive";
+							await this.plugin.saveSettings();
+							new Notice("ObSave: Google Drive activado.");
+							this.display();
+						}),
+				);
+			return;
+		}
+
 		containerEl.createEl("p", {
-			text: "El flujo de conexión OAuth2 (PKCE) estará disponible en la próxima actualización. Por ahora, selecciona GitHub o vuelve al listado de proveedores.",
+			text: "Se abrirá el navegador para autorizar el acceso. ObSave escuchará el callback en http://127.0.0.1:42000/callback.",
 			cls: "setting-item-description",
 		});
+
+		new Setting(containerEl)
+			.setName("Autenticación OAuth2")
+			.setDesc("PKCE — scope drive.file (solo archivos creados por ObSave).")
+			.addButton((btn) =>
+				btn
+					.setButtonText("Conectar con Google Drive")
+					.setCta()
+					.onClick(async () => {
+						btn.setDisabled(true);
+						btn.setButtonText("Esperando autorización…");
+
+						try {
+							const config =
+								await this.googleDriveProvider.authenticateWithPkce();
+
+							this.plugin.settings.activeProvider = "gdrive";
+							this.plugin.settings.providerConfig.gdrive = config;
+							await this.plugin.saveSettings();
+
+							new Notice(
+								`ObSave: conectado como ${config.displayName ?? config.email ?? "Google"}.`,
+							);
+							this.display();
+						} catch (error) {
+							const msg =
+								error instanceof Error
+									? error.message
+									: "Error desconocido de OAuth";
+							new Notice(`ObSave: ${msg}`);
+						} finally {
+							btn.setDisabled(false);
+							btn.setButtonText("Conectar con Google Drive");
+						}
+					}),
+			);
 	}
 
 	private renderBackToProviderSelection(containerEl: HTMLElement): void {

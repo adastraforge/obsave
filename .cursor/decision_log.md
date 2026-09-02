@@ -304,3 +304,21 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Badge «Disponible» en GitHub sin configurar (redundante con interactividad de la tarjeta).
 
 ---
+
+## DEC-021 | 2026-08-24 | Integración OAuth2 PKCE Google Drive
+
+**Contexto:** Google Drive requiere autenticación OAuth2 segura en desktop Obsidian (Electron), alineada con la premisa PKCE + navegador nativo.
+
+**Decisión:**
+1. Módulos `src/oauth/`: PKCE (Crypto API), `localCallbackServer` (127.0.0.1:42000), constantes Google.
+2. **`GoogleDriveProvider`:** `getAuthUrl()` / `authenticateWithPkce()`, intercambio de tokens, `refresh_token` con renovación programada.
+3. Wizard: botón «Conectar con Google Drive»; persistencia de email/nombre y `activeProvider = 'gdrive'`.
+4. Client ID vía `OBSAVE_GOOGLE_CLIENT_ID` en build (esbuild `define`).
+
+**Release:** `v1.0.12`
+
+**Alternativas descartadas:**
+- Esquema `obsidian://` como callback principal (fragilidad documentada en DEC-001).
+- Client secret embebido (innecesario en PKCE desktop).
+
+---
