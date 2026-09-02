@@ -21,17 +21,18 @@ export default class ObSavePlugin extends Plugin {
 	async onload(): Promise<void> {
 		await this.loadSettings();
 
-		this.syncEngine = new SyncEngine(this.settings);
+		const gitAdapter = new GitAdapter(this.app);
+		this.syncEngine = new SyncEngine(this.settings, gitAdapter);
 		this.syncEngine.on((event) => {
 			if (event.type === "status-changed" && event.status) {
 				this.settings.syncStatus = event.status;
 				this.updateRibbonIcon(event.status);
 			}
 			if (event.type === "sync-complete") {
-				this.settings.lastSyncAt = event.timestamp;
+				this.settings.lastSyncAt = new Date().toISOString();
 				this.settings.syncStatus = "idle";
 				void this.saveSettings();
-				new Notice("ObSave: sincronización completada.");
+				new Notice(event.message ?? "ObSave: Bóveda al día (sin cambios)");
 			}
 			if (event.type === "sync-error") {
 				this.settings.syncStatus = "error";

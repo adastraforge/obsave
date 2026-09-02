@@ -167,3 +167,21 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - `git push --force` (riesgo de sobrescribir historial remoto).
 
 ---
+
+## DEC-013 | 2026-08-24 | Pipeline Git performSync de 3 pasos
+
+**Contexto:** SyncEngine era stub; los usuarios no veían cambios reales reflejados entre bóveda y GitHub.
+
+**Decisión:** Implementar `GitAdapter.performSync()` con ciclo estricto:
+- **A:** `statusMatrix` → add/remove → commit local (`sync: auto-commit local [timestamp]`).
+- **B:** fetch → merge `origin/main` → `checkout({ force: true })` al working directory.
+- **C:** push si HEAD local adelantado.
+- Fast-path si 0 cambios y hashes idénticos (~0.5s).
+- Excluir `.obsidian/` del escaneo.
+
+**Release:** `v1.0.4`
+
+**Alternativas descartadas:**
+- Seguir con stub + mensaje genérico (sin valor para el usuario).
+
+---

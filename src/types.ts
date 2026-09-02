@@ -54,12 +54,22 @@ export interface StorageAdapter {
 	isConnected(): boolean;
 }
 
+/** Resultado de un ciclo performSync en GitAdapter */
+export interface SyncPerformResult {
+	message: string;
+	downloadedCount: number;
+	uploadedCount: number;
+	noChanges: boolean;
+}
+
 /** Evento emitido por SyncEngine hacia la UI */
 export interface SyncEngineEvent {
 	type: "status-changed" | "sync-complete" | "sync-error";
 	status?: SyncStatus;
 	message?: string;
 	timestamp: string;
+	downloadedCount?: number;
+	uploadedCount?: number;
 }
 
 /** Resultado del wizard de primera sincronización Git */

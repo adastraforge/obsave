@@ -7,10 +7,17 @@ El usuario mantiene control total de sus datos: el vault se replica de forma tra
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.3`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.3`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.4`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.4`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Motor Git real v1.0.4
+- **`performSync()`:** pipeline A (local commit) → B (fetch/merge/checkout) → C (push).
+- **Fast-path:** sin cambios locales + HEAD idéntico → ciclo en ~0.5s.
+- **Exclusiones:** `.obsidian/` omitido del escaneo `statusMatrix`.
+- **Notificaciones:** mensajes precisos (subidos/descargados/al día).
+- **`lastSyncAt`:** persistido en cada sync exitosa vía `saveSettings()`.
 
 ### Correcciones v1.0.3
 - **Persistencia:** `mergeStoredSettings()` preserva `masterRepo` y credenciales de `data.json` al cargar.

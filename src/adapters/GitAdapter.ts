@@ -18,17 +18,21 @@ import {
 	walkVaultFiles,
 	writeVaultFile,
 } from "./vaultPaths";
-import type { GitSetupResult, RepoConfig } from "../types";
+import type { GitSetupResult, RepoConfig, SyncPerformResult } from "../types";
 
 export type { GitSetupResult };
 
 const DEFAULT_BRANCH = "main";
 const REMOTE_NAME = "origin";
 const REMOTE_TRACKING_REF = `refs/remotes/${REMOTE_NAME}/${DEFAULT_BRANCH}`;
+const LOCAL_HEAD_REF = `refs/heads/${DEFAULT_BRANCH}`;
 const AUTHOR = {
 	name: "ObSave",
 	email: "obsave@adastraforge.local",
 };
+
+/** Rutas excluidas del escaneo de sync (config interna ObSave) */
+const SYNC_EXCLUDED_PREFIXES = [".obsidian/", ".git/"];
 
 export interface NewRepoWizardInput {
 	username: string;
@@ -45,6 +49,301 @@ export interface ExistingRepoWizardInput {
 export class GitAdapter {
 	constructor(private app: App) {}
 
+	/**
+	 * Ciclo real de sincronización Git en 3 pasos:
+	 * A) Local → commit | B) Fetch + merge + checkout | C) Push
+	 */
+	async performSync(masterRepo: RepoConfig): Promise<SyncPerformResult> {
+		const basePath = getVaultBasePath(this.app);
+		const username = masterRepo.username ?? "";
+		const token = masterRepo.token ?? "";
+
+		if (!token) {
+			throw new Error("No hay token de GitHub configurado.");
+		}
+
+		await this.ensureRepoReady(basePath, masterRepo, username, token);
+
+		const matrix = await git.statusMatrix({ fs, dir: basePath });
+		const localChangeCount = this.countLocalChanges(matrix);
+		const localHead = await this.resolveRefSafe(basePath, LOCAL_HEAD_REF);
+		const remoteHead = await this.resolveRefSafe(basePath, REMOTE_TRACKING_REF);
+
+		if (localChangeCount === 0 && localHead && remoteHead && localHead === remoteHead) {
+			console.log("[ObSave] Sin cambios pendientes");
+			await this.delay(500);
+			return {
+				message: "ObSave: Bóveda al día (sin cambios)",
+				downloadedCount: 0,
+				uploadedCount: 0,
+				noChanges: true,
+			};
+		}
+
+		const uploadedCount = await this.commitLocalChanges(basePath);
+		const downloadedCount = await this.reconcileRemote(basePath, username, token);
+		const pushed = await this.pushIfAhead(basePath, username, token);
+
+		const message = this.buildSyncMessage(uploadedCount, downloadedCount, pushed);
+		console.log(`[ObSave] ${message}`);
+
+		return {
+			message,
+			downloadedCount,
+			uploadedCount,
+			noChanges: uploadedCount === 0 && downloadedCount === 0 && !pushed,
+		};
+	}
+
+	private buildSyncMessage(
+		uploaded: number,
+		downloaded: number,
+		pushed: boolean,
+	): string {
+		if (uploaded === 0 && downloaded === 0 && !pushed) {
+			return "ObSave: Bóveda al día (sin cambios)";
+		}
+
+		const parts: string[] = [];
+		if (downloaded > 0) {
+			parts.push(`Se descargaron ${downloaded} cambio${downloaded === 1 ? "" : "s"} de GitHub`);
+		}
+		if (uploaded > 0) {
+			parts.push(`Se subieron ${uploaded} cambio${uploaded === 1 ? "" : "s"} locales`);
+		}
+		if (parts.length === 0 && pushed) {
+			return "ObSave: Bóveda al día (sin cambios)";
+		}
+		return `ObSave: ${parts.join(". ")}`;
+	}
+
+	/** PASO A — Escanea, stagea y commitea cambios locales */
+	private async commitLocalChanges(basePath: string): Promise<number> {
+		const matrix = await git.statusMatrix({ fs, dir: basePath });
+		let stagedCount = 0;
+
+		for (const row of matrix) {
+			const filepath = row[0];
+			const headStatus = row[1];
+			const workdirStatus = row[2];
+
+			if (!this.shouldTrackPath(filepath)) continue;
+			if (headStatus === workdirStatus) continue;
+
+			if (workdirStatus === 0) {
+				await git.remove({ fs, dir: basePath, filepath });
+			} else {
+				await git.add({ fs, dir: basePath, filepath });
+			}
+			stagedCount++;
+		}
+
+		if (stagedCount === 0) return 0;
+
+		const timestamp = new Date().toISOString();
+		await git.commit({
+			fs,
+			dir: basePath,
+			message: `sync: auto-commit local [${timestamp}]`,
+			author: AUTHOR,
+		});
+
+		console.log(`[ObSave] PASO A: ${stagedCount} archivo(s) commiteados localmente`);
+		return stagedCount;
+	}
+
+	/** PASO B — Fetch, merge remoto y checkout forzado al working directory */
+	private async reconcileRemote(
+		basePath: string,
+		username: string,
+		token: string,
+	): Promise<number> {
+		await this.fetchRemote(basePath, username, token);
+
+		const localHeadBefore = await this.resolveRefSafe(basePath, LOCAL_HEAD_REF);
+		const remoteHead = await this.resolveRefSafe(basePath, REMOTE_TRACKING_REF);
+
+		if (!remoteHead) return 0;
+		if (localHeadBefore === remoteHead) return 0;
+
+		let downloadedCount = 0;
+		if (localHeadBefore) {
+			downloadedCount = await this.countRemoteDiffFiles(
+				basePath,
+				localHeadBefore,
+				remoteHead,
+			);
+		}
+
+		try {
+			await git.merge({
+				fs,
+				dir: basePath,
+				ours: DEFAULT_BRANCH,
+				theirs: REMOTE_TRACKING_REF,
+				author: AUTHOR,
+			});
+		} catch (mergeError) {
+			console.warn("[ObSave] Merge con conflictos, aplicando checkout forzado:", mergeError);
+		}
+
+		await git.checkout({
+			fs,
+			dir: basePath,
+			ref: DEFAULT_BRANCH,
+			force: true,
+		});
+
+		console.log(
+			`[ObSave] PASO B: ${downloadedCount} cambio(s) integrados desde remoto`,
+		);
+		return downloadedCount;
+	}
+
+	/** PASO C — Push si HEAD local está adelante del remoto */
+	private async pushIfAhead(
+		basePath: string,
+		username: string,
+		token: string,
+	): Promise<boolean> {
+		await this.fetchRemote(basePath, username, token);
+
+		const localHead = await this.resolveRefSafe(basePath, LOCAL_HEAD_REF);
+		const remoteHead = await this.resolveRefSafe(basePath, REMOTE_TRACKING_REF);
+
+		if (!localHead) return false;
+		if (localHead === remoteHead) return false;
+
+		if (remoteHead) {
+			const mergeBase = await git
+				.findMergeBase({
+					fs,
+					dir: basePath,
+					oids: [localHead, remoteHead],
+				})
+				.catch(() => []);
+
+			if (mergeBase.length > 0 && mergeBase[0] === localHead) {
+				return false;
+			}
+		}
+
+		try {
+			await git.push({
+				fs,
+				http,
+				dir: basePath,
+				remote: REMOTE_NAME,
+				ref: DEFAULT_BRANCH,
+				onAuth: this.onAuth(username, token),
+			});
+			console.log("[ObSave] PASO C: push completado");
+			return true;
+		} catch (firstError) {
+			await this.fetchRemote(basePath, username, token);
+			try {
+				await git.merge({
+					fs,
+					dir: basePath,
+					ours: DEFAULT_BRANCH,
+					theirs: REMOTE_TRACKING_REF,
+					author: AUTHOR,
+				});
+			} catch {
+				/* reconciliar en push retry */
+			}
+			await git.checkout({
+				fs,
+				dir: basePath,
+				ref: DEFAULT_BRANCH,
+				force: true,
+			});
+			await git.push({
+				fs,
+				http,
+				dir: basePath,
+				remote: REMOTE_NAME,
+				ref: DEFAULT_BRANCH,
+				onAuth: this.onAuth(username, token),
+			});
+			console.log("[ObSave] PASO C: push completado tras reconciliación");
+			return true;
+		}
+	}
+
+	private shouldTrackPath(filepath: string): boolean {
+		if (filepath === ".obsidian" || filepath.startsWith(".obsidian/")) {
+			return false;
+		}
+		for (const prefix of SYNC_EXCLUDED_PREFIXES) {
+			if (filepath.startsWith(prefix)) return false;
+		}
+		return true;
+	}
+
+	private countLocalChanges(
+		matrix: [string, number, number, number][],
+	): number {
+		let count = 0;
+		for (const row of matrix) {
+			if (!this.shouldTrackPath(row[0])) continue;
+			if (row[1] !== row[2]) count++;
+		}
+		return count;
+	}
+
+	private async countRemoteDiffFiles(
+		basePath: string,
+		localOid: string,
+		remoteOid: string,
+	): Promise<number> {
+		const localFiles = await this.listFilesInCommit(basePath, localOid);
+		const remoteFiles = await this.listFilesInCommit(basePath, remoteOid);
+		let count = 0;
+
+		for (const [filePath, remoteContent] of remoteFiles) {
+			if (!this.shouldTrackPath(filePath)) continue;
+			const localContent = localFiles.get(filePath);
+			if (!localContent || !localContent.equals(remoteContent)) {
+				count++;
+			}
+		}
+
+		return count;
+	}
+
+	private async resolveRefSafe(
+		basePath: string,
+		ref: string,
+	): Promise<string | undefined> {
+		try {
+			return await git.resolveRef({ fs, dir: basePath, ref });
+		} catch {
+			return undefined;
+		}
+	}
+
+	private async ensureRepoReady(
+		basePath: string,
+		masterRepo: RepoConfig,
+		username: string,
+		token: string,
+	): Promise<void> {
+		if (!masterRepo.remoteUrl) {
+			throw new Error("URL del repositorio Master no configurada.");
+		}
+		const authUrl = buildAuthenticatedUrl(
+			masterRepo.remoteUrl,
+			username,
+			token,
+		);
+		await this.initializeLocalRepo(basePath, authUrl, username, token);
+	}
+
+	private delay(ms: number): Promise<void> {
+		return new Promise((resolve) => setTimeout(resolve, ms));
+	}
+
 	/** PASO 1-A — Crear repo nuevo en GitHub y sincronizar bóveda local */
 	async setupNewRepository(input: NewRepoWizardInput): Promise<GitSetupResult> {
 		const repoName = resolveRepoLabel(this.app, input.repoName);
@@ -58,8 +357,8 @@ export class GitAdapter {
 		const authUrl = buildAuthenticatedUrl(created.httpsUrl, owner, input.token);
 
 		await this.initializeLocalRepo(basePath, authUrl, owner, input.token);
-		await this.commitAll(basePath, "ObSave: sincronización inicial");
-		await this.pushSafe(basePath, owner, input.token);
+		await this.commitLocalChanges(basePath);
+		await this.pushIfAhead(basePath, owner, input.token);
 
 		return {
 			success: true,
@@ -103,7 +402,6 @@ export class GitAdapter {
 		};
 	}
 
-	/** Limpia credenciales del remoto origin en .git (sin borrar el repo local) */
 	async clearGitSession(): Promise<void> {
 		const basePath = getVaultBasePath(this.app);
 		const gitDir = path.join(basePath, ".git");
@@ -219,9 +517,6 @@ export class GitAdapter {
 		});
 	}
 
-	/**
-	 * Fusión inteligente: fetch → merge remoto → reconciliar archivos → push seguro
-	 */
 	private async smartMerge(
 		basePath: string,
 		username: string,
@@ -244,7 +539,24 @@ export class GitAdapter {
 		const dateStr = formatConflictDate(new Date());
 
 		if (remoteCommit) {
-			await this.mergeRemoteBranch(basePath, username, token);
+			try {
+				await git.merge({
+					fs,
+					dir: basePath,
+					ours: DEFAULT_BRANCH,
+					theirs: REMOTE_TRACKING_REF,
+					author: AUTHOR,
+				});
+			} catch {
+				/* fusión inicial tolerante */
+			}
+
+			await git.checkout({
+				fs,
+				dir: basePath,
+				ref: DEFAULT_BRANCH,
+				force: true,
+			});
 
 			const remoteFiles = await this.listFilesInCommit(basePath, remoteCommit);
 
@@ -261,9 +573,8 @@ export class GitAdapter {
 			}
 		}
 
-		await this.stageAll(basePath);
-		await this.commitAll(basePath, "ObSave: fusión inteligente");
-		await this.pushSafe(basePath, username, token);
+		await this.commitLocalChanges(basePath);
+		await this.pushIfAhead(basePath, username, token);
 	}
 
 	private async fetchRemote(
@@ -278,89 +589,6 @@ export class GitAdapter {
 			remote: REMOTE_NAME,
 			onAuth: this.onAuth(username, token),
 		});
-	}
-
-	/** Integra commits remotos antes de push para evitar rechazos non-fast-forward */
-	private async mergeRemoteBranch(
-		basePath: string,
-		username: string,
-		token: string,
-	): Promise<void> {
-		await this.fetchRemote(basePath, username, token);
-
-		let hasRemote = false;
-		try {
-			await git.resolveRef({ fs, dir: basePath, ref: REMOTE_TRACKING_REF });
-			hasRemote = true;
-		} catch {
-			hasRemote = false;
-		}
-
-		if (!hasRemote) return;
-
-		const currentBranch = await git.currentBranch({ fs, dir: basePath });
-		if (!currentBranch) {
-			await git.checkout({ fs, dir: basePath, ref: DEFAULT_BRANCH });
-		}
-
-		try {
-			await git.merge({
-				fs,
-				dir: basePath,
-				ours: DEFAULT_BRANCH,
-				theirs: REMOTE_TRACKING_REF,
-				author: AUTHOR,
-			});
-		} catch {
-			// Conflicto a nivel Git: conservar working tree y crear commit de reconciliación
-			await this.stageAll(basePath);
-			await this.commitAll(basePath, "ObSave: reconciliación con remoto");
-		}
-	}
-
-	private async pushSafe(
-		basePath: string,
-		username: string,
-		token: string,
-	): Promise<void> {
-		await this.mergeRemoteBranch(basePath, username, token);
-		await this.stageAll(basePath);
-		await this.commitAll(basePath, "ObSave: sincronización");
-
-		const auth = this.onAuth(username, token);
-
-		try {
-			await git.push({
-				fs,
-				http,
-				dir: basePath,
-				remote: REMOTE_NAME,
-				ref: DEFAULT_BRANCH,
-				onAuth: auth,
-			});
-			return;
-		} catch (firstError) {
-			await this.fetchRemote(basePath, username, token);
-			await this.mergeRemoteBranch(basePath, username, token);
-			await this.stageAll(basePath);
-			await this.commitAll(basePath, "ObSave: integración remota post-rechazo");
-
-			try {
-				await git.push({
-					fs,
-					http,
-					dir: basePath,
-					remote: REMOTE_NAME,
-					ref: DEFAULT_BRANCH,
-					onAuth: auth,
-				});
-				return;
-			} catch {
-				throw firstError instanceof Error
-					? firstError
-					: new Error("Push rechazado: no se pudo integrar con el remoto.");
-			}
-		}
 	}
 
 	private async listFilesInCommit(
@@ -392,31 +620,5 @@ export class GitAdapter {
 		const { commit } = await git.readCommit({ fs, dir: basePath, oid: commitOid });
 		await walkTree("", commit.tree);
 		return files;
-	}
-
-	private async stageAll(basePath: string): Promise<void> {
-		const files = await walkVaultFiles(basePath);
-		for (const relativePath of files.keys()) {
-			await git.add({ fs, dir: basePath, filepath: relativePath });
-		}
-
-		const gitignorePath = path.join(basePath, ".gitignore");
-		if (fs.existsSync(gitignorePath)) {
-			await git.add({ fs, dir: basePath, filepath: ".gitignore" });
-		}
-	}
-
-	private async commitAll(basePath: string, message: string): Promise<void> {
-		const status = await git.statusMatrix({ fs, dir: basePath });
-		const hasChanges = status.some((row) => row[1] !== row[2] || row[2] !== row[3]);
-
-		if (!hasChanges) return;
-
-		await git.commit({
-			fs,
-			dir: basePath,
-			message,
-			author: AUTHOR,
-		});
 	}
 }

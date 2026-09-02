@@ -1,18 +1,21 @@
+import type { GitAdapter } from "../adapters/GitAdapter";
 import type { ObSaveSettings, SyncEngineEvent, SyncStatus } from "../types";
 
 type SyncEngineListener = (event: SyncEngineEvent) => void;
 
 /**
  * Motor de sincronización Master-Réplicas.
- * Fase 1: stub con API estable para UI y adapters futuros.
+ * Delega el ciclo Git real a GitAdapter.performSync().
  */
 export class SyncEngine {
 	private status: SyncStatus = "idle";
 	private listeners: SyncEngineListener[] = [];
 
-	constructor(private settings: ObSaveSettings) {}
+	constructor(
+		private settings: ObSaveSettings,
+		private gitAdapter: GitAdapter,
+	) {}
 
-	/** Registra un listener para eventos de sync (UI) */
 	on(listener: SyncEngineListener): () => void {
 		this.listeners.push(listener);
 		return () => {
@@ -28,10 +31,6 @@ export class SyncEngine {
 		this.settings = settings;
 	}
 
-	/**
-	 * Ejecuta un ciclo de sincronización.
-	 * Fase 1: simula el flujo sin tocar backends reales.
-	 */
 	async sync(): Promise<void> {
 		if (this.status === "syncing") {
 			return;
@@ -50,15 +49,16 @@ export class SyncEngine {
 		this.setStatus("syncing");
 
 		try {
-			// Fase 1: placeholder — Fase 3 implementará pull/push real
-			await this.simulateSyncCycle();
+			const result = await this.gitAdapter.performSync(this.settings.masterRepo);
 
 			this.setStatus("idle");
 			this.emit({
 				type: "sync-complete",
 				status: "idle",
-				message: "Sincronización completada (stub).",
+				message: result.message,
 				timestamp: new Date().toISOString(),
+				downloadedCount: result.downloadedCount,
+				uploadedCount: result.uploadedCount,
 			});
 		} catch (error) {
 			const message =
@@ -86,14 +86,5 @@ export class SyncEngine {
 		for (const listener of this.listeners) {
 			listener(event);
 		}
-	}
-
-	private async simulateSyncCycle(): Promise<void> {
-		const replicaCount = this.settings.replicaRepos.filter((r) => r.enabled).length;
-		// Simula latencia de red mínima
-		await new Promise((resolve) => setTimeout(resolve, 300));
-		console.log(
-			`[ObSave SyncEngine] Master: ${this.settings.masterRepo?.label} → ${replicaCount} réplica(s)`,
-		);
 	}
 }
