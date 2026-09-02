@@ -1,4 +1,5 @@
 import type { GoogleDriveProviderConfig } from "../settings";
+import type { GoogleDriveAuthContext } from "./GoogleDriveProvider";
 import type { IStorageProvider, SyncResult } from "./IStorageProvider";
 
 type GoogleDriveProviderClass = typeof import("./GoogleDriveProvider").GoogleDriveProvider;
@@ -68,8 +69,10 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 		}
 	}
 
-	async authenticateWithPkce(): Promise<GoogleDriveProviderConfig> {
+	async authenticateWithPkce(
+		authContext?: GoogleDriveAuthContext,
+	): Promise<GoogleDriveProviderConfig> {
 		const delegate = await this.ensureLoaded();
-		return delegate.authenticateWithPkce();
+		return delegate.authenticateWithPkce(authContext);
 	}
 }

@@ -7,10 +7,11 @@ export interface OAuthCallbackResult {
 	errorDescription?: string;
 }
 
+/** Puerto fijo OAuth — no configurable. */
+const OAUTH_PORT = GOOGLE_DRIVE_CALLBACK_PORT;
+
 /** Timeout global si el usuario no completa la autorización (2 minutos). */
 const CALLBACK_TIMEOUT_MS = 120_000;
-/** Retraso tras callback exitoso antes de liberar el puerto. */
-const SERVER_CLOSE_DELAY_MS = 500;
 const EADDRINUSE_RETRY_DELAY_MS = 300;
 const EADDRINUSE_MAX_RETRIES = 3;
 
@@ -20,7 +21,7 @@ const SUCCESS_HTML =
 type HttpModule = NonNullable<ReturnType<typeof loadNodeHttp>>;
 type HttpServer = ReturnType<HttpModule["createServer"]>;
 
-/** Instancia HTTP activa en el puerto OAuth — una sola a la vez. */
+/** Instancia HTTP activa en 127.0.0.1:42000 — una sola a la vez. */
 let activeServer: HttpServer | null = null;
 
 function sleep(ms: number): Promise<void> {
@@ -31,14 +32,16 @@ function forceCloseConnections(server: HttpServer): void {
 	try {
 		const closable = server as HttpServer & {
 			closeAllConnections?: () => void;
+			unref?: () => void;
 		};
 		closable.closeAllConnections?.();
+		closable.unref?.();
 	} catch {
-		// Ignorar si el runtime no expone closeAllConnections
+		// Ignorar si el runtime no expone estas APIs
 	}
 }
 
-/** Cierra y libera el servidor callback activo. */
+/** Cierra y libera el servidor callback activo en el puerto 42000. */
 export function stopServer(): Promise<void> {
 	return new Promise((resolve) => {
 		if (!activeServer) {
@@ -48,7 +51,7 @@ export function stopServer(): Promise<void> {
 
 		const server = activeServer;
 		activeServer = null;
-		console.log("[ObSave OAuth] Cerrando servidor callback activo");
+		console.log("[ObSave OAuth] Cerrando servidor callback activo (puerto 42000)");
 
 		forceCloseConnections(server);
 
@@ -56,19 +59,19 @@ export function stopServer(): Promise<void> {
 		const finish = (): void => {
 			if (settled) return;
 			settled = true;
-			console.log("[ObSave OAuth] Servidor callback detenido — puerto liberado");
+			console.log("[ObSave OAuth] Puerto 42000 liberado");
 			resolve();
 		};
+
+		try {
+			server.unref?.();
+		} catch {
+			// unref opcional
+		}
 
 		server.close(() => finish());
 		setTimeout(finish, 200);
 	});
-}
-
-function scheduleStopServer(delayMs = SERVER_CLOSE_DELAY_MS): void {
-	setTimeout(() => {
-		void stopServer();
-	}, delayMs);
 }
 
 function parseCallbackPath(reqUrl: string): {
@@ -110,11 +113,7 @@ function buildErrorHtml(message: string): string {
 </html>`;
 }
 
-function listenWithRetry(
-	server: HttpServer,
-	port: number,
-	host: string,
-): Promise<void> {
+function listenWithRetry(server: HttpServer, host: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const attemptListen = (attempt: number): void => {
 			const onError = (err: NodeJS.ErrnoException): void => {
@@ -122,7 +121,7 @@ function listenWithRetry(
 
 				if (err.code === "EADDRINUSE" && attempt < EADDRINUSE_MAX_RETRIES) {
 					console.warn(
-						`[ObSave OAuth] EADDRINUSE en ${host}:${port}, reintento ${attempt + 1}/${EADDRINUSE_MAX_RETRIES}`,
+						`[ObSave OAuth] EADDRINUSE en ${host}:${OAUTH_PORT}, reintento ${attempt + 1}/${EADDRINUSE_MAX_RETRIES}`,
 					);
 					void stopServer()
 						.then(() => sleep(EADDRINUSE_RETRY_DELAY_MS))
@@ -139,7 +138,7 @@ function listenWithRetry(
 			};
 
 			server.once("error", onError);
-			server.listen(port, host, () => {
+			server.listen(OAUTH_PORT, host, () => {
 				server.removeListener("error", onError);
 				resolve();
 			});
@@ -150,13 +149,9 @@ function listenWithRetry(
 }
 
 /**
- * Servidor HTTP efímero en 127.0.0.1:42000/callback.
- * Extrae el `code` OAuth y resuelve la promesa; el intercambio de tokens
- * ocurre en `GoogleDriveProvider.authenticateWithPkce()`.
+ * Servidor HTTP efímero exclusivamente en 127.0.0.1:42000/callback.
  */
-export function waitForOAuthCallback(
-	port = GOOGLE_DRIVE_CALLBACK_PORT,
-): Promise<OAuthCallbackResult> {
+export function waitForOAuthCallback(): Promise<OAuthCallbackResult> {
 	return new Promise((resolve, reject) => {
 		void (async () => {
 			let http: ReturnType<typeof loadNodeHttp>;
@@ -203,20 +198,15 @@ export function waitForOAuthCallback(
 				response: import("http").ServerResponse,
 				html: string,
 				result: OAuthCallbackResult,
-				releasePortAfterSuccess: boolean,
 			): void => {
 				if (settled) return;
 				response.writeHead(200, {
 					"Content-Type": "text/html; charset=utf-8",
 				});
 				response.end(html, () => {
-					console.log("[ObSave OAuth] Respuesta HTML enviada al navegador");
+					console.log("[ObSave OAuth] Respuesta HTML enviada — cerrando puerto 42000");
 					resolveCallback(result);
-					if (releasePortAfterSuccess) {
-						scheduleStopServer(SERVER_CLOSE_DELAY_MS);
-					} else {
-						void stopServer();
-					}
+					void stopServer();
 				});
 			};
 
@@ -230,7 +220,7 @@ export function waitForOAuthCallback(
 					}
 
 					const { code, error, errorDescription } = parseCallbackPath(reqUrl);
-					console.log("[ObSave OAuth] Callback recibido", {
+					console.log("[ObSave OAuth] Callback recibido en :42000", {
 						hasCode: !!code,
 						error: error ?? null,
 					});
@@ -244,7 +234,6 @@ export function waitForOAuthCallback(
 							res,
 							buildErrorHtml(message),
 							{ error, errorDescription, code },
-							false,
 						);
 						return;
 					}
@@ -254,12 +243,11 @@ export function waitForOAuthCallback(
 							res,
 							buildErrorHtml("Callback OAuth sin código de autorización."),
 							{ error: "missing_code" },
-							false,
 						);
 						return;
 					}
 
-					sendHtmlAndResolve(res, SUCCESS_HTML, { code }, true);
+					sendHtmlAndResolve(res, SUCCESS_HTML, { code });
 				});
 
 				activeServer = server;
@@ -288,9 +276,9 @@ export function waitForOAuthCallback(
 					);
 				}, CALLBACK_TIMEOUT_MS);
 
-				await listenWithRetry(server, port, "127.0.0.1");
+				await listenWithRetry(server, "127.0.0.1");
 				console.log(
-					`[ObSave OAuth] Escuchando en 127.0.0.1:${port}/callback`,
+					`[ObSave OAuth] Escuchando en 127.0.0.1:${OAUTH_PORT}/callback`,
 				);
 			} catch (error) {
 				cleanupAndReject(

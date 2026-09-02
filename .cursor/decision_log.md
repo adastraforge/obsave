@@ -437,3 +437,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.21`
 
 ---
+
+## DEC-030 | 2026-09-02 | Token exchange Google y cierre inmediato puerto 42000
+
+**Contexto:** Errores de Google OAuth no eran visibles al usuario; el puerto 42000 debía liberarse al instante tras el callback.
+
+**Decisión:**
+1. `stopServer()` con `close()` + `unref()`; cierre inmediato tras HTML de éxito (sin delay).
+2. `exchangeCodeForTokens`: POST con parámetros PKCE; Notice con `error_description` de Google.
+3. `GoogleDriveAuthContext.onAuthSuccess`: guarda `providerConfig.gdrive`, Notice éxito y `display()`.
+
+**Release:** `v1.0.22`
+
+---

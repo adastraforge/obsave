@@ -1,4 +1,4 @@
-import { requestUrl } from "obsidian";
+import { Notice, requestUrl } from "obsidian";
 import {
 	GOOGLE_DRIVE_AUTH_URL,
 	GOOGLE_DRIVE_CLIENT_ID,
@@ -25,7 +25,30 @@ interface GoogleUserInfo {
 	name?: string;
 }
 
+interface GoogleOAuthErrorBody {
+	error?: string;
+	error_description?: string;
+}
+
+/** Hooks opcionales para persistir estado y refrescar UI tras OAuth exitoso. */
+export interface GoogleDriveAuthContext {
+	onAuthSuccess: (config: GoogleDriveProviderConfig) => Promise<void>;
+}
+
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+
+function parseGoogleOAuthError(responseText: string): string {
+	try {
+		const parsed = JSON.parse(responseText) as GoogleOAuthErrorBody;
+		return (
+			parsed.error_description ??
+			parsed.error ??
+			responseText
+		);
+	} catch {
+		return responseText || "Error desconocido de Google OAuth";
+	}
+}
 
 /** Conector Google Drive — OAuth2 PKCE con callback HTTP local. */
 export class GoogleDriveProvider implements IStorageProvider {
@@ -36,8 +59,13 @@ export class GoogleDriveProvider implements IStorageProvider {
 	private refreshTimerId: number | null = null;
 	private onConfigChanged: ((config: GoogleDriveProviderConfig) => void) | null =
 		null;
+	private authContext: GoogleDriveAuthContext | null = null;
 
 	constructor() {}
+
+	setAuthContext(context: GoogleDriveAuthContext | null): void {
+		this.authContext = context;
+	}
 
 	setConfigChangeListener(
 		listener: ((config: GoogleDriveProviderConfig) => void) | null,
@@ -74,7 +102,13 @@ export class GoogleDriveProvider implements IStorageProvider {
 	}
 
 	/** Flujo completo: PKCE → navegador → callback → tokens → perfil. */
-	async authenticateWithPkce(): Promise<GoogleDriveProviderConfig> {
+	async authenticateWithPkce(
+		authContext?: GoogleDriveAuthContext,
+	): Promise<GoogleDriveProviderConfig> {
+		if (authContext) {
+			this.authContext = authContext;
+		}
+
 		console.log("[ObSave OAuth] Iniciando flujo PKCE");
 
 		const clientId = this.requireClientId();
@@ -124,7 +158,9 @@ export class GoogleDriveProvider implements IStorageProvider {
 			});
 		} catch (error) {
 			console.error("[ObSave OAuth] Error en intercambio de tokens:", error);
-			throw new Error("Error al conectar con Google Drive");
+			throw error instanceof Error
+				? error
+				: new Error("Error al conectar con Google Drive");
 		}
 
 		if (!tokens.refresh_token) {
@@ -160,7 +196,12 @@ export class GoogleDriveProvider implements IStorageProvider {
 		this.persistConfig(config);
 		this.scheduleBackgroundRefresh();
 
-		console.log("[ObSave OAuth] Autenticación completada");
+		console.log("[ObSave OAuth] Autenticación completada — persistiendo estado");
+
+		if (this.authContext) {
+			await this.authContext.onAuthSuccess(config);
+		}
+
 		return config;
 	}
 
@@ -207,10 +248,10 @@ export class GoogleDriveProvider implements IStorageProvider {
 
 		const body = new URLSearchParams({
 			client_id: resolvedClientId,
-			grant_type: "authorization_code",
 			code,
-			code_verifier: codeVerifier,
+			grant_type: "authorization_code",
 			redirect_uri: GOOGLE_DRIVE_REDIRECT_URI,
+			code_verifier: codeVerifier,
 		}).toString();
 
 		const response = await requestUrl({
@@ -227,10 +268,10 @@ export class GoogleDriveProvider implements IStorageProvider {
 
 		if (response.status !== 200) {
 			const responseText = response.text;
+			const errorDescription = parseGoogleOAuthError(responseText);
 			console.error("[ObSave Token Error Body]", responseText);
-			throw new Error(
-				`Error al intercambiar código OAuth (${response.status}): ${responseText}`,
-			);
+			new Notice("Error Google OAuth: " + errorDescription);
+			throw new Error(errorDescription);
 		}
 
 		return response.json as GoogleTokenResponse;

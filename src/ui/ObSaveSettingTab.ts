@@ -259,24 +259,23 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 						let connected = false;
 						try {
-							const config =
-								await this.plugin
-									.getGoogleDriveLazy()
-									.authenticateWithPkce();
-
-							console.log(
-								"[ObSave OAuth] Tokens obtenidos con éxito, guardando settings...",
-							);
-							this.plugin.settings.activeProvider = "gdrive";
-							this.plugin.settings.providerConfig.gdrive = {
-								...config,
-								enabled: true,
-							};
-							await this.plugin.saveSettings();
+							await this.plugin.getGoogleDriveLazy().authenticateWithPkce({
+								onAuthSuccess: async (config) => {
+									console.log(
+										"[ObSave OAuth] Tokens obtenidos con éxito, guardando settings...",
+									);
+									this.plugin.settings.activeProvider = "gdrive";
+									this.plugin.settings.providerConfig.gdrive = {
+										...config,
+										enabled: true,
+									};
+									await this.plugin.saveSettings();
+									new Notice("¡Google Drive conectado exitosamente!");
+									this.display();
+								},
+							});
 
 							connected = true;
-							new Notice("¡Google Drive conectado correctamente!");
-							this.display();
 						} catch (e) {
 							console.error("[ObSave UI Error]", e);
 							const message =
