@@ -372,3 +372,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Script post-build manual fuera del workflow (propenso a olvidos).
 
 ---
+
+## DEC-025 | 2026-09-02 | Documentación legal y README público
+
+**Contexto:** ObSave requiere políticas de privacidad y términos visibles para usuarios y cumplimiento OAuth Google; el repo carecía de README y documentos legales.
+
+**Decisión:**
+1. **`PRIVACY.md`:** sin recolección Ad Astra Forge; scope `drive.file`; tokens locales Obsidian; contacto soporte.
+2. **`TERMS.md`:** MIT; disclaimer pérdida datos sync; uso APIs sujeto a términos GitHub/Google.
+3. **`README.md`:** badges, instalación, config GDrive con explicación privacidad, enlaces a políticas.
+
+**Release:** `v1.0.16`
+
+---

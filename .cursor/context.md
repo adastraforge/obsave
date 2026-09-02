@@ -7,10 +7,15 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.15`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.15`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.16`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.16`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Documentación legal v1.0.16
+- **`PRIVACY.md`:** política de privacidad local; scope `drive.file`; tokens en Obsidian local.
+- **`TERMS.md`:** condiciones MIT; exención de responsabilidad sync; uso APIs GitHub/Google.
+- **`README.md`:** badges, instalación, config GDrive, enlaces a políticas.
 
 ### Release CI v1.0.15
 - **`.github/workflows/release.yml`:** inyecta `OBSAVE_GOOGLE_CLIENT_ID` desde `secrets.OBSAVE_GOOGLE_CLIENT_ID` en el paso `npm run build`.
