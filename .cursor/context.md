@@ -7,10 +7,13 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.20`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.20`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.21`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.21`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Fix EADDRINUSE callback v1.0.21
+- **`localCallbackServer`:** `activeServer` global, `stopServer()` previo a listen, retry EADDRINUSE 300 ms, cierre a 500 ms post-éxito, timeout 120 s.
 
 ### OAuth logging exhaustivo v1.0.20
 - **`ObSaveSettingTab`:** logs `[ObSave UI]`, Notice inicial, catch con `[ObSave UI Error]` y mensaje OAuth.

@@ -7,11 +7,69 @@ export interface OAuthCallbackResult {
 	errorDescription?: string;
 }
 
-const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
-const SERVER_CLOSE_DELAY_MS = 1500;
+/** Timeout global si el usuario no completa la autorización (2 minutos). */
+const CALLBACK_TIMEOUT_MS = 120_000;
+/** Retraso tras callback exitoso antes de liberar el puerto. */
+const SERVER_CLOSE_DELAY_MS = 500;
+const EADDRINUSE_RETRY_DELAY_MS = 300;
+const EADDRINUSE_MAX_RETRIES = 3;
 
 const SUCCESS_HTML =
 	"<html><body><h2>Autenticación exitosa</h2><p>Puedes cerrar esta ventana y regresar a Obsidian.</p><script>setTimeout(() => { window.close(); }, 1000);</script></body></html>";
+
+type HttpModule = NonNullable<ReturnType<typeof loadNodeHttp>>;
+type HttpServer = ReturnType<HttpModule["createServer"]>;
+
+/** Instancia HTTP activa en el puerto OAuth — una sola a la vez. */
+let activeServer: HttpServer | null = null;
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function forceCloseConnections(server: HttpServer): void {
+	try {
+		const closable = server as HttpServer & {
+			closeAllConnections?: () => void;
+		};
+		closable.closeAllConnections?.();
+	} catch {
+		// Ignorar si el runtime no expone closeAllConnections
+	}
+}
+
+/** Cierra y libera el servidor callback activo. */
+export function stopServer(): Promise<void> {
+	return new Promise((resolve) => {
+		if (!activeServer) {
+			resolve();
+			return;
+		}
+
+		const server = activeServer;
+		activeServer = null;
+		console.log("[ObSave OAuth] Cerrando servidor callback activo");
+
+		forceCloseConnections(server);
+
+		let settled = false;
+		const finish = (): void => {
+			if (settled) return;
+			settled = true;
+			console.log("[ObSave OAuth] Servidor callback detenido — puerto liberado");
+			resolve();
+		};
+
+		server.close(() => finish());
+		setTimeout(finish, 200);
+	});
+}
+
+function scheduleStopServer(delayMs = SERVER_CLOSE_DELAY_MS): void {
+	setTimeout(() => {
+		void stopServer();
+	}, delayMs);
+}
 
 function parseCallbackPath(reqUrl: string): {
 	code?: string;
@@ -52,6 +110,45 @@ function buildErrorHtml(message: string): string {
 </html>`;
 }
 
+function listenWithRetry(
+	server: HttpServer,
+	port: number,
+	host: string,
+): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const attemptListen = (attempt: number): void => {
+			const onError = (err: NodeJS.ErrnoException): void => {
+				server.removeListener("error", onError);
+
+				if (err.code === "EADDRINUSE" && attempt < EADDRINUSE_MAX_RETRIES) {
+					console.warn(
+						`[ObSave OAuth] EADDRINUSE en ${host}:${port}, reintento ${attempt + 1}/${EADDRINUSE_MAX_RETRIES}`,
+					);
+					void stopServer()
+						.then(() => sleep(EADDRINUSE_RETRY_DELAY_MS))
+						.then(() => attemptListen(attempt + 1))
+						.catch(reject);
+					return;
+				}
+
+				reject(
+					err instanceof Error
+						? err
+						: new Error("No se pudo iniciar el servidor OAuth local."),
+				);
+			};
+
+			server.once("error", onError);
+			server.listen(port, host, () => {
+				server.removeListener("error", onError);
+				resolve();
+			});
+		};
+
+		attemptListen(0);
+	});
+}
+
 /**
  * Servidor HTTP efímero en 127.0.0.1:42000/callback.
  * Extrae el `code` OAuth y resuelve la promesa; el intercambio de tokens
@@ -61,135 +158,147 @@ export function waitForOAuthCallback(
 	port = GOOGLE_DRIVE_CALLBACK_PORT,
 ): Promise<OAuthCallbackResult> {
 	return new Promise((resolve, reject) => {
-		let http: ReturnType<typeof loadNodeHttp>;
-		try {
-			http = loadNodeHttp();
-		} catch (error) {
-			reject(
-				error instanceof Error
-					? error
-					: new Error("No se pudo cargar el módulo http."),
-			);
-			return;
-		}
+		void (async () => {
+			let http: ReturnType<typeof loadNodeHttp>;
+			try {
+				http = loadNodeHttp();
+			} catch (error) {
+				reject(
+					error instanceof Error
+						? error
+						: new Error("No se pudo cargar el módulo http."),
+				);
+				return;
+			}
 
-		if (!http) {
-			reject(
-				new Error(
-					"Servidor OAuth local no disponible (window.require/http ausente).",
-				),
-			);
-			return;
-		}
+			if (!http) {
+				reject(
+					new Error(
+						"Servidor OAuth local no disponible (window.require/http ausente).",
+					),
+				);
+				return;
+			}
 
-		let settled = false;
-		let server: { close: () => void } | null = null;
-		let timeoutId: ReturnType<typeof setTimeout>;
+			await stopServer();
 
-		const closeServerDelayed = (): void => {
-			setTimeout(() => {
-				server?.close();
-				console.log("[ObSave OAuth] Servidor callback cerrado");
-			}, SERVER_CLOSE_DELAY_MS);
-		};
+			let settled = false;
+			let timeoutId: ReturnType<typeof setTimeout>;
 
-		const resolveCallback = (result: OAuthCallbackResult): void => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeoutId);
-			resolve(result);
-		};
+			const cleanupAndReject = (error: Error): void => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeoutId);
+				void stopServer().finally(() => reject(error));
+			};
 
-		const fail = (error: Error): void => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeoutId);
-			server?.close();
-			reject(error);
-		};
+			const resolveCallback = (result: OAuthCallbackResult): void => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeoutId);
+				resolve(result);
+			};
 
-		const sendHtmlAndResolve = (
-			response: import("http").ServerResponse,
-			html: string,
-			result: OAuthCallbackResult,
-			delayClose: boolean,
-		): void => {
-			if (settled) return;
-			response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-			response.end(html, () => {
-				console.log("[ObSave OAuth] Respuesta HTML enviada al navegador");
-				resolveCallback(result);
-				if (delayClose) {
-					closeServerDelayed();
-				} else {
-					server?.close();
-				}
-			});
-		};
+			const sendHtmlAndResolve = (
+				response: import("http").ServerResponse,
+				html: string,
+				result: OAuthCallbackResult,
+				releasePortAfterSuccess: boolean,
+			): void => {
+				if (settled) return;
+				response.writeHead(200, {
+					"Content-Type": "text/html; charset=utf-8",
+				});
+				response.end(html, () => {
+					console.log("[ObSave OAuth] Respuesta HTML enviada al navegador");
+					resolveCallback(result);
+					if (releasePortAfterSuccess) {
+						scheduleStopServer(SERVER_CLOSE_DELAY_MS);
+					} else {
+						void stopServer();
+					}
+				});
+			};
 
-		try {
-			server = http.createServer((req, res) => {
-				const reqUrl = req.url ?? "";
-				if (!reqUrl.startsWith("/callback")) {
-					res.writeHead(404);
-					res.end("Not found");
-					return;
-				}
+			try {
+				const server = http.createServer((req, res) => {
+					const reqUrl = req.url ?? "";
+					if (!reqUrl.startsWith("/callback")) {
+						res.writeHead(404);
+						res.end("Not found");
+						return;
+					}
 
-				const { code, error, errorDescription } = parseCallbackPath(reqUrl);
-				console.log("[ObSave OAuth] Callback recibido", {
-					hasCode: !!code,
-					error: error ?? null,
+					const { code, error, errorDescription } = parseCallbackPath(reqUrl);
+					console.log("[ObSave OAuth] Callback recibido", {
+						hasCode: !!code,
+						error: error ?? null,
+					});
+
+					if (error) {
+						const message =
+							errorDescription ??
+							error ??
+							"Autorización rechazada por Google.";
+						sendHtmlAndResolve(
+							res,
+							buildErrorHtml(message),
+							{ error, errorDescription, code },
+							false,
+						);
+						return;
+					}
+
+					if (!code) {
+						sendHtmlAndResolve(
+							res,
+							buildErrorHtml("Callback OAuth sin código de autorización."),
+							{ error: "missing_code" },
+							false,
+						);
+						return;
+					}
+
+					sendHtmlAndResolve(res, SUCCESS_HTML, { code }, true);
 				});
 
-				if (error) {
-					const message =
-						errorDescription ?? error ?? "Autorización rechazada por Google.";
-					sendHtmlAndResolve(
-						res,
-						buildErrorHtml(message),
-						{ error, errorDescription, code },
-						false,
+				activeServer = server;
+
+				server.on("error", (err) => {
+					const nodeErr = err as NodeJS.ErrnoException;
+					if (nodeErr.code === "EADDRINUSE") {
+						console.warn("[ObSave OAuth] Error EADDRINUSE en servidor activo");
+						return;
+					}
+					cleanupAndReject(
+						err instanceof Error
+							? err
+							: new Error("Error en servidor OAuth local."),
 					);
-					return;
-				}
+				});
 
-				if (!code) {
-					sendHtmlAndResolve(
-						res,
-						buildErrorHtml("Callback OAuth sin código de autorización."),
-						{ error: "missing_code" },
-						false,
+				timeoutId = setTimeout(() => {
+					console.warn(
+						"[ObSave OAuth] Timeout global (120s) — destruyendo servidor",
 					);
-					return;
-				}
+					cleanupAndReject(
+						new Error(
+							"Tiempo de espera agotado para la autorización OAuth (2 minutos).",
+						),
+					);
+				}, CALLBACK_TIMEOUT_MS);
 
-				sendHtmlAndResolve(res, SUCCESS_HTML, { code }, true);
-			});
-
-			server.on("error", (err) => {
-				fail(
-					err instanceof Error
-						? err
-						: new Error("No se pudo iniciar el servidor OAuth local."),
-				);
-			});
-
-			timeoutId = setTimeout(() => {
-				fail(new Error("Tiempo de espera agotado para la autorización OAuth."));
-			}, CALLBACK_TIMEOUT_MS);
-
-			server.listen(port, "127.0.0.1", () => {
+				await listenWithRetry(server, port, "127.0.0.1");
 				console.log(
-					"[ObSave OAuth] Escuchando en 127.0.0.1:" + port + "/callback",
+					`[ObSave OAuth] Escuchando en 127.0.0.1:${port}/callback`,
 				);
-			});
-		} catch (error) {
-			fail(
-				error instanceof Error
-					? error
-					: new Error("Error al crear servidor OAuth local."),
-			);
-		}
+			} catch (error) {
+				cleanupAndReject(
+					error instanceof Error
+						? error
+						: new Error("Error al crear servidor OAuth local."),
+				);
+			}
+		})();
 	});
 }

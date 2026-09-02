@@ -424,3 +424,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.20`
 
 ---
+
+## DEC-029 | 2026-09-02 | Fix EADDRINUSE puerto 42000 OAuth
+
+**Contexto:** Reintentos OAuth fallaban con `EADDRINUSE` porque instancias previas del servidor callback no liberaban el puerto 42000.
+
+**Decisión:**
+1. Referencia global `activeServer` + `stopServer()` antes de cada `listen`.
+2. Retry automático en `EADDRINUSE` (300 ms, hasta 3 intentos).
+3. Cierre diferido 500 ms tras callback exitoso; timeout global 120 s.
+
+**Release:** `v1.0.21`
+
+---
