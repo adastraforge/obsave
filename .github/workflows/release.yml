@@ -31,6 +31,7 @@ jobs:
         run: |
           test -f main.js
           test -f manifest.json
+          test -f styles.css
           node -e "const m=require('./manifest.json'); if(!m.version) process.exit(1); console.log('Version:', m.version)"
 
       - name: Create GitHub Release
@@ -39,6 +40,7 @@ jobs:
           files: |
             main.js
             manifest.json
+            styles.css
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

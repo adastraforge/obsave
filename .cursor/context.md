@@ -7,10 +7,14 @@ El usuario mantiene control total de sus datos: el vault se replica de forma tra
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.7`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.7`  
-> BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.8`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.8`  
+> BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Decoradores v1.0.8
+- **`styles.css`:** puntos `.obsave-dot-new|modified|synced` incluidos en release (3 artefactos obligatorios).
+- **DOM Explorador:** spans inyectados en `.nav-file-title[data-path]` / `.nav-file[data-path]`; refresco en `layout-change`, `vault.modify` y post-sync.
 
 ### UI visual v1.0.7
 - **Decoradores en Explorador:** puntos de color junto a cada `.md` — rojo (nuevo local), amarillo (modificado/pendiente), verde (sincronizado con remoto).

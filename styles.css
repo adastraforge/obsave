@@ -1,0 +1,23 @@
+/* ObSave — indicadores de estado Git en el Explorador de Archivos */
+
+.obsave-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	display: inline-block;
+	margin-left: 6px;
+	flex-shrink: 0;
+	vertical-align: middle;
+}
+
+.obsave-dot-new {
+	background-color: #e74c3c;
+}
+
+.obsave-dot-modified {
+	background-color: #f1c40f;
+}
+
+.obsave-dot-synced {
+	background-color: #2ecc71;
+}

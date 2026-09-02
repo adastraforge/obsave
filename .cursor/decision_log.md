@@ -236,3 +236,20 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Panel lateral separado para estado de archivos (más invasivo que decoradores nativos).
 
 ---
+
+## DEC-017 | 2026-08-24 | Decoradores span + styles.css en release
+
+**Contexto:** Los pseudo-elementos `::before` inyectados por JS no renderizaban de forma fiable en el Explorador; faltaba `styles.css` como artefacto de distribución.
+
+**Decisión:**
+1. Reemplazar clases en título por `<span class="obsave-dot obsave-dot-{status}">` anclado a `.nav-file-title[data-path]` o `.nav-file[data-path]`.
+2. **`styles.css`** en raíz del plugin (Obsidian lo carga automáticamente); workflow release adjunta `main.js`, `manifest.json` y `styles.css`.
+3. Eventos de refresco registrados en `main.ts`: `layout-change`, `vault.modify` (diferido) e inmediato post-`performSync`.
+
+**Release:** `v1.0.8`
+
+**Alternativas descartadas:**
+- Mantener CSS inline en `<style>` (no distribuible vía BRAT sin archivo dedicado).
+- Solo `::before` en `.nav-file-title` (selectores inconsistentes entre versiones de Obsidian).
+
+---

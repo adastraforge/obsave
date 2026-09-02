@@ -33,6 +33,13 @@ export default class ObSavePlugin extends Plugin {
 		);
 		this.fileDecorators.install();
 
+		this.registerEvent(
+			this.app.workspace.on("layout-change", () => this.refreshDecorators()),
+		);
+		this.registerEvent(
+			this.app.vault.on("modify", () => this.refreshDecorators()),
+		);
+
 		this.syncEngine.on((event) => {
 			if (event.type === "status-changed" && event.status) {
 				this.settings.syncStatus = event.status;
@@ -47,7 +54,7 @@ export default class ObSavePlugin extends Plugin {
 					event.message ?? "ObSave: Bóveda al día (sin cambios)";
 				console.log(`[ObSave] ${message}`);
 
-				void this.fileDecorators.refresh();
+				void this.refreshDecoratorsImmediate();
 
 				if (event.trigger === "manual") {
 					new Notice(message);
@@ -57,7 +64,7 @@ export default class ObSavePlugin extends Plugin {
 				this.settings.syncStatus = "error";
 				void this.saveSettings();
 				new Notice(`ObSave: ${event.message ?? "Error de sincronización"}`);
-				void this.fileDecorators.refresh();
+				void this.refreshDecoratorsImmediate();
 			}
 		});
 
@@ -99,7 +106,17 @@ export default class ObSavePlugin extends Plugin {
 		this.syncEngine?.updateSettings(this.settings);
 		await this.saveData(this.settings);
 		this.startSyncInterval();
-		void this.fileDecorators?.refresh();
+		void this.refreshDecoratorsImmediate();
+	}
+
+	/** Refresco diferido de puntos de estado en el Explorador. */
+	refreshDecorators(): void {
+		this.fileDecorators?.requestRefresh();
+	}
+
+	/** Refresco inmediato tras sync o cambios de configuración. */
+	refreshDecoratorsImmediate(): Promise<void> {
+		return this.fileDecorators?.refresh() ?? Promise.resolve();
 	}
 
 	/** Dispara sincronización manual (`true`) o automática (`false`) */
@@ -121,7 +138,7 @@ export default class ObSavePlugin extends Plugin {
 		this.settings.syncStatus = "idle";
 		await this.saveSettings();
 		this.updateRibbonIcon("idle");
-		void this.fileDecorators.refresh();
+		void this.refreshDecoratorsImmediate();
 	}
 
 	clampSyncInterval(minutes: number): number {
