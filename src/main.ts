@@ -1,6 +1,7 @@
 import { Notice, Plugin, setIcon } from "obsidian";
 import { GitAdapter } from "./adapters/GitAdapter";
 import { SyncEngine } from "./engine/SyncEngine";
+import { ObSaveFileDecorators } from "./ui/fileDecorators";
 import { ObSaveSettingTab } from "./ui/ObSaveSettingTab";
 import { mergeStoredSettings } from "./settingsMerge";
 import {
@@ -15,14 +16,23 @@ const MAX_SYNC_INTERVAL = 15;
 export default class ObSavePlugin extends Plugin {
 	settings: ObSaveSettings = DEFAULT_SETTINGS;
 	syncEngine!: SyncEngine;
+	private gitAdapter!: GitAdapter;
+	private fileDecorators!: ObSaveFileDecorators;
 	private ribbonEl: HTMLElement | null = null;
 	private syncIntervalId: number | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
 
-		const gitAdapter = new GitAdapter(this.app);
-		this.syncEngine = new SyncEngine(this.settings, gitAdapter);
+		this.gitAdapter = new GitAdapter(this.app);
+		this.syncEngine = new SyncEngine(this.settings, this.gitAdapter);
+		this.fileDecorators = new ObSaveFileDecorators(
+			this,
+			() => this.settings.masterRepo,
+			this.gitAdapter,
+		);
+		this.fileDecorators.install();
+
 		this.syncEngine.on((event) => {
 			if (event.type === "status-changed" && event.status) {
 				this.settings.syncStatus = event.status;
@@ -32,12 +42,22 @@ export default class ObSavePlugin extends Plugin {
 				this.settings.lastSyncAt = new Date().toISOString();
 				this.settings.syncStatus = "idle";
 				void this.saveSettings();
-				new Notice(event.message ?? "ObSave: Bóveda al día (sin cambios)");
+
+				const message =
+					event.message ?? "ObSave: Bóveda al día (sin cambios)";
+				console.log(`[ObSave] ${message}`);
+
+				void this.fileDecorators.refresh();
+
+				if (event.trigger === "manual") {
+					new Notice(message);
+				}
 			}
 			if (event.type === "sync-error") {
 				this.settings.syncStatus = "error";
 				void this.saveSettings();
 				new Notice(`ObSave: ${event.message ?? "Error de sincronización"}`);
+				void this.fileDecorators.refresh();
 			}
 		});
 
@@ -47,19 +67,20 @@ export default class ObSavePlugin extends Plugin {
 			"cloud-download",
 			"ObSave — Sincronizar",
 			async () => {
-				await this.triggerSync();
+				await this.triggerSync(true);
 			},
 		);
 		this.updateRibbonIcon(this.settings.syncStatus);
 
 		this.startSyncInterval();
-		void this.triggerSync();
+		void this.triggerSync(false);
 
 		console.log("ObSave plugin loaded — Ad Astra Forge");
 	}
 
 	onunload(): void {
 		this.stopSyncInterval();
+		this.fileDecorators?.uninstall();
 		console.log("ObSave plugin unloaded");
 	}
 
@@ -78,21 +99,21 @@ export default class ObSavePlugin extends Plugin {
 		this.syncEngine?.updateSettings(this.settings);
 		await this.saveData(this.settings);
 		this.startSyncInterval();
+		void this.fileDecorators?.refresh();
 	}
 
-	/** Dispara sincronización manual o automática */
-	async triggerSync(): Promise<void> {
-		await this.syncEngine.sync();
+	/** Dispara sincronización manual (`true`) o automática (`false`) */
+	async triggerSync(manual = false): Promise<void> {
+		await this.syncEngine.sync(manual ? "manual" : "automatic");
 	}
 
 	async runSync(): Promise<void> {
-		await this.triggerSync();
+		await this.triggerSync(true);
 	}
 
 	/** Desconecta el repositorio Master y limpia credenciales Git de la sesión */
 	async disconnectRepository(): Promise<void> {
-		const gitAdapter = new GitAdapter(this.app);
-		await gitAdapter.clearGitSession();
+		await this.gitAdapter.clearGitSession();
 
 		this.settings.masterRepo = null;
 		this.settings.replicaRepos = [];
@@ -100,6 +121,7 @@ export default class ObSavePlugin extends Plugin {
 		this.settings.syncStatus = "idle";
 		await this.saveSettings();
 		this.updateRibbonIcon("idle");
+		void this.fileDecorators.refresh();
 	}
 
 	clampSyncInterval(minutes: number): number {
@@ -111,7 +133,7 @@ export default class ObSavePlugin extends Plugin {
 		const minutes = this.settings.syncIntervalMinutes;
 		this.syncIntervalId = window.setInterval(
 			() => {
-				void this.triggerSync();
+				void this.triggerSync(false);
 			},
 			minutes * 60 * 1000,
 		);

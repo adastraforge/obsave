@@ -1,5 +1,10 @@
 import type { GitAdapter } from "../adapters/GitAdapter";
-import type { ObSaveSettings, SyncEngineEvent, SyncStatus } from "../types";
+import type {
+	ObSaveSettings,
+	SyncEngineEvent,
+	SyncStatus,
+	SyncTrigger,
+} from "../types";
 
 type SyncEngineListener = (event: SyncEngineEvent) => void;
 
@@ -31,7 +36,7 @@ export class SyncEngine {
 		this.settings = settings;
 	}
 
-	async sync(): Promise<void> {
+	async sync(trigger: SyncTrigger = "automatic"): Promise<void> {
 		if (this.status === "syncing") {
 			return;
 		}
@@ -42,6 +47,7 @@ export class SyncEngine {
 				status: "error",
 				message: "No hay repositorio Master configurado.",
 				timestamp: new Date().toISOString(),
+				trigger,
 			});
 			return;
 		}
@@ -57,6 +63,8 @@ export class SyncEngine {
 				status: "idle",
 				message: result.message,
 				timestamp: new Date().toISOString(),
+				trigger,
+				noChanges: result.noChanges,
 				downloadedCount: result.downloadedCount,
 				uploadedCount: result.uploadedCount,
 			});
@@ -69,6 +77,7 @@ export class SyncEngine {
 				status: "error",
 				message,
 				timestamp: new Date().toISOString(),
+				trigger,
 			});
 		}
 	}

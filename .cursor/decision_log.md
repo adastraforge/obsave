@@ -219,3 +219,20 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - `git push --force` (destructivo para el remoto compartido).
 
 ---
+
+## DEC-016 | 2026-08-24 | Decoradores visuales + sync automático silencioso
+
+**Contexto:** Las notificaciones en cada sync automática interrumpían al usuario; faltaba feedback visual del estado Git por archivo en la bóveda.
+
+**Decisión:**
+1. **`ObSaveFileDecorators`:** inyección CSS (`.obsave-status-new|modified|synced`) en el Explorador de Archivos vía `getLeavesOfType("file-explorer")`; estados derivados de `statusMatrix` + comparación HEAD local vs remoto.
+2. **Notificaciones:** `SyncTrigger` (`manual` | `automatic`); `Notice` solo en sync manual o error; automático registra en consola y refresca badges.
+3. **`GitAdapter.getMarkdownFileStatuses()`:** API pública para mapear rutas `.md` → estado visual.
+
+**Release:** `v1.0.7`
+
+**Alternativas descartadas:**
+- Mostrar notice en auto-sync con cambios (ruidoso en intervalos cortos).
+- Panel lateral separado para estado de archivos (más invasivo que decoradores nativos).
+
+---

@@ -7,10 +7,14 @@ El usuario mantiene control total de sus datos: el vault se replica de forma tra
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.6`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.6`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.7`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.7`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### UI visual v1.0.7
+- **Decoradores en Explorador:** puntos de color junto a cada `.md` — rojo (nuevo local), amarillo (modificado/pendiente), verde (sincronizado con remoto).
+- **Sync silencioso:** timer y `onload` no muestran `Notice` si no hay cambios; solo consola + badges. Manual y errores siguen notificando.
 
 ### Last-Write-Wins v1.0.6
 - **Sin duplicación:** eliminados prefijos `[Local]` / `[Sync]` y copias con sufijo de fecha en sync.
@@ -97,7 +101,8 @@ src/
 ├── engine/
 │   └── SyncEngine.ts          # Motor Master-Réplicas (stub)
 └── ui/
-    └── ObSaveSettingTab.ts    # Wizard + ajustes
+    ├── ObSaveSettingTab.ts    # Wizard + ajustes
+    └── fileDecorators.ts      # Badges de estado en Explorador
 ```
 
 ## Contacto y Licencia

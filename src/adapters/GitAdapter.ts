@@ -15,7 +15,12 @@ import {
 	resolveRepoLabel,
 	writeVaultFile,
 } from "./vaultPaths";
-import type { GitSetupResult, RepoConfig, SyncPerformResult } from "../types";
+import type {
+	FileSyncStatus,
+	GitSetupResult,
+	RepoConfig,
+	SyncPerformResult,
+} from "../types";
 
 export type { GitSetupResult };
 
@@ -44,6 +49,63 @@ export interface ExistingRepoWizardInput {
 
 export class GitAdapter {
 	constructor(private app: App) {}
+
+	/**
+	 * Mapa de estado por nota `.md` para decoradores del explorador.
+	 * Rojo: nuevo local; amarillo: cambios pendientes; verde: al día con remoto.
+	 */
+	async getMarkdownFileStatuses(
+		masterRepo: RepoConfig | null,
+	): Promise<Map<string, FileSyncStatus>> {
+		const statuses = new Map<string, FileSyncStatus>();
+
+		if (!masterRepo?.token) {
+			return statuses;
+		}
+
+		const basePath = getVaultBasePath(this.app);
+		const gitDir = path.join(basePath, ".git");
+		if (!fs.existsSync(gitDir)) {
+			return statuses;
+		}
+
+		try {
+			const matrix = await git.statusMatrix({ fs, dir: basePath });
+			const localHead = await this.resolveRefSafe(basePath, LOCAL_HEAD_REF);
+			const remoteHead = await this.resolveRefSafe(
+				basePath,
+				REMOTE_TRACKING_REF,
+			);
+			const repoInSync =
+				localHead !== undefined &&
+				remoteHead !== undefined &&
+				localHead === remoteHead;
+
+			for (const row of matrix) {
+				const filepath = row[0];
+				const headStatus = row[1];
+				const workdirStatus = row[2];
+
+				if (!filepath.endsWith(".md") || !this.shouldTrackPath(filepath)) {
+					continue;
+				}
+
+				if (headStatus === 0 && workdirStatus !== 0) {
+					statuses.set(filepath, "new");
+				} else if (headStatus !== workdirStatus) {
+					statuses.set(filepath, "modified");
+				} else if (!repoInSync) {
+					statuses.set(filepath, "modified");
+				} else {
+					statuses.set(filepath, "synced");
+				}
+			}
+		} catch (error) {
+			console.warn("[ObSave] No se pudo calcular estados de archivos:", error);
+		}
+
+		return statuses;
+	}
 
 	/**
 	 * Sync Git — Last-Write-Wins, sin duplicación de archivos:

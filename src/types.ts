@@ -62,12 +62,20 @@ export interface SyncPerformResult {
 	noChanges: boolean;
 }
 
+/** Origen de una solicitud de sincronización */
+export type SyncTrigger = "manual" | "automatic";
+
+/** Estado de sync visible en el explorador de archivos */
+export type FileSyncStatus = "new" | "modified" | "synced";
+
 /** Evento emitido por SyncEngine hacia la UI */
 export interface SyncEngineEvent {
 	type: "status-changed" | "sync-complete" | "sync-error";
 	status?: SyncStatus;
 	message?: string;
 	timestamp: string;
+	trigger?: SyncTrigger;
+	noChanges?: boolean;
 	downloadedCount?: number;
 	uploadedCount?: number;
 }
