@@ -80,6 +80,23 @@ export function isProviderConfigured(settings: ObSaveSettings): boolean {
 	return settings.providerConfig[settings.activeProvider] != null;
 }
 
+/** Indica si el proveedor tiene credenciales almacenadas (independiente de activeProvider). */
+export function hasProviderCredentials(
+	settings: ObSaveSettings,
+	providerId: CloudProviderId,
+): boolean {
+	switch (providerId) {
+		case "github":
+			return !!settings.providerConfig.github?.token;
+		case "gdrive":
+			return settings.providerConfig.gdrive != null;
+		case "onedrive":
+			return settings.providerConfig.onedrive != null;
+		case "icloud":
+			return settings.providerConfig.icloud != null;
+	}
+}
+
 export function legacyRepoToGitHubConfig(
 	repo: LegacyRepoConfig,
 ): GitHubProviderConfig {

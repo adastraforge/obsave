@@ -287,3 +287,20 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Habilitar skeletons OAuth como clicables (generaría errores de sync).
 
 ---
+
+## DEC-020 | 2026-08-24 | Badges limpios en selector de proveedores
+
+**Contexto:** Los badges «Activo» en tarjetas no configuradas generaban ruido visual; Google Drive debe abrir el wizard OAuth sin etiqueta «Próximamente».
+
+**Decisión:**
+1. Regla de badges: **Conectado** solo con credenciales almacenadas; sin badge en tarjetas limpias; **Próximamente** solo en OneDrive/iCloud.
+2. Clase CSS `.is-connected` reemplaza `.is-active`.
+3. Google Drive seleccionable → modo wizard `gdrive-setup` (placeholder OAuth Fase 2).
+4. Helper `hasProviderCredentials()` en `settings.ts`.
+
+**Release:** `v1.0.11`
+
+**Alternativas descartadas:**
+- Badge «Disponible» en GitHub sin configurar (redundante con interactividad de la tarjeta).
+
+---

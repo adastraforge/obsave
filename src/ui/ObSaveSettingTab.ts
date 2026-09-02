@@ -3,7 +3,7 @@ import { extractGitHubOwner } from "../adapters/githubApi";
 import { GitHubProvider } from "../providers/GitHubProvider";
 import { getVaultFolderName } from "../adapters/vaultPaths";
 import type { CloudProviderId } from "../settings";
-import { isProviderConfigured } from "../types";
+import { isProviderConfigured, hasProviderCredentials } from "../types";
 import { formatLocalDateTime } from "../utils/dateFormat";
 import type ObSavePlugin from "../main";
 import type { WizardMode } from "../types";
@@ -12,7 +12,7 @@ interface ProviderOption {
 	id: CloudProviderId;
 	name: string;
 	description: string;
-	available: boolean;
+	comingSoon?: boolean;
 }
 
 const PROVIDER_OPTIONS: ProviderOption[] = [
@@ -20,25 +20,23 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
 		id: "github",
 		name: "GitHub",
 		description: "Sincronización Git con Personal Access Token.",
-		available: true,
 	},
 	{
 		id: "gdrive",
 		name: "Google Drive",
-		description: "OAuth2 PKCE — Fase 2.",
-		available: false,
+		description: "Respaldo en Drive vía OAuth2 PKCE.",
 	},
 	{
 		id: "onedrive",
 		name: "OneDrive",
 		description: "OAuth2 PKCE — Fase 2.",
-		available: false,
+		comingSoon: true,
 	},
 	{
 		id: "icloud",
 		name: "iCloud",
 		description: "Conector nativo — Fase 2.",
-		available: false,
+		comingSoon: true,
 	},
 ];
 
@@ -139,24 +137,38 @@ export class ObSaveSettingTab extends PluginSettingTab {
 				this.renderBackToProviderSelection(containerEl);
 				this.renderExistingRepoForm(containerEl);
 				break;
+			case "gdrive-setup":
+				containerEl.createEl("p", {
+					text: "Configura Google Drive. La autenticación OAuth2 PKCE se completará en el siguiente paso.",
+					cls: "setting-item-description",
+				});
+				this.renderBackToProviderSelection(containerEl);
+				this.renderGoogleDriveSetup(containerEl);
+				break;
 		}
 	}
 
 	private renderProviderSelection(containerEl: HTMLElement): void {
 		const grid = containerEl.createDiv({ cls: "obsave-provider-grid" });
+		const settings = this.plugin.settings;
 
 		for (const option of PROVIDER_OPTIONS) {
+			const comingSoon = option.comingSoon === true;
+			const connected = hasProviderCredentials(settings, option.id);
+
 			const card = grid.createDiv({
-				cls: `obsave-provider-card${option.available ? "" : " is-disabled"}`,
+				cls: `obsave-provider-card${comingSoon ? " is-disabled" : ""}`,
 			});
 
 			const header = card.createDiv({ cls: "obsave-provider-card-header" });
 			header.createEl("strong", { text: option.name });
 
-			if (option.available) {
-				const badge = header.createSpan({ cls: "obsave-provider-badge is-active" });
-				badge.setText("Activo");
-			} else {
+			if (connected) {
+				const badge = header.createSpan({
+					cls: "obsave-provider-badge is-connected",
+				});
+				badge.setText("🟢 Conectado");
+			} else if (comingSoon) {
 				const badge = header.createSpan({ cls: "obsave-provider-badge is-soon" });
 				badge.setText("Próximamente");
 			}
@@ -166,13 +178,33 @@ export class ObSaveSettingTab extends PluginSettingTab {
 				cls: "obsave-provider-card-desc setting-item-description",
 			});
 
-			if (option.available) {
+			if (!comingSoon) {
 				card.addEventListener("click", () => {
-					this.wizardMode = "choose";
-					this.display();
+					this.onProviderSelected(option.id);
 				});
 			}
 		}
+	}
+
+	private onProviderSelected(providerId: CloudProviderId): void {
+		if (providerId === "github") {
+			this.wizardMode = "choose";
+		} else if (providerId === "gdrive") {
+			this.wizardMode = "gdrive-setup";
+		}
+		this.display();
+	}
+
+	private renderGoogleDriveSetup(containerEl: HTMLElement): void {
+		containerEl.createEl("p", {
+			text: "PASO 2 — Google Drive",
+			cls: "setting-item-heading",
+		});
+
+		containerEl.createEl("p", {
+			text: "El flujo de conexión OAuth2 (PKCE) estará disponible en la próxima actualización. Por ahora, selecciona GitHub o vuelve al listado de proveedores.",
+			cls: "setting-item-description",
+		});
 	}
 
 	private renderBackToProviderSelection(containerEl: HTMLElement): void {

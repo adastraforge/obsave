@@ -77,7 +77,7 @@
 	white-space: nowrap;
 }
 
-.obsave-provider-badge.is-active {
+.obsave-provider-badge.is-connected {
 	background-color: rgba(46, 204, 113, 0.2);
 	color: #2ecc71;
 }

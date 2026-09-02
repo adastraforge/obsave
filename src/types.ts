@@ -32,7 +32,8 @@ export type WizardMode =
 	| "select-provider"
 	| "choose"
 	| "new-repo"
-	| "existing-repo";
+	| "existing-repo"
+	| "gdrive-setup";
 
 export type {
 	CloudProviderId,
@@ -43,6 +44,6 @@ export type {
 	OneDriveProviderConfig,
 	ProviderConfigMap,
 } from "./settings";
-export { DEFAULT_SETTINGS, getGitHubConfig, isProviderConfigured } from "./settings";
+export { DEFAULT_SETTINGS, getGitHubConfig, hasProviderCredentials, isProviderConfigured } from "./settings";
 
 export type { SyncResult } from "./providers/IStorageProvider";
