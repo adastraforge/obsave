@@ -40,6 +40,27 @@ export function conflictCopyPath(relativePath: string, dateStr: string): string 
 	return `${base} (Copia de conflicto local ${dateStr})${ext}`;
 }
 
+/** Ruta con prefijo [Local] o [Sync] para resolución de conflictos .md */
+export function prefixedConflictPath(
+	relativePath: string,
+	prefix: "Local" | "Sync",
+): string {
+	const dir = path.dirname(relativePath);
+	const base = path.basename(relativePath);
+	const prefixed = `[${prefix}] ${base}`;
+	return dir === "." ? prefixed : path.join(dir, prefixed).replace(/\\/g, "/");
+}
+
+export async function readVaultFileBuffer(
+	basePath: string,
+	relativePath: string,
+): Promise<Buffer | null> {
+	const fs = require("fs") as typeof import("fs");
+	const fullPath = path.join(basePath, relativePath);
+	if (!fs.existsSync(fullPath)) return null;
+	return fs.promises.readFile(fullPath);
+}
+
 export function formatConflictDate(date: Date): string {
 	const y = date.getFullYear();
 	const m = String(date.getMonth() + 1).padStart(2, "0");

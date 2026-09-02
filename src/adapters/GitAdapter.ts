@@ -14,6 +14,8 @@ import {
 	ensureGitIgnore,
 	formatConflictDate,
 	getVaultBasePath,
+	prefixedConflictPath,
+	readVaultFileBuffer,
 	resolveRepoLabel,
 	walkVaultFiles,
 	writeVaultFile,
@@ -50,8 +52,8 @@ export class GitAdapter {
 	constructor(private app: App) {}
 
 	/**
-	 * Ciclo real de sincronización Git en 3 pasos:
-	 * A) Local → commit | B) Fetch + merge + checkout | C) Push
+	 * Ciclo de sincronización Git (remoto primero, luego local, luego push):
+	 * 1) fetch  2) merge+checkout  3) commit local  4) fallback [Local]/[Sync]  5) push
 	 */
 	async performSync(masterRepo: RepoConfig): Promise<SyncPerformResult> {
 		const basePath = getVaultBasePath(this.app);
@@ -63,6 +65,11 @@ export class GitAdapter {
 		}
 
 		await this.ensureRepoReady(basePath, masterRepo, username, token);
+
+		const conflictNotices: string[] = [];
+
+		// PASO 1 — fetch
+		await this.fetchRemote(basePath, username, token);
 
 		const matrix = await git.statusMatrix({ fs, dir: basePath });
 		const localChangeCount = this.countLocalChanges(matrix);
@@ -80,18 +87,70 @@ export class GitAdapter {
 			};
 		}
 
-		const uploadedCount = await this.commitLocalChanges(basePath);
-		const downloadedCount = await this.reconcileRemote(basePath, username, token);
-		const pushed = await this.pushIfAhead(basePath, username, token);
+		// PASO 2 — reconciliar remoto → local
+		let downloadedCount = 0;
+		try {
+			downloadedCount = await this.reconcileRemote(basePath, username, token);
+		} catch (reconcileError) {
+			console.warn("[ObSave] Reconciliación falló, aplicando fallback:", reconcileError);
+			const notices = await this.applyMdConflictFallback(basePath, username, token);
+			conflictNotices.push(...notices);
+			downloadedCount = notices.length;
+		}
 
-		const message = this.buildSyncMessage(uploadedCount, downloadedCount, pushed);
+		// Detectar conflictos .md residuales tras checkout
+		const postReconcileNotices = await this.applyMdConflictFallback(
+			basePath,
+			username,
+			token,
+		);
+		for (const notice of postReconcileNotices) {
+			if (!conflictNotices.includes(notice)) {
+				conflictNotices.push(notice);
+			}
+		}
+
+		// PASO 3 — escanear y commitear cambios locales
+		let uploadedCount = 0;
+		try {
+			uploadedCount = await this.commitLocalChanges(basePath);
+		} catch (commitError) {
+			console.warn("[ObSave] Commit local falló, aplicando fallback:", commitError);
+			const notices = await this.applyMdConflictFallback(basePath, username, token);
+			conflictNotices.push(...notices);
+			uploadedCount = await this.commitLocalChanges(basePath);
+		}
+
+		// PASO 5 — push seguro
+		let pushed = false;
+		try {
+			pushed = await this.pushSafe(basePath, username, token);
+		} catch (pushError) {
+			console.warn("[ObSave] Push falló, aplicando fallback y reintentando:", pushError);
+			const notices = await this.applyMdConflictFallback(basePath, username, token);
+			conflictNotices.push(...notices);
+			uploadedCount += await this.commitLocalChanges(basePath);
+			pushed = await this.pushSafe(basePath, username, token);
+		}
+
+		const message = this.buildSyncMessage(
+			uploadedCount,
+			downloadedCount,
+			pushed,
+			conflictNotices,
+		);
 		console.log(`[ObSave] ${message}`);
 
 		return {
 			message,
 			downloadedCount,
 			uploadedCount,
-			noChanges: uploadedCount === 0 && downloadedCount === 0 && !pushed,
+			noChanges:
+				uploadedCount === 0 &&
+				downloadedCount === 0 &&
+				!pushed &&
+				conflictNotices.length === 0,
+			conflictNotices,
 		};
 	}
 
@@ -99,22 +158,35 @@ export class GitAdapter {
 		uploaded: number,
 		downloaded: number,
 		pushed: boolean,
+		conflictNotices: string[] = [],
 	): string {
-		if (uploaded === 0 && downloaded === 0 && !pushed) {
+		const parts: string[] = [];
+
+		if (downloaded > 0) {
+			parts.push(
+				`Se descargaron ${downloaded} cambio${downloaded === 1 ? "" : "s"} de GitHub`,
+			);
+		}
+		if (uploaded > 0) {
+			parts.push(
+				`Se subieron ${uploaded} cambio${uploaded === 1 ? "" : "s"} locales`,
+			);
+		}
+
+		if (parts.length === 0 && !pushed && conflictNotices.length === 0) {
 			return "ObSave: Bóveda al día (sin cambios)";
 		}
 
-		const parts: string[] = [];
-		if (downloaded > 0) {
-			parts.push(`Se descargaron ${downloaded} cambio${downloaded === 1 ? "" : "s"} de GitHub`);
+		let message =
+			parts.length > 0
+				? `ObSave: ${parts.join(". ")}`
+				: "ObSave: Bóveda al día (sin cambios)";
+
+		if (conflictNotices.length > 0) {
+			message = `${message}. ${conflictNotices.join(". ")}`;
 		}
-		if (uploaded > 0) {
-			parts.push(`Se subieron ${uploaded} cambio${uploaded === 1 ? "" : "s"} locales`);
-		}
-		if (parts.length === 0 && pushed) {
-			return "ObSave: Bóveda al día (sin cambios)";
-		}
-		return `ObSave: ${parts.join(". ")}`;
+
+		return message;
 	}
 
 	/** PASO A — Escanea, stagea y commitea cambios locales */
@@ -152,14 +224,12 @@ export class GitAdapter {
 		return stagedCount;
 	}
 
-	/** PASO B — Fetch, merge remoto y checkout forzado al working directory */
+	/** PASO 2 — Fetch ya ejecutado; merge remoto + checkout forzado al working directory */
 	private async reconcileRemote(
 		basePath: string,
 		username: string,
 		token: string,
 	): Promise<number> {
-		await this.fetchRemote(basePath, username, token);
-
 		const localHeadBefore = await this.resolveRefSafe(basePath, LOCAL_HEAD_REF);
 		const remoteHead = await this.resolveRefSafe(basePath, REMOTE_TRACKING_REF);
 
@@ -184,7 +254,8 @@ export class GitAdapter {
 				author: AUTHOR,
 			});
 		} catch (mergeError) {
-			console.warn("[ObSave] Merge con conflictos, aplicando checkout forzado:", mergeError);
+			console.warn("[ObSave] Merge con conflictos:", mergeError);
+			throw mergeError;
 		}
 
 		await git.checkout({
@@ -195,13 +266,50 @@ export class GitAdapter {
 		});
 
 		console.log(
-			`[ObSave] PASO B: ${downloadedCount} cambio(s) integrados desde remoto`,
+			`[ObSave] PASO 2: ${downloadedCount} cambio(s) integrados desde remoto`,
 		);
 		return downloadedCount;
 	}
 
-	/** PASO C — Push si HEAD local está adelante del remoto */
-	private async pushIfAhead(
+	/**
+	 * PASO 4 — Conflict Fallback para archivos .md:
+	 * [Local] conserva copia local, [Sync] escribe versión remota.
+	 */
+	private async applyMdConflictFallback(
+		basePath: string,
+		username: string,
+		token: string,
+	): Promise<string[]> {
+		const remoteHead = await this.resolveRefSafe(basePath, REMOTE_TRACKING_REF);
+		if (!remoteHead) return [];
+
+		const remoteFiles = await this.listFilesInCommit(basePath, remoteHead);
+		const notices: string[] = [];
+
+		for (const [filePath, remoteContent] of remoteFiles) {
+			if (!filePath.endsWith(".md")) continue;
+			if (!this.shouldTrackPath(filePath)) continue;
+
+			const localContent = await readVaultFileBuffer(basePath, filePath);
+			if (!localContent || localContent.equals(remoteContent)) continue;
+
+			const localCopyPath = prefixedConflictPath(filePath, "Local");
+			const syncCopyPath = prefixedConflictPath(filePath, "Sync");
+			const fileName = path.basename(filePath);
+
+			await writeVaultFile(basePath, localCopyPath, localContent);
+			await writeVaultFile(basePath, syncCopyPath, remoteContent);
+
+			const notice = `ObSave: Conflicto detectado en ${fileName}. Se crearon copias [Local] y [Sync]`;
+			notices.push(notice);
+			console.warn(`[ObSave] ${notice}`);
+		}
+
+		return notices;
+	}
+
+	/** PASO 5 — Push seguro si HEAD local está adelante del remoto */
+	private async pushSafe(
 		basePath: string,
 		username: string,
 		token: string,
@@ -237,7 +345,7 @@ export class GitAdapter {
 				ref: DEFAULT_BRANCH,
 				onAuth: this.onAuth(username, token),
 			});
-			console.log("[ObSave] PASO C: push completado");
+			console.log("[ObSave] PASO 5: push completado");
 			return true;
 		} catch (firstError) {
 			await this.fetchRemote(basePath, username, token);
@@ -250,7 +358,7 @@ export class GitAdapter {
 					author: AUTHOR,
 				});
 			} catch {
-				/* reconciliar en push retry */
+				await this.applyMdConflictFallback(basePath, username, token);
 			}
 			await git.checkout({
 				fs,
@@ -258,6 +366,7 @@ export class GitAdapter {
 				ref: DEFAULT_BRANCH,
 				force: true,
 			});
+			await this.commitLocalChanges(basePath);
 			await git.push({
 				fs,
 				http,
@@ -266,7 +375,7 @@ export class GitAdapter {
 				ref: DEFAULT_BRANCH,
 				onAuth: this.onAuth(username, token),
 			});
-			console.log("[ObSave] PASO C: push completado tras reconciliación");
+			console.log("[ObSave] PASO 5: push completado tras reconciliación");
 			return true;
 		}
 	}
@@ -357,8 +466,10 @@ export class GitAdapter {
 		const authUrl = buildAuthenticatedUrl(created.httpsUrl, owner, input.token);
 
 		await this.initializeLocalRepo(basePath, authUrl, owner, input.token);
+		await this.fetchRemote(basePath, owner, input.token);
+		await this.reconcileRemote(basePath, owner, input.token).catch(() => {});
 		await this.commitLocalChanges(basePath);
-		await this.pushIfAhead(basePath, owner, input.token);
+		await this.pushSafe(basePath, owner, input.token);
 
 		return {
 			success: true,
@@ -574,7 +685,7 @@ export class GitAdapter {
 		}
 
 		await this.commitLocalChanges(basePath);
-		await this.pushIfAhead(basePath, username, token);
+		await this.pushSafe(basePath, username, token);
 	}
 
 	private async fetchRemote(

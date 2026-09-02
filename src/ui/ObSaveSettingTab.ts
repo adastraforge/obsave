@@ -2,6 +2,7 @@ import { App, Notice, PluginSettingTab, Setting, TextComponent } from "obsidian"
 import { extractGitHubOwner } from "../adapters/githubApi";
 import { GitAdapter } from "../adapters/GitAdapter";
 import { getVaultFolderName } from "../adapters/vaultPaths";
+import { formatLocalDateTime } from "../utils/dateFormat";
 import type ObSavePlugin from "../main";
 import type { WizardMode } from "../types";
 
@@ -53,7 +54,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Última sincronización")
-			.setDesc(this.plugin.settings.lastSyncAt ?? "Nunca")
+			.setDesc(formatLocalDateTime(this.plugin.settings.lastSyncAt))
 			.setDisabled(true);
 
 		new Setting(containerEl)

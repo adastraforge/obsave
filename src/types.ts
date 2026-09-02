@@ -60,6 +60,7 @@ export interface SyncPerformResult {
 	downloadedCount: number;
 	uploadedCount: number;
 	noChanges: boolean;
+	conflictNotices?: string[];
 }
 
 /** Evento emitido por SyncEngine hacia la UI */

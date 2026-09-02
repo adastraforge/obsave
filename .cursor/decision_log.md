@@ -185,3 +185,20 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Seguir con stub + mensaje genérico (sin valor para el usuario).
 
 ---
+
+## DEC-014 | 2026-08-24 | Pipeline remoto-first + conflictos [Local]/[Sync]
+
+**Contexto:** El orden local→remoto causaba rechazos de push; los conflictos en `.md` perdían contenido del usuario.
+
+**Decisión:**
+1. Reordenar `performSync()`: fetch → merge/checkout remoto → commit local → push.
+2. **Conflict Fallback** en `.md`: duplicar como `[Local] archivo.md` (copia local) y `[Sync] archivo.md` (versión remota), con notice explícito al usuario.
+3. Formato de `lastSyncAt` en UI: `YYYY-MM-DD HH:mm:ss` zona horaria local.
+
+**Release:** `v1.0.5`
+
+**Alternativas descartadas:**
+- Sobrescribir local con remoto en conflictos (pérdida de datos).
+- Mantener sufijo `(Copia de conflicto local YYYY-MM-DD)` en sync periódico (reemplazado por [Local]/[Sync] en performSync).
+
+---
