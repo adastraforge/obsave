@@ -7,10 +7,15 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.17`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.17`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.18`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.18`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### OAuth persistencia y auto-cierre v1.0.18
+- **`localCallbackServer`:** HTML simple con `setTimeout(window.close, 1000)`; cierre del servidor diferido 1.5 s.
+- **`GoogleDriveProvider`:** logs `[ObSave OAuth]` en cada paso; `enabled: true` en config.
+- **`ObSaveSettingTab`:** guardado explícito, Notice de éxito y `display()` tras auth.
 
 ### OAuth callback UX v1.0.17
 - **`localCallbackServer`:** HTML de éxito con auto-cierre; resuelve promesa tras `res.end()`; páginas de error diferenciadas.

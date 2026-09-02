@@ -75,17 +75,25 @@ export class GoogleDriveProvider implements IStorageProvider {
 
 	/** Flujo completo: PKCE → navegador → callback → tokens → perfil. */
 	async authenticateWithPkce(): Promise<GoogleDriveProviderConfig> {
+		console.log("[ObSave OAuth] Iniciando flujo PKCE");
+
 		const clientId = this.requireClientId();
 		const codeVerifier = generateCodeVerifier();
 		const codeChallenge = await generateCodeChallenge(codeVerifier);
 		const state = generateCodeVerifier();
 
+		console.log("[ObSave OAuth] Servidor callback y navegador");
 		const callbackPromise = waitForOAuthCallback();
 		const authUrl = this.buildAuthUrl(codeChallenge, state);
 
 		await this.openExternal(authUrl);
 
 		const callback = await callbackPromise;
+		console.log("[ObSave OAuth] Callback procesado", {
+			hasCode: !!callback.code,
+			error: callback.error ?? null,
+		});
+
 		if (callback.error) {
 			throw new Error(
 				callback.errorDescription ??
@@ -100,17 +108,24 @@ export class GoogleDriveProvider implements IStorageProvider {
 
 		let tokens: GoogleTokenResponse;
 		try {
+			console.log("[ObSave OAuth] Intercambiando code por tokens");
 			tokens = await this.exchangeCodeForTokens(
 				callback.code,
 				codeVerifier,
 				clientId,
 			);
+			console.log("[ObSave OAuth] Tokens recibidos", {
+				hasAccessToken: !!tokens.access_token,
+				hasRefreshToken: !!tokens.refresh_token,
+				expiresIn: tokens.expires_in,
+			});
 		} catch (error) {
-			console.error("[ObSave] Error al intercambiar código OAuth:", error);
+			console.error("[ObSave OAuth] Error en intercambio de tokens:", error);
 			throw new Error("Error al conectar con Google Drive");
 		}
 
 		if (!tokens.refresh_token) {
+			console.warn("[ObSave OAuth] Google no devolvió refresh_token");
 			throw new Error(
 				"Google no devolvió refresh_token. Revoca el acceso previo en tu cuenta Google e intenta de nuevo.",
 			);
@@ -118,13 +133,19 @@ export class GoogleDriveProvider implements IStorageProvider {
 
 		let userInfo: GoogleUserInfo;
 		try {
+			console.log("[ObSave OAuth] Obteniendo perfil de usuario");
 			userInfo = await this.fetchUserInfo(tokens.access_token);
+			console.log("[ObSave OAuth] Perfil obtenido", {
+				email: userInfo.email ?? null,
+				name: userInfo.name ?? null,
+			});
 		} catch (error) {
-			console.error("[ObSave] Error al obtener perfil Google:", error);
+			console.error("[ObSave OAuth] Error al obtener perfil:", error);
 			throw new Error("Error al conectar con Google Drive");
 		}
 
 		const config: GoogleDriveProviderConfig = {
+			enabled: true,
 			accessToken: tokens.access_token,
 			refreshToken: tokens.refresh_token,
 			expiresAt: Date.now() + tokens.expires_in * 1000,
@@ -136,6 +157,7 @@ export class GoogleDriveProvider implements IStorageProvider {
 		this.persistConfig(config);
 		this.scheduleBackgroundRefresh();
 
+		console.log("[ObSave OAuth] Autenticación completada");
 		return config;
 	}
 
@@ -195,6 +217,10 @@ export class GoogleDriveProvider implements IStorageProvider {
 		});
 
 		if (response.status >= 400) {
+			console.error("[ObSave OAuth] Token endpoint respondió error", {
+				status: response.status,
+				body: response.text,
+			});
 			throw new Error(
 				`Error al intercambiar código OAuth (${response.status}): ${response.text}`,
 			);

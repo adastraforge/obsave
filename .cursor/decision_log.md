@@ -398,3 +398,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.17`
 
 ---
+
+## DEC-027 | 2026-09-02 | Persistencia OAuth y auto-cierre diferido
+
+**Contexto:** Tras autorizar en Google, el estado conectado no siempre se reflejaba en la UI y la pestaña del navegador no cerraba de forma fiable.
+
+**Decisión:**
+1. Guardado explícito en `ObSaveSettingTab` con `enabled: true` y `saveSettings()`.
+2. HTML de callback con `setTimeout(window.close, 1000)`; `server.close()` diferido 1.5 s.
+3. Logs `[ObSave OAuth]` en callback, intercambio de tokens y guardado.
+
+**Release:** `v1.0.18`
+
+---

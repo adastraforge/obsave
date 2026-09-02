@@ -12,6 +12,8 @@ export interface GitHubProviderConfig {
 
 /** Configuración OAuth2 PKCE — Google Drive */
 export interface GoogleDriveProviderConfig {
+	/** Cuenta autorizada y lista para usar */
+	enabled?: boolean;
 	accessToken?: string;
 	refreshToken?: string;
 	/** Timestamp ms de expiración del access_token */

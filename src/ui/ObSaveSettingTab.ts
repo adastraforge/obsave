@@ -213,7 +213,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		});
 
 		const existing = this.plugin.settings.providerConfig.gdrive;
-		if (existing?.refreshToken) {
+		if (existing?.refreshToken && existing.enabled !== false) {
 			const accountLabel =
 				existing.email ?? existing.displayName ?? "Google";
 			containerEl.createEl("p", {
@@ -256,24 +256,25 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 						let connected = false;
 						try {
+							console.log("[ObSave OAuth] Botón conectar pulsado");
 							const config =
 								await this.plugin
 									.getGoogleDriveLazy()
 									.authenticateWithPkce();
 
 							this.plugin.settings.activeProvider = "gdrive";
-							this.plugin.settings.providerConfig.gdrive = config;
+							this.plugin.settings.providerConfig.gdrive = {
+								...config,
+								enabled: true,
+							};
 							await this.plugin.saveSettings();
 
 							connected = true;
-							const accountLabel =
-								config.email ?? config.displayName ?? "Google";
-							new Notice(
-								`ObSave: Cuenta de Google Conectada (${accountLabel}).`,
-							);
+							console.log("[ObSave OAuth] Configuración guardada en Obsidian");
+							new Notice("¡Google Drive conectado correctamente!");
 							this.display();
 						} catch (error) {
-							console.error("[ObSave] OAuth Google Drive:", error);
+							console.error("[ObSave OAuth] Fallo en flujo de conexión:", error);
 							new Notice("Error al conectar con Google Drive");
 						} finally {
 							if (!connected) {

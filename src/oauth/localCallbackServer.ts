@@ -8,6 +8,10 @@ export interface OAuthCallbackResult {
 }
 
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
+const SERVER_CLOSE_DELAY_MS = 1500;
+
+const SUCCESS_HTML =
+	"<html><body><h2>Autenticación exitosa</h2><p>Puedes cerrar esta ventana y regresar a Obsidian.</p><script>setTimeout(() => { window.close(); }, 1000);</script></body></html>";
 
 function parseCallbackPath(reqUrl: string): {
 	code?: string;
@@ -27,67 +31,6 @@ function parseCallbackPath(reqUrl: string): {
 	};
 }
 
-function buildSuccessHtml(): string {
-	return `<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ObSave — Autenticación exitosa</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-    color: #f0f4f8;
-    padding: 1.5rem;
-  }
-  .card {
-    text-align: center;
-    max-width: 420px;
-    padding: 2.5rem 2rem;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 16px;
-    backdrop-filter: blur(12px);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  }
-  .icon {
-    width: 64px;
-    height: 64px;
-    margin: 0 auto 1.25rem;
-    background: linear-gradient(135deg, #4ade80, #22c55e);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 2rem;
-    line-height: 1;
-  }
-  h1 { font-size: 1.35rem; font-weight: 600; margin-bottom: 0.75rem; }
-  p { font-size: 0.95rem; opacity: 0.85; line-height: 1.5; }
-  .brand { margin-top: 1.5rem; font-size: 0.75rem; opacity: 0.5; letter-spacing: 0.05em; }
-</style>
-</head>
-<body>
-<div class="card">
-  <div class="icon" aria-hidden="true">&#10003;</div>
-  <h1>Autenticación exitosa</h1>
-  <p>Regresando a Obsidian…</p>
-  <p class="brand">ObSave · Ad Astra Forge</p>
-</div>
-<script>
-  window.open('', '_self', '');
-  window.close();
-</script>
-</body>
-</html>`;
-}
-
 function buildErrorHtml(message: string): string {
 	const safeMessage = message
 		.replace(/&/g, "&amp;")
@@ -99,37 +42,12 @@ function buildErrorHtml(message: string): string {
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ObSave — Error de autenticación</title>
-<style>
-  body {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: system-ui, sans-serif;
-    background: #1a1a2e;
-    color: #f0f4f8;
-    padding: 1.5rem;
-    text-align: center;
-  }
-  .card {
-    max-width: 420px;
-    padding: 2rem;
-    background: rgba(239, 68, 68, 0.12);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: 12px;
-  }
-  h1 { font-size: 1.2rem; margin-bottom: 0.75rem; color: #fca5a5; }
-  p { font-size: 0.9rem; opacity: 0.85; }
-</style>
 </head>
-<body>
-<div class="card">
-  <h1>No se pudo completar la autorización</h1>
-  <p>${safeMessage}</p>
-  <p style="margin-top:1rem;font-size:0.8rem;">Cierra esta ventana y vuelve a Obsidian para reintentar.</p>
-</div>
+<body style="font-family: system-ui; text-align: center; padding: 3rem;">
+<h2>No se pudo completar la autorización</h2>
+<p>${safeMessage}</p>
+<p>Cierra esta ventana y vuelve a Obsidian para reintentar.</p>
 </body>
 </html>`;
 }
@@ -168,11 +86,17 @@ export function waitForOAuthCallback(
 		let server: { close: () => void } | null = null;
 		let timeoutId: ReturnType<typeof setTimeout>;
 
-		const finish = (result: OAuthCallbackResult): void => {
+		const closeServerDelayed = (): void => {
+			setTimeout(() => {
+				server?.close();
+				console.log("[ObSave OAuth] Servidor callback cerrado");
+			}, SERVER_CLOSE_DELAY_MS);
+		};
+
+		const resolveCallback = (result: OAuthCallbackResult): void => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeoutId);
-			server?.close();
 			resolve(result);
 		};
 
@@ -184,14 +108,23 @@ export function waitForOAuthCallback(
 			reject(error);
 		};
 
-		const sendHtmlAndFinish = (
+		const sendHtmlAndResolve = (
 			response: import("http").ServerResponse,
 			html: string,
 			result: OAuthCallbackResult,
+			delayClose: boolean,
 		): void => {
 			if (settled) return;
 			response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-			response.end(html, () => finish(result));
+			response.end(html, () => {
+				console.log("[ObSave OAuth] Respuesta HTML enviada al navegador");
+				resolveCallback(result);
+				if (delayClose) {
+					closeServerDelayed();
+				} else {
+					server?.close();
+				}
+			});
 		};
 
 		try {
@@ -204,28 +137,34 @@ export function waitForOAuthCallback(
 				}
 
 				const { code, error, errorDescription } = parseCallbackPath(reqUrl);
+				console.log("[ObSave OAuth] Callback recibido", {
+					hasCode: !!code,
+					error: error ?? null,
+				});
 
 				if (error) {
 					const message =
 						errorDescription ?? error ?? "Autorización rechazada por Google.";
-					sendHtmlAndFinish(res, buildErrorHtml(message), {
-						error,
-						errorDescription,
-						code,
-					});
-					return;
-				}
-
-				if (!code) {
-					sendHtmlAndFinish(
+					sendHtmlAndResolve(
 						res,
-						buildErrorHtml("Callback OAuth sin código de autorización."),
-						{ error: "missing_code" },
+						buildErrorHtml(message),
+						{ error, errorDescription, code },
+						false,
 					);
 					return;
 				}
 
-				sendHtmlAndFinish(res, buildSuccessHtml(), { code });
+				if (!code) {
+					sendHtmlAndResolve(
+						res,
+						buildErrorHtml("Callback OAuth sin código de autorización."),
+						{ error: "missing_code" },
+						false,
+					);
+					return;
+				}
+
+				sendHtmlAndResolve(res, SUCCESS_HTML, { code }, true);
 			});
 
 			server.on("error", (err) => {
@@ -242,7 +181,7 @@ export function waitForOAuthCallback(
 
 			server.listen(port, "127.0.0.1", () => {
 				console.log(
-					`[ObSave] OAuth callback escuchando en 127.0.0.1:${port}/callback`,
+					"[ObSave OAuth] Escuchando en 127.0.0.1:" + port + "/callback",
 				);
 			});
 		} catch (error) {
