@@ -28,7 +28,11 @@ export interface GitSetupResult {
 }
 
 /** Modo del wizard de configuración inicial */
-export type WizardMode = "choose" | "new-repo" | "existing-repo";
+export type WizardMode =
+	| "select-provider"
+	| "choose"
+	| "new-repo"
+	| "existing-repo";
 
 export type {
 	CloudProviderId,

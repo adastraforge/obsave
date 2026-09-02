@@ -269,3 +269,21 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Un adapter monolítico sin interfaz común (bloquea Fase 2 OAuth).
 
 ---
+
+## DEC-019 | 2026-08-24 | Wizard con selección de proveedor de nube
+
+**Contexto:** Tras la arquitectura de proveedor único, el asistente seguía asumiendo GitHub como única opción visible, sin preparar la UX para conectores Fase 2.
+
+**Decisión:**
+1. Primer paso del wizard: grid de 4 proveedores (`activeProvider`); GitHub activo, resto con badge «Próximamente».
+2. Flujo GitHub: selección → bóveda nueva/existente → formulario PAT (sin cambios funcionales).
+3. Botón «← Volver a selección de proveedor» en todas las pantallas de configuración GitHub.
+4. Estilos en `styles.css` (`.obsave-provider-grid`, `.obsave-provider-card`, badges).
+
+**Release:** `v1.0.10`
+
+**Alternativas descartadas:**
+- Dropdown nativo de Obsidian (menos descubrible que tarjetas).
+- Habilitar skeletons OAuth como clicables (generaría errores de sync).
+
+---

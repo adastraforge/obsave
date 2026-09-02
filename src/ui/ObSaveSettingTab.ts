@@ -2,15 +2,50 @@ import { App, Notice, PluginSettingTab, Setting, TextComponent } from "obsidian"
 import { extractGitHubOwner } from "../adapters/githubApi";
 import { GitHubProvider } from "../providers/GitHubProvider";
 import { getVaultFolderName } from "../adapters/vaultPaths";
+import type { CloudProviderId } from "../settings";
 import { isProviderConfigured } from "../types";
 import { formatLocalDateTime } from "../utils/dateFormat";
 import type ObSavePlugin from "../main";
 import type { WizardMode } from "../types";
 
+interface ProviderOption {
+	id: CloudProviderId;
+	name: string;
+	description: string;
+	available: boolean;
+}
+
+const PROVIDER_OPTIONS: ProviderOption[] = [
+	{
+		id: "github",
+		name: "GitHub",
+		description: "Sincronización Git con Personal Access Token.",
+		available: true,
+	},
+	{
+		id: "gdrive",
+		name: "Google Drive",
+		description: "OAuth2 PKCE — Fase 2.",
+		available: false,
+	},
+	{
+		id: "onedrive",
+		name: "OneDrive",
+		description: "OAuth2 PKCE — Fase 2.",
+		available: false,
+	},
+	{
+		id: "icloud",
+		name: "iCloud",
+		description: "Conector nativo — Fase 2.",
+		available: false,
+	},
+];
+
 export class ObSaveSettingTab extends PluginSettingTab {
 	plugin: ObSavePlugin;
 	private githubProvider: GitHubProvider;
-	private wizardMode: WizardMode = "choose";
+	private wizardMode: WizardMode = "select-provider";
 
 	constructor(app: App, plugin: ObSavePlugin) {
 		super(app, plugin);
@@ -79,39 +114,98 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 	private renderSetupWizard(containerEl: HTMLElement): void {
 		containerEl.createEl("h3", { text: "Asistente de primera sincronización" });
-		containerEl.createEl("p", {
-			text: "Conecta tu bóveda con GitHub. Solo necesitas usuario y token — ObSave gestiona Git por ti.",
-			cls: "setting-item-description",
-		});
 
 		switch (this.wizardMode) {
+			case "select-provider":
+				containerEl.createEl("p", {
+					text: "Elige dónde quieres respaldar tu bóveda. Solo un proveedor puede estar activo a la vez.",
+					cls: "setting-item-description",
+				});
+				this.renderProviderSelection(containerEl);
+				break;
 			case "choose":
+				containerEl.createEl("p", {
+					text: "Configura GitHub. Solo necesitas usuario y token — ObSave gestiona Git por ti.",
+					cls: "setting-item-description",
+				});
+				this.renderBackToProviderSelection(containerEl);
 				this.renderChooseMode(containerEl);
 				break;
 			case "new-repo":
+				this.renderBackToProviderSelection(containerEl);
 				this.renderNewRepoForm(containerEl);
 				break;
 			case "existing-repo":
+				this.renderBackToProviderSelection(containerEl);
 				this.renderExistingRepoForm(containerEl);
 				break;
 		}
 	}
 
+	private renderProviderSelection(containerEl: HTMLElement): void {
+		const grid = containerEl.createDiv({ cls: "obsave-provider-grid" });
+
+		for (const option of PROVIDER_OPTIONS) {
+			const card = grid.createDiv({
+				cls: `obsave-provider-card${option.available ? "" : " is-disabled"}`,
+			});
+
+			const header = card.createDiv({ cls: "obsave-provider-card-header" });
+			header.createEl("strong", { text: option.name });
+
+			if (option.available) {
+				const badge = header.createSpan({ cls: "obsave-provider-badge is-active" });
+				badge.setText("Activo");
+			} else {
+				const badge = header.createSpan({ cls: "obsave-provider-badge is-soon" });
+				badge.setText("Próximamente");
+			}
+
+			card.createEl("p", {
+				text: option.description,
+				cls: "obsave-provider-card-desc setting-item-description",
+			});
+
+			if (option.available) {
+				card.addEventListener("click", () => {
+					this.wizardMode = "choose";
+					this.display();
+				});
+			}
+		}
+	}
+
+	private renderBackToProviderSelection(containerEl: HTMLElement): void {
+		new Setting(containerEl).addButton((btn) =>
+			btn
+				.setButtonText("← Volver a selección de proveedor")
+				.onClick(() => {
+					this.wizardMode = "select-provider";
+					this.display();
+				}),
+		);
+	}
+
 	private renderChooseMode(containerEl: HTMLElement): void {
+		containerEl.createEl("p", {
+			text: "PASO 2 — Tipo de bóveda en GitHub",
+			cls: "setting-item-heading",
+		});
+
 		new Setting(containerEl)
-			.setName("Repositorio nuevo")
+			.setName("Bóveda nueva")
 			.setDesc(
 				"Crea un repo en GitHub. El nombre puede diferir de la carpeta local de la bóveda.",
 			)
 			.addButton((btn) =>
-				btn.setButtonText("Crear nuevo").onClick(() => {
+				btn.setButtonText("Crear nueva").onClick(() => {
 					this.wizardMode = "new-repo";
 					this.display();
 				}),
 			);
 
 		new Setting(containerEl)
-			.setName("Repositorio existente")
+			.setName("Bóveda existente")
 			.setDesc(
 				"Conecta una URL de GitHub existente. ObSave fusionará remoto y local automáticamente.",
 			)
@@ -130,7 +224,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		let repoName = suggestedName;
 
 		containerEl.createEl("p", {
-			text: "PASO 1-A — Repositorio nuevo",
+			text: "PASO 3-A — Bóveda nueva en GitHub",
 			cls: "setting-item-heading",
 		});
 
@@ -212,7 +306,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		let token = "";
 
 		containerEl.createEl("p", {
-			text: "PASO 1-B — Repositorio existente",
+			text: "PASO 3-B — Bóveda existente en GitHub",
 			cls: "setting-item-heading",
 		});
 
@@ -310,7 +404,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		}
 
 		new Notice(result.message);
-		this.wizardMode = "choose";
+		this.wizardMode = "select-provider";
 		this.display();
 	}
 
@@ -354,7 +448,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					btn.setDisabled(true);
 					try {
 						await this.plugin.disconnectProvider();
-						this.wizardMode = "choose";
+						this.wizardMode = "select-provider";
 						new Notice("ObSave: proveedor desconectado.");
 						this.display();
 					} catch (error) {

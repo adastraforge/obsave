@@ -7,10 +7,15 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.8`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.8`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.10`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.10`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Wizard proveedor v1.0.10
+- **Paso 1:** tarjetas de selección — GitHub (activo), Google Drive / OneDrive / iCloud (badge «Próximamente»).
+- **Paso 2–3:** flujo GitHub existente (bóveda nueva / existente + PAT).
+- **Navegación:** botón «← Volver a selección de proveedor» en pantallas GitHub.
 
 ### Arquitectura proveedor único (Fase 2 prep)
 - **`activeProvider`:** `'github' | 'gdrive' | 'onedrive' | 'icloud'` — un solo backend activo, sin réplicas espejo.
