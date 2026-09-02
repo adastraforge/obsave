@@ -356,3 +356,19 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Init de `GoogleDriveProvider` en `onload` aunque falle silenciosamente.
 
 ---
+
+## DEC-024 | 2026-09-02 | Client ID Google OAuth en CI de release
+
+**Contexto:** Los builds de release en GitHub Actions no incluían `OBSAVE_GOOGLE_CLIENT_ID`, dejando el OAuth de Google Drive sin client ID embebido en artefactos publicados.
+
+**Decisión:**
+1. Paso `Build plugin` en `.github/workflows/release.yml` expone `OBSAVE_GOOGLE_CLIENT_ID` desde `secrets.OBSAVE_GOOGLE_CLIENT_ID`.
+2. Esbuild ya define `__OBSAVE_GOOGLE_CLIENT_ID__` vía `process.env.OBSAVE_GOOGLE_CLIENT_ID` en `esbuild.config.mjs`.
+
+**Release:** `v1.0.15`
+
+**Alternativas descartadas:**
+- Hardcodear Client ID en el repo (expone credencial pública innecesariamente en fuente).
+- Script post-build manual fuera del workflow (propenso a olvidos).
+
+---

@@ -26,6 +26,8 @@ jobs:
 
       - name: Build plugin
         run: npm run build
+        env:
+          OBSAVE_GOOGLE_CLIENT_ID: ${{ secrets.OBSAVE_GOOGLE_CLIENT_ID }}
 
       - name: Verify build artifacts
         run: |
