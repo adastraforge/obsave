@@ -7,10 +7,15 @@ El usuario mantiene control total de sus datos: el vault se replica de forma tra
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.0`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.0`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.1`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.1`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Sincronización automática (v1.0.1)
+- **Al iniciar:** sync automático en `onload()` (comportamiento fijo, sin toggle).
+- **Intervalo:** slider 1–15 minutos en Ajustes; `setInterval` en `main.ts`.
+- **Renombrado local:** wizard PASO 1-A usa `FileSystemAdapter` + ruta retornada post-rename.
 
 ### Objetivo de la Fase 1
 Núcleo del plugin con Git simplificado mediante **Isomorphic-Git** y un **Wizard de Primera Sincronización**:

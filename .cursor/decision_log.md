@@ -95,3 +95,31 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 - Solo commit de código sin GitHub Release (BRAT funciona, pero sin trazabilidad de versiones).
 
 ---
+
+## DEC-008 | 2026-08-24 | Auto-sync al iniciar + slider de intervalo 1–15 min
+
+**Contexto:** Los usuarios esperan respaldo transparente sin configurar timers manualmente ni recordar sincronizar al abrir Obsidian.
+
+**Decisión:**
+- Ejecutar `triggerSync()` automáticamente en `onload()` — sin toggle en ajustes (comportamiento fijo).
+- Reemplazar input numérico por slider Obsidian (`addSlider`) con rango 1–15 minutos.
+- `setInterval` en `main.ts` reinicia al cambiar el slider vía `saveSettings()`.
+
+**Release:** `v1.0.1`
+
+**Alternativas descartadas:**
+- Toggle para desactivar sync al iniciar (complejidad innecesaria en Fase 1).
+- Rango >15 min (fuera del alcance solicitado para MVP).
+
+---
+
+## DEC-009 | 2026-08-24 | Renombrado de bóveda vía FileSystemAdapter
+
+**Contexto:** El wizard PASO 1-A renombraba la carpeta con `fs` directo y Git operaba sobre rutas obsoletas del adapter cacheado.
+
+**Decisión:** `renameVaultFolder()` usa `FileSystemAdapter.getBasePath()` como gateway, valida con `adapter.exists("")`, renombra el directorio hermano y retorna la ruta absoluta nueva; `GitAdapter` usa esa ruta directamente.
+
+**Alternativas descartadas:**
+- Recalcular ruta con `path.join(dirname(getBasePath()), name)` sin usar el retorno del rename (frágil post-rename).
+
+---

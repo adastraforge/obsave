@@ -55,19 +55,16 @@ export class GitAdapter {
 
 		const currentFolder = getVaultFolderName(this.app);
 		let needsVaultReopen = false;
+		let basePath = getVaultBasePath(this.app);
 
 		if (repoName !== currentFolder) {
-			await renameVaultFolder(this.app, repoName);
+			basePath = await renameVaultFolder(this.app, repoName);
 			needsVaultReopen = true;
 		}
 
 		const owner = input.username.trim() || (await resolveGitHubUsername(input.token));
 		const created = await createGitHubRepo(repoName, input.token);
 		const authUrl = buildAuthenticatedUrl(created.httpsUrl, owner, input.token);
-
-		const basePath = needsVaultReopen
-			? path.join(path.dirname(getVaultBasePath(this.app)), repoName)
-			: getVaultBasePath(this.app);
 
 		await this.initializeLocalRepo(basePath, authUrl, owner, input.token);
 		await this.commitAll(basePath, "ObSave: sincronización inicial");
@@ -110,6 +107,7 @@ export class GitAdapter {
 		const parsed = parseGitHubUrl(input.remoteUrl);
 		const localFolder = getVaultFolderName(this.app);
 		let needsVaultReopen = false;
+		let basePath = getVaultBasePath(this.app);
 
 		if (parsed.repo !== localFolder) {
 			if (input.renameLocalToMatchRemote === undefined) {
@@ -123,7 +121,7 @@ export class GitAdapter {
 			}
 
 			if (input.renameLocalToMatchRemote) {
-				await renameVaultFolder(this.app, parsed.repo);
+				basePath = await renameVaultFolder(this.app, parsed.repo);
 				needsVaultReopen = true;
 			}
 		}
@@ -131,10 +129,6 @@ export class GitAdapter {
 		const username =
 			input.username.trim() || (await resolveGitHubUsername(input.token));
 		const authUrl = buildAuthenticatedUrl(parsed.httpsUrl, username, input.token);
-
-		const basePath = needsVaultReopen
-			? path.join(path.dirname(getVaultBasePath(this.app)), parsed.repo)
-			: getVaultBasePath(this.app);
 
 		await this.initializeLocalRepo(basePath, authUrl, username, input.token);
 		await this.smartMerge(basePath, username, input.token);

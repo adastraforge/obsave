@@ -388,21 +388,27 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	}
 
 	private renderCommonSettings(containerEl: HTMLElement): void {
-		new Setting(containerEl)
+		const intervalSetting = new Setting(containerEl)
 			.setName("Intervalo de sincronización")
-			.setDesc("Minutos entre sincronizaciones automáticas (Fase 3).")
-			.addText((text) =>
-				text
-					.setPlaceholder("15")
-					.setValue(String(this.plugin.settings.syncIntervalMinutes))
-					.onChange(async (value) => {
-						const parsed = parseInt(value, 10);
-						if (!isNaN(parsed) && parsed > 0) {
-							this.plugin.settings.syncIntervalMinutes = parsed;
-							await this.plugin.saveSettings();
-						}
-					}),
+			.setDesc(
+				`Cada ${this.plugin.settings.syncIntervalMinutes} minuto${this.plugin.settings.syncIntervalMinutes === 1 ? "" : "s"}`,
 			);
+
+		intervalSetting.addSlider((slider) =>
+			slider
+				.setLimits(1, 15, 1)
+				.setValue(this.plugin.settings.syncIntervalMinutes)
+				.setDisplayFormat((value) =>
+					value === 1 ? "1 minuto" : `${value} minutos`,
+				)
+				.onChange(async (value) => {
+					this.plugin.settings.syncIntervalMinutes = value;
+					intervalSetting.setDesc(
+						`Cada ${value} minuto${value === 1 ? "" : "s"}`,
+					);
+					await this.plugin.saveSettings();
+				}),
+		);
 
 		containerEl.createEl("p", {
 			text: "Fase 1: Git Core Simplificado con Isomorphic-Git",

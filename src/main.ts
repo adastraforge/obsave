@@ -7,10 +7,14 @@ import {
 	type SyncStatus,
 } from "./types";
 
+const MIN_SYNC_INTERVAL = 1;
+const MAX_SYNC_INTERVAL = 15;
+
 export default class ObSavePlugin extends Plugin {
 	settings: ObSaveSettings = DEFAULT_SETTINGS;
 	syncEngine!: SyncEngine;
 	private ribbonEl: HTMLElement | null = null;
+	private syncIntervalId: number | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -40,15 +44,19 @@ export default class ObSavePlugin extends Plugin {
 			"cloud-download",
 			"ObSave — Sincronizar",
 			async () => {
-				await this.runSync();
+				await this.triggerSync();
 			},
 		);
 		this.updateRibbonIcon(this.settings.syncStatus);
+
+		this.startSyncInterval();
+		void this.triggerSync();
 
 		console.log("ObSave plugin loaded — Ad Astra Forge");
 	}
 
 	onunload(): void {
+		this.stopSyncInterval();
 		console.log("ObSave plugin unloaded");
 	}
 
@@ -58,15 +66,49 @@ export default class ObSavePlugin extends Plugin {
 			DEFAULT_SETTINGS,
 			await this.loadData(),
 		);
+		this.settings.syncIntervalMinutes = this.clampSyncInterval(
+			this.settings.syncIntervalMinutes,
+		);
 	}
 
 	async saveSettings(): Promise<void> {
+		this.settings.syncIntervalMinutes = this.clampSyncInterval(
+			this.settings.syncIntervalMinutes,
+		);
 		this.syncEngine?.updateSettings(this.settings);
 		await this.saveData(this.settings);
+		this.startSyncInterval();
+	}
+
+	/** Dispara sincronización manual o automática */
+	async triggerSync(): Promise<void> {
+		await this.syncEngine.sync();
 	}
 
 	async runSync(): Promise<void> {
-		await this.syncEngine.sync();
+		await this.triggerSync();
+	}
+
+	clampSyncInterval(minutes: number): number {
+		return Math.min(MAX_SYNC_INTERVAL, Math.max(MIN_SYNC_INTERVAL, minutes));
+	}
+
+	startSyncInterval(): void {
+		this.stopSyncInterval();
+		const minutes = this.settings.syncIntervalMinutes;
+		this.syncIntervalId = window.setInterval(
+			() => {
+				void this.triggerSync();
+			},
+			minutes * 60 * 1000,
+		);
+	}
+
+	stopSyncInterval(): void {
+		if (this.syncIntervalId !== null) {
+			window.clearInterval(this.syncIntervalId);
+			this.syncIntervalId = null;
+		}
 	}
 
 	private updateRibbonIcon(status: SyncStatus): void {
