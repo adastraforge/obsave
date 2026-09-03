@@ -14,7 +14,6 @@ import {
 	DEFAULT_SETTINGS,
 	getGitHubConfig,
 	getGoogleDriveConfig,
-	isProviderConfigured,
 	type ObSaveSettings,
 	type SyncStatus,
 } from "./types";
@@ -30,7 +29,6 @@ export default class ObSavePlugin extends Plugin {
 	private providers!: Map<CloudProviderId, IStorageProvider>;
 	private fileDecorators!: ObSaveFileStatusDecorator;
 	private ribbonEl: HTMLElement | null = null;
-	private syncIntervalId: number | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -66,7 +64,18 @@ export default class ObSavePlugin extends Plugin {
 			this.app.workspace.on("layout-change", () => this.refreshDecorators()),
 		);
 		this.registerEvent(
-			this.app.vault.on("modify", () => this.refreshDecorators()),
+			this.app.vault.on("create", (file) => {
+				if (file.path.endsWith(".md")) {
+					void this.refreshDecoratorsImmediate();
+				}
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on("modify", (file) => {
+				if (file.path.endsWith(".md")) {
+					void this.refreshDecoratorsImmediate();
+				}
+			}),
 		);
 
 		this.syncEngine.on((event) => {
@@ -115,16 +124,13 @@ export default class ObSavePlugin extends Plugin {
 		);
 		this.updateRibbonIcon(this.settings.syncStatus);
 
-		this.startSyncInterval();
-		if (this.isAutoSyncAllowed()) {
-			void this.triggerSync(false);
-		}
+		this.startAutoSync();
 
 		console.log("ObSave plugin loaded — Ad Astra Forge");
 	}
 
 	onunload(): void {
-		this.stopSyncInterval();
+		this.stopAutoSync();
 		this.fileDecorators?.uninstall();
 		console.log("ObSave plugin unloaded");
 	}
@@ -151,7 +157,7 @@ export default class ObSavePlugin extends Plugin {
 		}
 
 		await this.saveData(this.settings);
-		this.startSyncInterval();
+		this.restartAutoSync();
 		void this.refreshDecoratorsImmediate();
 	}
 
@@ -200,6 +206,8 @@ export default class ObSavePlugin extends Plugin {
 
 	/** Desconecta el proveedor activo y limpia credenciales de sesión */
 	async disconnectProvider(): Promise<void> {
+		this.stopAutoSync();
+
 		const active = this.settings.activeProvider;
 		if (active) {
 			await this.providers.get(active)?.disconnect();
@@ -209,6 +217,7 @@ export default class ObSavePlugin extends Plugin {
 		this.settings.activeProvider = null;
 		this.settings.lastSyncAt = null;
 		this.settings.syncStatus = "idle";
+		this.settings.autoSyncEnabled = false;
 		await this.saveSettings();
 		this.updateRibbonIcon("idle");
 		void this.refreshDecoratorsImmediate();
@@ -218,38 +227,20 @@ export default class ObSavePlugin extends Plugin {
 		return Math.min(MAX_SYNC_INTERVAL, Math.max(MIN_SYNC_INTERVAL, minutes));
 	}
 
-	startSyncInterval(): void {
-		this.stopSyncInterval();
-		if (!this.isAutoSyncAllowed()) {
-			return;
-		}
-		const minutes = this.settings.syncIntervalMinutes;
-		this.syncIntervalId = window.setInterval(
-			() => {
-				void this.triggerSync(false);
-			},
-			minutes * 60 * 1000,
-		);
+	startAutoSync(): void {
+		this.syncEngine?.startAutoSync();
 	}
 
-	isAutoSyncAllowed(): boolean {
-		if (!this.settings.autoSyncEnabled) {
-			return false;
-		}
-		if (!isProviderConfigured(this.settings)) {
-			return false;
-		}
-		if (this.settings.activeProvider === "gdrive") {
-			return this.settings.providerConfig.gdrive?.folderSelected === true;
-		}
-		return true;
+	stopAutoSync(): void {
+		this.syncEngine?.stopAutoSync();
 	}
 
-	stopSyncInterval(): void {
-		if (this.syncIntervalId !== null) {
-			window.clearInterval(this.syncIntervalId);
-			this.syncIntervalId = null;
-		}
+	restartAutoSync(): void {
+		this.syncEngine?.restartAutoSync();
+	}
+
+	canAutoSync(): boolean {
+		return this.syncEngine?.canAutoSync() ?? false;
 	}
 
 	private updateRibbonIcon(status: SyncStatus): void {

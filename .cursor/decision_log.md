@@ -568,3 +568,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.31`
 
 ---
+
+## DEC-040 | 2026-09-03 | Auto-sync, subcarpetas Drive y badges
+
+**Contexto:** Timer de sync no se detenía al desconectar; archivos aplanados en Drive; auto-sync ON por defecto.
+
+**Decisión:**
+1. `startAutoSync`/`stopAutoSync` en SyncEngine con reglas estrictas; `disconnectProvider` destruye interval.
+2. `resolveOrCreateFolderPath` preserva jerarquía vault → Drive.
+3. `autoSyncEnabled` default `false` al vincular carpeta; badges refrescan con `layout-change`.
+
+**Release:** `v1.0.32`
+
+---

@@ -720,6 +720,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					folderSelected: true,
 					folderMode: "existing",
 				};
+				this.plugin.settings.autoSyncEnabled = false;
 				await this.plugin.saveSettings();
 				this.display();
 			},
@@ -787,6 +788,11 @@ export class ObSaveSettingTab extends PluginSettingTab {
 							: "Desactivada — solo sincronización manual",
 					);
 					await this.plugin.saveSettings();
+					if (value) {
+						this.plugin.restartAutoSync();
+					} else {
+						this.plugin.stopAutoSync();
+					}
 				});
 		});
 
@@ -818,6 +824,9 @@ export class ObSaveSettingTab extends PluginSettingTab {
 						);
 					}
 					await this.plugin.saveSettings();
+					if (this.plugin.settings.autoSyncEnabled) {
+						this.plugin.restartAutoSync();
+					}
 				}),
 		);
 	}

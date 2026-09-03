@@ -1,5 +1,9 @@
 import type { App } from "obsidian";
-import type { CloudProviderId, ObSaveSettings } from "../settings";
+import {
+	isProviderConfigured,
+	type CloudProviderId,
+	type ObSaveSettings,
+} from "../settings";
 import type { GoogleDriveLazyProvider } from "../providers/GoogleDriveLazyProvider";
 import type { IStorageProvider, SyncResult } from "../providers/IStorageProvider";
 import type { SyncEngineEvent, SyncStatus, SyncTrigger } from "../types";
@@ -8,11 +12,12 @@ type SyncEngineListener = (event: SyncEngineEvent) => void;
 
 /**
  * Motor de sincronización — delega al proveedor de nube activo (único).
- * Google Drive: lee notas `.md` locales y las sube vía GoogleDriveProvider.
+ * Google Drive: preserva jerarquía de subcarpetas al subir notas `.md`.
  */
 export class SyncEngine {
 	private status: SyncStatus = "idle";
 	private listeners: SyncEngineListener[] = [];
+	private autoSyncIntervalId: number | null = null;
 
 	constructor(
 		private app: App,
@@ -35,6 +40,47 @@ export class SyncEngine {
 		this.settings = settings;
 	}
 
+	isConnected(): boolean {
+		return isProviderConfigured(this.settings);
+	}
+
+	canAutoSync(): boolean {
+		if (!this.settings.autoSyncEnabled) {
+			return false;
+		}
+		if (!this.isConnected()) {
+			return false;
+		}
+		if (this.settings.activeProvider === "gdrive") {
+			return this.settings.providerConfig.gdrive?.folderSelected === true;
+		}
+		return true;
+	}
+
+	startAutoSync(): void {
+		this.stopAutoSync();
+		if (!this.canAutoSync()) {
+			return;
+		}
+
+		const intervalMs = this.settings.syncIntervalMinutes * 60 * 1000;
+		this.autoSyncIntervalId = window.setInterval(() => {
+			void this.sync("automatic");
+		}, intervalMs);
+	}
+
+	stopAutoSync(): void {
+		if (this.autoSyncIntervalId !== null) {
+			window.clearInterval(this.autoSyncIntervalId);
+			this.autoSyncIntervalId = null;
+		}
+	}
+
+	restartAutoSync(): void {
+		this.stopAutoSync();
+		this.startAutoSync();
+	}
+
 	async sync(trigger: SyncTrigger = "automatic"): Promise<void> {
 		if (this.status === "syncing") {
 			return;
@@ -50,8 +96,27 @@ export class SyncEngine {
 					timestamp: new Date().toISOString(),
 					trigger,
 				});
+				this.notifyVisualRefresh();
 			}
 			return;
+		}
+
+		if (providerId === "gdrive") {
+			const gdrive = this.settings.providerConfig.gdrive;
+			if (gdrive?.folderSelected !== true) {
+				if (trigger === "manual") {
+					this.emit({
+						type: "sync-error",
+						status: "error",
+						message:
+							"Selecciona una carpeta de Google Drive antes de sincronizar.",
+						timestamp: new Date().toISOString(),
+						trigger,
+					});
+					this.notifyVisualRefresh();
+				}
+				return;
+			}
 		}
 
 		const provider = this.providers.get(providerId);
@@ -63,6 +128,7 @@ export class SyncEngine {
 				timestamp: new Date().toISOString(),
 				trigger,
 			});
+			this.notifyVisualRefresh();
 			return;
 		}
 
@@ -85,6 +151,7 @@ export class SyncEngine {
 				downloadedCount: result.downloadedCount,
 				uploadedCount: result.uploadedCount,
 			});
+			this.notifyVisualRefresh();
 		} catch (error) {
 			const message =
 				error instanceof Error ? error.message : "Error desconocido de sync";
@@ -96,6 +163,7 @@ export class SyncEngine {
 				timestamp: new Date().toISOString(),
 				trigger,
 			});
+			this.notifyVisualRefresh();
 		}
 	}
 
@@ -103,23 +171,47 @@ export class SyncEngine {
 		provider: GoogleDriveLazyProvider,
 	): Promise<SyncResult> {
 		const folder = await provider.getOrCreateTargetFolder();
-		const remoteFiles = await provider.listFiles(folder.folderId);
-		const remoteByName = new Map(remoteFiles.map((f) => [f.name, f.id]));
-
+		const remoteFilesByFolder = new Map<string, Map<string, string>>();
 		const mdFiles = this.app.vault.getMarkdownFiles();
 		let uploadedCount = 0;
 		const syncedFileMtimes: Record<string, number> = {};
+		const syncedContentHashes: Record<string, string> = {};
 
 		for (const file of mdFiles) {
-			const driveName = this.toDriveFileName(file.path);
+			const pathParts = file.path.split("/");
+			const fileName = pathParts.pop() ?? file.path;
+			const relativeDir = pathParts.join("/");
+
+			const parentFolderId = relativeDir
+				? await provider.resolveOrCreateFolderPath(
+						folder.folderId,
+						relativeDir,
+					)
+				: folder.folderId;
+
+			let remoteInFolder = remoteFilesByFolder.get(parentFolderId);
+			if (!remoteInFolder) {
+				const remoteFiles = await provider.listFiles(parentFolderId);
+				remoteInFolder = new Map(remoteFiles.map((f) => [f.name, f.id]));
+				remoteFilesByFolder.set(parentFolderId, remoteInFolder);
+			}
+
 			const content = await this.app.vault.read(file);
+			const existingFileId = remoteInFolder.get(fileName);
+
 			await provider.uploadFile(
-				driveName,
+				fileName,
 				content,
-				folder.folderId,
-				remoteByName.get(driveName),
+				parentFolderId,
+				existingFileId,
 			);
+
+			if (!existingFileId) {
+				remoteInFolder.set(fileName, "pending");
+			}
+
 			syncedFileMtimes[file.path] = file.stat.mtime;
+			syncedContentHashes[file.path] = this.hashContent(content);
 			uploadedCount++;
 		}
 
@@ -132,6 +224,7 @@ export class SyncEngine {
 				folderName: folder.folderName,
 				folderSelected: true,
 				syncedFileMtimes,
+				syncedContentHashes,
 			};
 		}
 
@@ -143,9 +236,16 @@ export class SyncEngine {
 		};
 	}
 
-	/** Convierte rutas de bóveda a nombres válidos en Drive (sin `/`). */
-	private toDriveFileName(vaultPath: string): string {
-		return vaultPath.replace(/\//g, "_");
+	private hashContent(content: string): string {
+		let hash = 5381;
+		for (let i = 0; i < content.length; i++) {
+			hash = (hash * 33) ^ content.charCodeAt(i);
+		}
+		return (hash >>> 0).toString(16);
+	}
+
+	private notifyVisualRefresh(): void {
+		this.app.workspace.trigger("layout-change");
 	}
 
 	private setStatus(status: SyncStatus): void {

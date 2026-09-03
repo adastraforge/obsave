@@ -119,6 +119,7 @@ export class GoogleDriveProvider implements IStorageProvider {
 
 	private config: GoogleDriveProviderConfig | null = null;
 	private refreshTimerId: number | null = null;
+	private folderPathCache = new Map<string, string>();
 	private onConfigChanged: ((config: GoogleDriveProviderConfig) => void) | null =
 		null;
 	private authContext: GoogleDriveAuthContext | null = null;
@@ -490,11 +491,100 @@ export class GoogleDriveProvider implements IStorageProvider {
 	}
 
 	/**
-	 * Sube o actualiza un archivo en la carpeta destino.
-	 * `driveFileName` es el nombre plano en Drive (sin barras).
+	 * Resuelve o crea la jerarquía de subcarpetas bajo `rootFolderId`.
+	 * `relativePath` usa `/` como separador (ej. `Carpeta/Subcarpeta`).
+	 */
+	async resolveOrCreateFolderPath(
+		rootFolderId: string,
+		relativePath: string,
+	): Promise<string> {
+		const normalized = relativePath
+			.replace(/\\/g, "/")
+			.replace(/^\/+|\/+$/g, "");
+		if (!normalized) {
+			return rootFolderId;
+		}
+
+		const segments = normalized.split("/").filter(Boolean);
+		let currentParentId = rootFolderId;
+		let builtPath = "";
+
+		for (const segment of segments) {
+			builtPath = builtPath ? `${builtPath}/${segment}` : segment;
+			const cacheKey = `${rootFolderId}:${builtPath}`;
+			const cached = this.folderPathCache.get(cacheKey);
+			if (cached) {
+				currentParentId = cached;
+				continue;
+			}
+
+			currentParentId = await this.findOrCreateSubfolder(
+				currentParentId,
+				segment,
+			);
+			this.folderPathCache.set(cacheKey, currentParentId);
+		}
+
+		return currentParentId;
+	}
+
+	private async findOrCreateSubfolder(
+		parentId: string,
+		name: string,
+	): Promise<string> {
+		const token = await this.ensureValidAccessToken();
+		const escapedName = name.replace(/'/g, "\\'");
+		const searchQuery = encodeURIComponent(
+			`mimeType='application/vnd.google-apps.folder' and name='${escapedName}' and '${parentId}' in parents and trashed=false`,
+		);
+
+		const searchResponse = await requestUrl({
+			url: `${GOOGLE_DRIVE_API}/files?q=${searchQuery}&fields=files(id,name)&pageSize=1`,
+			method: "GET",
+			headers: { Authorization: `Bearer ${token}` },
+			throw: false,
+		});
+
+		if (searchResponse.status === 200) {
+			const searchData = searchResponse.json as {
+				files?: { id: string; name: string }[];
+			};
+			const existing = searchData.files?.[0];
+			if (existing) {
+				return existing.id;
+			}
+		}
+
+		const createResponse = await requestUrl({
+			url: `${GOOGLE_DRIVE_API}/files`,
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${token}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				name,
+				mimeType: "application/vnd.google-apps.folder",
+				parents: [parentId],
+			}),
+			throw: false,
+		});
+
+		if (createResponse.status >= 400) {
+			throw new Error(
+				`Error al crear subcarpeta «${name}» (${createResponse.status}): ${createResponse.text}`,
+			);
+		}
+
+		const created = createResponse.json as { id: string };
+		return created.id;
+	}
+
+	/**
+	 * Sube o actualiza un archivo en la carpeta contenedora indicada.
 	 */
 	async uploadFile(
-		driveFileName: string,
+		fileName: string,
 		content: string,
 		folderId: string,
 		existingFileId?: string,
@@ -515,14 +605,14 @@ export class GoogleDriveProvider implements IStorageProvider {
 
 			if (response.status >= 400) {
 				throw new Error(
-					`Error al actualizar «${driveFileName}» (${response.status}): ${response.text}`,
+					`Error al actualizar «${fileName}» (${response.status}): ${response.text}`,
 				);
 			}
 			return;
 		}
 
 		const metadata = {
-			name: driveFileName,
+			name: fileName,
 			mimeType: "text/markdown",
 			parents: [folderId],
 		};
@@ -550,7 +640,7 @@ export class GoogleDriveProvider implements IStorageProvider {
 
 		if (response.status >= 400) {
 			throw new Error(
-				`Error al subir «${driveFileName}» (${response.status}): ${response.text}`,
+				`Error al subir «${fileName}» (${response.status}): ${response.text}`,
 			);
 		}
 	}
@@ -571,6 +661,7 @@ export class GoogleDriveProvider implements IStorageProvider {
 
 	async disconnect(): Promise<void> {
 		this.clearRefreshTimer();
+		this.folderPathCache.clear();
 		this.config = null;
 	}
 

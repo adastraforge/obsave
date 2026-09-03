@@ -7,10 +7,14 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.31`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.31`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.32`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.32`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Auto-sync, subcarpetas Drive y badges v1.0.32
+- `startAutoSync`/`stopAutoSync` en SyncEngine; auto-sync OFF por defecto al vincular carpeta.
+- Jerarquía real de subcarpetas en Drive; refresco badges vía `layout-change`.
 
 ### Modal jerárquico Drive v1.0.31
 - `GoogleFolderPickerModal`: navegación por niveles, breadcrumbs, subir nivel y botón confirmar.

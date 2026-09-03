@@ -100,8 +100,19 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 		return delegate.listFiles(folderId);
 	}
 
+	async resolveOrCreateFolderPath(
+		rootFolderId: string,
+		relativePath: string,
+	): Promise<string> {
+		const delegate = await this.ensureLoaded();
+		if (this.pendingConfig) {
+			await delegate.connect(this.pendingConfig);
+		}
+		return delegate.resolveOrCreateFolderPath(rootFolderId, relativePath);
+	}
+
 	async uploadFile(
-		driveFileName: string,
+		fileName: string,
 		content: string,
 		folderId: string,
 		existingFileId?: string,
@@ -111,7 +122,7 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 			await delegate.connect(this.pendingConfig);
 		}
 		return delegate.uploadFile(
-			driveFileName,
+			fileName,
 			content,
 			folderId,
 			existingFileId,
