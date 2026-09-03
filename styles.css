@@ -52,10 +52,24 @@
 	cursor: not-allowed;
 }
 
+.obsave-provider-brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 8px;
+}
+
+.obsave-provider-logo {
+	width: 32px;
+	height: 32px;
+	object-fit: contain;
+	flex-shrink: 0;
+}
+
 .obsave-provider-card-header {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
+	justify-content: flex-start;
 	gap: 8px;
 	margin-bottom: 8px;
 }
@@ -163,4 +177,36 @@
 	font-size: 0.78em;
 	color: var(--text-faint);
 	opacity: 0.85;
+}
+
+.obsave-nav-back {
+	margin-top: 2em;
+	padding-top: 1em;
+	border-top: 1px solid var(--background-modifier-border);
+	display: flex;
+	justify-content: flex-start;
+}
+
+.obsave-nav-back button {
+	font-size: 0.9em;
+	padding: 6px 14px;
+}
+
+.obsave-alert {
+	margin: 0.75em 0 1em;
+	padding: 10px 12px;
+	border-radius: 8px;
+	background: rgba(231, 76, 60, 0.12);
+	border: 1px solid rgba(231, 76, 60, 0.35);
+	color: var(--text-error);
+	font-size: 0.88em;
+	line-height: 1.45;
+}
+
+.obsave-alert.hidden {
+	display: none;
+}
+
+.obsave-github-repo-fields {
+	margin-top: 0.25em;
 }

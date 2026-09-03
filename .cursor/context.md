@@ -7,10 +7,14 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.27`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.27`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.28`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.28`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Navegación 3 vistas v1.0.28
+- **HOME / Asistente / Dashboard** con routing por badge; logos oficiales GitHub y Google Drive.
+- GitHub unificado (nuevo/existente); validación proveedor activo; botón `Atrás` inferior.
 
 ### Rediseño UI ajustes v1.0.27
 - **Dashboard:** secciones General (estado + desconectar/cambiar) y Sincronización (última sync relativa, slider).

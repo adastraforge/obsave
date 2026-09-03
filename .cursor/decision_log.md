@@ -516,3 +516,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.27`
 
 ---
+
+## DEC-036 | 2026-09-03 | Arquitectura 3 vistas en ajustes
+
+**Contexto:** Navegación fragmentada (wizard modes) y flujos GitHub en pantallas separadas.
+
+**Decisión:**
+1. Vistas estrictas: Home (selector), Asistente (conexión), Dashboard (sync).
+2. Routing: conectado → dashboard; sin configurar → asistente.
+3. GitHub unificado con dropdown nuevo/existente; bloqueo si otro proveedor activo.
+
+**Release:** `v1.0.28`
+
+---
