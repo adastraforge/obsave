@@ -1,5 +1,4 @@
-import type { Plugin } from "obsidian";
-import type { GitHubProvider } from "../providers/GitHubProvider";
+import type ObSavePlugin from "../main";
 import type { FileSyncStatus } from "../types";
 
 const DOT_CLASS = "obsave-dot";
@@ -10,16 +9,13 @@ interface FileExplorerEntry {
 }
 
 /**
- * Indicadores de color en el Explorador de Archivos según estado Git local/remoto.
- * Usa spans `.obsave-dot` definidos en `styles.css` (cargado automáticamente por Obsidian).
+ * Badges de color en el Explorador de Archivos según estado de sync:
+ * 🔴 nuevo local · 🟡 modificado pendiente · 🟢 sincronizado
  */
-export class ObSaveFileDecorators {
+export class ObSaveFileStatusDecorator {
 	private refreshTimer: number | null = null;
 
-	constructor(
-		private plugin: Plugin,
-		private githubProvider: GitHubProvider,
-	) {}
+	constructor(private plugin: ObSavePlugin) {}
 
 	install(): void {
 		void this.refresh();
@@ -33,13 +29,11 @@ export class ObSaveFileDecorators {
 		this.clearDecorations();
 	}
 
-	/** Refresco inmediato (p. ej. tras performSync). */
 	async refresh(): Promise<void> {
-		const statuses = await this.githubProvider.getMarkdownFileStatuses();
+		const statuses = await this.getMarkdownFileStatuses();
 		this.applyDecorations(statuses);
 	}
 
-	/** Refresco diferido ante eventos frecuentes (layout, modify). */
 	requestRefresh(): void {
 		if (this.refreshTimer !== null) {
 			window.clearTimeout(this.refreshTimer);
@@ -48,6 +42,40 @@ export class ObSaveFileDecorators {
 			this.refreshTimer = null;
 			void this.refresh();
 		}, 400);
+	}
+
+	async getMarkdownFileStatuses(): Promise<Map<string, FileSyncStatus>> {
+		const active = this.plugin.settings.activeProvider;
+
+		if (active === "github") {
+			return this.plugin.getGitHubProvider().getMarkdownFileStatuses();
+		}
+
+		if (active === "gdrive") {
+			return this.computeGoogleDriveStatuses();
+		}
+
+		return new Map();
+	}
+
+	private computeGoogleDriveStatuses(): Map<string, FileSyncStatus> {
+		const statuses = new Map<string, FileSyncStatus>();
+		const gdrive = this.plugin.settings.providerConfig.gdrive;
+		const snapshot = gdrive?.syncedFileMtimes ?? {};
+
+		for (const file of this.plugin.app.vault.getMarkdownFiles()) {
+			const syncedMtime = snapshot[file.path];
+
+			if (syncedMtime === undefined) {
+				statuses.set(file.path, "new");
+			} else if (file.stat.mtime > syncedMtime) {
+				statuses.set(file.path, "modified");
+			} else {
+				statuses.set(file.path, "synced");
+			}
+		}
+
+		return statuses;
 	}
 
 	private applyDecorations(statuses: Map<string, FileSyncStatus>): void {
@@ -105,6 +133,14 @@ export class ObSaveFileDecorators {
 		const dot = document.createElement("span");
 		dot.className = `${DOT_CLASS} ${DOT_CLASS}-${status}`;
 		dot.setAttribute("aria-hidden", "true");
+		dot.setAttribute(
+			"title",
+			status === "new"
+				? "Nuevo — pendiente de subir"
+				: status === "modified"
+					? "Modificado — pendiente de sync"
+					: "Sincronizado",
+		);
 		anchor.appendChild(dot);
 	}
 

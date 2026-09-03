@@ -543,3 +543,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.29`
 
 ---
+
+## DEC-038 | 2026-09-03 | Callback, scope drive, badges y auto-sync
+
+**Contexto:** Callback con botón redundante; scope `drive.file` limitaba carpetas; faltaban badges GDrive y toggle auto-sync.
+
+**Decisión:**
+1. Landing éxito: autocierre + mensaje manual sin botón si el navegador bloquea `close()`.
+2. Scope `https://www.googleapis.com/auth/drive`; paginación en `listFolders`.
+3. `FileStatusDecorator` unificado; `syncedFileMtimes` para GDrive; `autoSyncEnabled` en settings.
+
+**Release:** `v1.0.30`
+
+---

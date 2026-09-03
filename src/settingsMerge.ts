@@ -56,6 +56,10 @@ export function mergeStoredSettings(
 			typeof migrated.syncIntervalMinutes === "number"
 				? migrated.syncIntervalMinutes
 				: DEFAULT_SETTINGS.syncIntervalMinutes,
+		autoSyncEnabled:
+			typeof migrated.autoSyncEnabled === "boolean"
+				? migrated.autoSyncEnabled
+				: DEFAULT_SETTINGS.autoSyncEnabled,
 		lastSyncAt:
 			migrated.lastSyncAt !== undefined
 				? migrated.lastSyncAt

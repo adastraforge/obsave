@@ -7,7 +7,7 @@ import {
 	type IStorageProvider,
 } from "./providers";
 import type { CloudProviderId } from "./settings";
-import { ObSaveFileDecorators } from "./ui/fileDecorators";
+import { ObSaveFileStatusDecorator } from "./ui/FileStatusDecorator";
 import { ObSaveSettingTab } from "./ui/ObSaveSettingTab";
 import { mergeStoredSettings } from "./settingsMerge";
 import {
@@ -28,7 +28,7 @@ export default class ObSavePlugin extends Plugin {
 	private githubProvider!: GitHubProvider;
 	private googleDriveLazy!: GoogleDriveLazyProvider;
 	private providers!: Map<CloudProviderId, IStorageProvider>;
-	private fileDecorators!: ObSaveFileDecorators;
+	private fileDecorators!: ObSaveFileStatusDecorator;
 	private ribbonEl: HTMLElement | null = null;
 	private syncIntervalId: number | null = null;
 
@@ -59,7 +59,7 @@ export default class ObSavePlugin extends Plugin {
 			console.warn("[ObSave] GitHub connect omitido:", error);
 		}
 
-		this.fileDecorators = new ObSaveFileDecorators(this, this.githubProvider);
+		this.fileDecorators = new ObSaveFileStatusDecorator(this);
 		this.fileDecorators.install();
 
 		this.registerEvent(
@@ -116,7 +116,7 @@ export default class ObSavePlugin extends Plugin {
 		this.updateRibbonIcon(this.settings.syncStatus);
 
 		this.startSyncInterval();
-		if (isProviderConfigured(this.settings)) {
+		if (this.isAutoSyncAllowed()) {
 			void this.triggerSync(false);
 		}
 
@@ -220,7 +220,7 @@ export default class ObSavePlugin extends Plugin {
 
 	startSyncInterval(): void {
 		this.stopSyncInterval();
-		if (!isProviderConfigured(this.settings)) {
+		if (!this.isAutoSyncAllowed()) {
 			return;
 		}
 		const minutes = this.settings.syncIntervalMinutes;
@@ -230,6 +230,19 @@ export default class ObSavePlugin extends Plugin {
 			},
 			minutes * 60 * 1000,
 		);
+	}
+
+	isAutoSyncAllowed(): boolean {
+		if (!this.settings.autoSyncEnabled) {
+			return false;
+		}
+		if (!isProviderConfigured(this.settings)) {
+			return false;
+		}
+		if (this.settings.activeProvider === "gdrive") {
+			return this.settings.providerConfig.gdrive?.folderSelected === true;
+		}
+		return true;
 	}
 
 	stopSyncInterval(): void {

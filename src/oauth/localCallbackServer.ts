@@ -34,11 +34,24 @@ const PROVIDER_BRANDING: Record<
 };
 
 const AUTO_CLOSE_SCRIPT = `<script>
-setTimeout(() => {
-  window.opener = null;
-  window.open('', '_self', '');
-  window.close();
-}, 1200);
+(function () {
+  var manualMsg = document.getElementById("manual-close-msg");
+  function showManualClose() {
+    if (manualMsg) manualMsg.classList.add("is-visible");
+  }
+  setTimeout(function () {
+    window.opener = null;
+    window.open("", "_self", "");
+    window.close();
+    setTimeout(function () {
+      try {
+        if (!window.closed) showManualClose();
+      } catch (e) {
+        showManualClose();
+      }
+    }, 400);
+  }, 1200);
+})();
 </script>`;
 
 type HttpModule = NonNullable<ReturnType<typeof loadNodeHttp>>;
@@ -137,6 +150,12 @@ function buildCallbackPage(options: {
 		: "";
 
 	const autoCloseBlock = options.showAutoClose ? AUTO_CLOSE_SCRIPT : "";
+	const manualCloseBlock = options.showAutoClose
+		? `<p id="manual-close-msg" class="manual-close">¡Conexión completada! Ya puedes cerrar esta pestaña y regresar a Obsidian.</p>`
+		: "";
+	const closeButtonBlock = options.isError
+		? `<button type="button" onclick="window.close()">Cerrar pestaña</button>`
+		: "";
 
 	return `<!DOCTYPE html>
 <html lang="es">
@@ -215,6 +234,17 @@ function buildCallbackPage(options: {
     color: #9aa0a6;
     margin-bottom: 0.5rem;
   }
+  .manual-close {
+    display: none;
+    font-size: 0.95rem;
+    color: #81c995;
+    margin: 0 0 0.5rem;
+    line-height: 1.5;
+    font-weight: 500;
+  }
+  .manual-close.is-visible {
+    display: block;
+  }
 </style>
 </head>
 <body>
@@ -224,7 +254,8 @@ function buildCallbackPage(options: {
     <h1>${escapeHtml(options.title)}</h1>
     <p class="subtitle">${escapeHtml(options.subtitle)}</p>
     ${bodyExtra}
-    <button type="button" onclick="window.close()">Cerrar pestaña</button>
+    ${manualCloseBlock}
+    ${closeButtonBlock}
   </div>
   ${autoCloseBlock}
 </body>

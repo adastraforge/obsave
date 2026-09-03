@@ -637,15 +637,19 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			gdrive.folderSelected === true && !!gdrive.folderId;
 
 		if (!folderReady) {
-			containerEl.createEl("p", {
-				text:
-					gdrive.folderMode === "new" && gdrive.folderName
-						? `Se creará la carpeta «${gdrive.folderName}» en la primera sincronización.`
-						: "Debes seleccionar una carpeta de Google Drive antes de sincronizar.",
-				cls: "setting-item-description",
-			});
+			if (gdrive.folderMode === "new" && gdrive.folderName) {
+				containerEl.createEl("p", {
+					text: `Se creará la carpeta «${gdrive.folderName}» en la primera sincronización.`,
+					cls: "setting-item-description",
+				});
+			} else {
+				containerEl.createEl("p", {
+					text: "Debes seleccionar una carpeta de Google Drive antes de sincronizar.",
+					cls: "setting-item-description",
+				});
+			}
 
-			if (gdrive.folderMode === "existing" || !gdrive.folderId) {
+			if (gdrive.folderMode === "existing") {
 				new Setting(containerEl).addButton((btn) =>
 					btn
 						.setButtonText("Seleccionar carpeta de Google Drive")
@@ -726,6 +730,12 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	private renderSyncSection(containerEl: HTMLElement): void {
 		this.renderSectionHeading(containerEl, "Sincronización");
 
+		const providerId =
+			this.selectedProvider ?? this.plugin.settings.activeProvider;
+		const gdrive = this.plugin.settings.providerConfig.gdrive;
+		const autoSyncBlocked =
+			providerId === "gdrive" && gdrive?.folderSelected !== true;
+
 		const lastSync = this.plugin.settings.lastSyncAt;
 		const relative = formatRelativeSyncTime(lastSync);
 		const exact = formatLocalDateTime(lastSync);
@@ -755,10 +765,38 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		const intervalSetting = new Setting(containerEl)
+		const autoSyncSetting = new Setting(containerEl)
 			.setName("Sincronización automática")
 			.setDesc(
+				autoSyncBlocked
+					? "Configura una carpeta de Drive para habilitar la sync en segundo plano."
+					: this.plugin.settings.autoSyncEnabled
+						? `Activa — cada ${this.plugin.settings.syncIntervalMinutes} minuto${this.plugin.settings.syncIntervalMinutes === 1 ? "" : "s"}`
+						: "Desactivada — solo sincronización manual",
+			);
+
+		autoSyncSetting.addToggle((toggle) => {
+			toggle
+				.setValue(this.plugin.settings.autoSyncEnabled)
+				.setDisabled(autoSyncBlocked)
+				.onChange(async (value) => {
+					this.plugin.settings.autoSyncEnabled = value;
+					autoSyncSetting.setDesc(
+						value
+							? `Activa — cada ${this.plugin.settings.syncIntervalMinutes} minuto${this.plugin.settings.syncIntervalMinutes === 1 ? "" : "s"}`
+							: "Desactivada — solo sincronización manual",
+					);
+					await this.plugin.saveSettings();
+				});
+		});
+
+		const intervalSetting = new Setting(containerEl)
+			.setName("Intervalo automático")
+			.setDesc(
 				`Cada ${this.plugin.settings.syncIntervalMinutes} minuto${this.plugin.settings.syncIntervalMinutes === 1 ? "" : "s"}`,
+			)
+			.setDisabled(
+				autoSyncBlocked || !this.plugin.settings.autoSyncEnabled,
 			);
 
 		intervalSetting.addSlider((slider) =>
@@ -766,11 +804,19 @@ export class ObSaveSettingTab extends PluginSettingTab {
 				.setLimits(1, 15, 1)
 				.setValue(this.plugin.settings.syncIntervalMinutes)
 				.setDynamicTooltip()
+				.setDisabled(
+					autoSyncBlocked || !this.plugin.settings.autoSyncEnabled,
+				)
 				.onChange(async (value) => {
 					this.plugin.settings.syncIntervalMinutes = value;
 					intervalSetting.setDesc(
 						`Cada ${value} minuto${value === 1 ? "" : "s"}`,
 					);
+					if (this.plugin.settings.autoSyncEnabled) {
+						autoSyncSetting.setDesc(
+							`Activa — cada ${value} minuto${value === 1 ? "" : "s"}`,
+						);
+					}
 					await this.plugin.saveSettings();
 				}),
 		);

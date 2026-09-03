@@ -272,28 +272,44 @@ export class GoogleDriveProvider implements IStorageProvider {
 		};
 	}
 
-	/** Lista carpetas accesibles en Drive (scope drive.file). */
+	/** Lista todas las carpetas del Drive del usuario (scope drive). */
 	async listFolders(): Promise<{ id: string; name: string }[]> {
 		const token = await this.ensureValidAccessToken();
 		const query = encodeURIComponent(
 			"mimeType='application/vnd.google-apps.folder' and trashed=false",
 		);
 
-		const response = await requestUrl({
-			url: `${GOOGLE_DRIVE_API}/files?q=${query}&fields=files(id,name)&pageSize=200&orderBy=name`,
-			method: "GET",
-			headers: { Authorization: `Bearer ${token}` },
-			throw: false,
-		});
+		const folders: { id: string; name: string }[] = [];
+		let pageToken: string | undefined;
 
-		if (response.status >= 400) {
-			throw new Error(
-				`Error al listar carpetas Drive (${response.status}): ${response.text}`,
-			);
-		}
+		do {
+			const pageParam = pageToken
+				? `&pageToken=${encodeURIComponent(pageToken)}`
+				: "";
+			const response = await requestUrl({
+				url: `${GOOGLE_DRIVE_API}/files?q=${query}&fields=nextPageToken,files(id,name)&pageSize=200&orderBy=name${pageParam}`,
+				method: "GET",
+				headers: { Authorization: `Bearer ${token}` },
+				throw: false,
+			});
 
-		const data = response.json as { files?: { id: string; name: string }[] };
-		return data.files ?? [];
+			if (response.status >= 400) {
+				throw new Error(
+					`Error al listar carpetas Drive (${response.status}): ${response.text}`,
+				);
+			}
+
+			const data = response.json as {
+				files?: { id: string; name: string }[];
+				nextPageToken?: string;
+			};
+			if (data.files?.length) {
+				folders.push(...data.files);
+			}
+			pageToken = data.nextPageToken;
+		} while (pageToken);
+
+		return folders;
 	}
 
 	/**

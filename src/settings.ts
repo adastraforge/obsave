@@ -35,6 +35,8 @@ export interface GoogleDriveProviderConfig {
 	folderName?: string;
 	/** `false` en modo existente hasta elegir carpeta en el modal */
 	folderSelected?: boolean;
+	/** Mapa ruta vault → mtime ms tras último sync exitoso (badges explorador) */
+	syncedFileMtimes?: Record<string, number>;
 }
 
 /** Skeleton Fase 2 — OAuth2 PKCE */
@@ -59,6 +61,8 @@ export interface ObSaveSettings {
 	activeProvider: CloudProviderId | null;
 	providerConfig: ProviderConfigMap;
 	syncIntervalMinutes: number;
+	/** Habilita sync periódica en segundo plano */
+	autoSyncEnabled: boolean;
 	lastSyncAt: string | null;
 	syncStatus: SyncStatus;
 }
@@ -67,6 +71,7 @@ export const DEFAULT_SETTINGS: ObSaveSettings = {
 	activeProvider: null,
 	providerConfig: {},
 	syncIntervalMinutes: 15,
+	autoSyncEnabled: true,
 	lastSyncAt: null,
 	syncStatus: "idle",
 };

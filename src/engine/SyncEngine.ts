@@ -108,6 +108,7 @@ export class SyncEngine {
 
 		const mdFiles = this.app.vault.getMarkdownFiles();
 		let uploadedCount = 0;
+		const syncedFileMtimes: Record<string, number> = {};
 
 		for (const file of mdFiles) {
 			const driveName = this.toDriveFileName(file.path);
@@ -118,7 +119,20 @@ export class SyncEngine {
 				folder.folderId,
 				remoteByName.get(driveName),
 			);
+			syncedFileMtimes[file.path] = file.stat.mtime;
 			uploadedCount++;
+		}
+
+		const gdrive = this.settings.providerConfig.gdrive;
+		if (gdrive) {
+			this.settings.providerConfig.gdrive = {
+				...gdrive,
+				folderId: folder.folderId,
+				folderPath: folder.folderPath,
+				folderName: folder.folderName,
+				folderSelected: true,
+				syncedFileMtimes,
+			};
 		}
 
 		return {
