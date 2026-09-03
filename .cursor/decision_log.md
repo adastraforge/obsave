@@ -556,3 +556,15 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.30`
 
 ---
+
+## DEC-039 | 2026-09-03 | Modal jerárquico de carpetas Drive
+
+**Contexto:** Listado plano de todas las carpetas era lento e ilegible en cuentas grandes.
+
+**Decisión:**
+1. `listFoldersInParent(parentId)` con campos `id, name, parents, mimeType`.
+2. Modal tipo explorador: breadcrumbs, `..`, clic/doble clic para navegar, botón confirmar.
+
+**Release:** `v1.0.31`
+
+---

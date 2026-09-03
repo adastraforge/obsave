@@ -52,6 +52,13 @@ export interface GoogleDriveRemoteFile {
 	name: string;
 }
 
+export interface GoogleDriveFolderEntry {
+	id: string;
+	name: string;
+	parents?: string[];
+	mimeType: string;
+}
+
 const GOOGLE_CREDENTIALS_ERROR =
 	"Credenciales de Google no inyectadas en la compilación. Revisa GitHub Secrets.";
 
@@ -270,6 +277,49 @@ export class GoogleDriveProvider implements IStorageProvider {
 			uploadedCount: 0,
 			noChanges: true,
 		};
+	}
+
+	/** Lista carpetas hijas directas de un directorio (`root` para la raíz). */
+	async listFoldersInParent(
+		parentId: string,
+	): Promise<GoogleDriveFolderEntry[]> {
+		const token = await this.ensureValidAccessToken();
+		const parent = parentId === "root" ? "root" : parentId;
+		const query = encodeURIComponent(
+			`mimeType='application/vnd.google-apps.folder' and trashed=false and '${parent}' in parents`,
+		);
+
+		const folders: GoogleDriveFolderEntry[] = [];
+		let pageToken: string | undefined;
+
+		do {
+			const pageParam = pageToken
+				? `&pageToken=${encodeURIComponent(pageToken)}`
+				: "";
+			const response = await requestUrl({
+				url: `${GOOGLE_DRIVE_API}/files?q=${query}&fields=nextPageToken,files(id,name,parents,mimeType)&pageSize=200&orderBy=name${pageParam}`,
+				method: "GET",
+				headers: { Authorization: `Bearer ${token}` },
+				throw: false,
+			});
+
+			if (response.status >= 400) {
+				throw new Error(
+					`Error al listar carpetas Drive (${response.status}): ${response.text}`,
+				);
+			}
+
+			const data = response.json as {
+				files?: GoogleDriveFolderEntry[];
+				nextPageToken?: string;
+			};
+			if (data.files?.length) {
+				folders.push(...data.files);
+			}
+			pageToken = data.nextPageToken;
+		} while (pageToken);
+
+		return folders;
 	}
 
 	/** Lista todas las carpetas del Drive del usuario (scope drive). */

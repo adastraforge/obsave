@@ -7,10 +7,13 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.30`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.30`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.31`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.31`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Modal jerárquico Drive v1.0.31
+- `GoogleFolderPickerModal`: navegación por niveles, breadcrumbs, subir nivel y botón confirmar.
 
 ### Callback, scopes, badges y auto-sync v1.0.30
 - Callback OAuth sin botón fallback en éxito; mensaje manual si `window.close()` falla.

@@ -62,6 +62,16 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 		return delegate.sync();
 	}
 
+	async listFoldersInParent(
+		parentId: string,
+	): Promise<import("./GoogleDriveProvider").GoogleDriveFolderEntry[]> {
+		const delegate = await this.ensureLoaded();
+		if (this.pendingConfig) {
+			await delegate.connect(this.pendingConfig);
+		}
+		return delegate.listFoldersInParent(parentId);
+	}
+
 	async listFolders(): Promise<{ id: string; name: string }[]> {
 		const delegate = await this.ensureLoaded();
 		if (this.pendingConfig) {
