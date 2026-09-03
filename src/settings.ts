@@ -10,6 +10,9 @@ export interface GitHubProviderConfig {
 	token?: string;
 }
 
+/** Modo de carpeta destino en Google Drive */
+export type GoogleDriveFolderMode = "new" | "existing";
+
 /** Configuración OAuth2 PKCE — Google Drive */
 export interface GoogleDriveProviderConfig {
 	/** Cuenta autorizada y lista para usar */
@@ -22,7 +25,16 @@ export interface GoogleDriveProviderConfig {
 	displayName?: string;
 	/** Email real devuelto por userinfo (si el scope lo permitió) */
 	accountEmail?: string;
+	/** ID de carpeta en Drive */
 	folderId?: string;
+	/** Ruta legible para UI, p. ej. `/MiBóveda` */
+	folderPath?: string;
+	/** `new`: crear carpeta; `existing`: elegir carpeta existente vía modal */
+	folderMode?: GoogleDriveFolderMode;
+	/** Nombre sugerido al crear carpeta nueva */
+	folderName?: string;
+	/** `false` en modo existente hasta elegir carpeta en el modal */
+	folderSelected?: boolean;
 }
 
 /** Skeleton Fase 2 — OAuth2 PKCE */

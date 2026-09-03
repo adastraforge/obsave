@@ -2,12 +2,14 @@ import { App, Notice, PluginSettingTab, Setting, TextComponent } from "obsidian"
 import { extractGitHubOwner } from "../adapters/githubApi";
 import { GitHubProvider } from "../providers/GitHubProvider";
 import { getVaultFolderName } from "../adapters/vaultPaths";
-import type { CloudProviderId } from "../settings";
+import type { CloudProviderId, GoogleDriveFolderMode } from "../settings";
 import { isProviderConfigured, hasProviderCredentials } from "../types";
 import {
 	formatLocalDateTime,
 	formatRelativeSyncTime,
 } from "../utils/dateFormat";
+import { openExternalUrl } from "../oauth/runtimeBridge";
+import { GoogleFolderPickerModal } from "./GoogleFolderPickerModal";
 import type ObSavePlugin from "../main";
 
 interface ProviderOption {
@@ -67,6 +69,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	private currentView: SettingsView = "home";
 	private selectedProvider: CloudProviderId | null = null;
 	private githubRepoMode: GitHubRepoMode = "new";
+	private gdriveFolderMode: GoogleDriveFolderMode = "new";
 
 	constructor(app: App, plugin: ObSavePlugin) {
 		super(app, plugin);
@@ -212,6 +215,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		} else {
 			this.currentView = "assistant";
 			this.githubRepoMode = "new";
+			this.gdriveFolderMode = "new";
 		}
 
 		this.display();
@@ -240,12 +244,49 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	}
 
 	private renderGoogleDriveAssistant(containerEl: HTMLElement): void {
+		const defaultFolderName = this.getDefaultFolderName();
+		let folderName = defaultFolderName;
+
 		containerEl.createEl("p", {
-			text: "Haz clic abajo para vincular tu cuenta de Google Drive en el navegador.",
+			text: "Configura la carpeta de respaldo y vincula tu cuenta de Google Drive.",
 			cls: "setting-item-description",
 		});
 
 		const alertEl = containerEl.createDiv({ cls: "obsave-alert hidden" });
+
+		const folderFields = containerEl.createDiv({ cls: "obsave-gdrive-folder-fields" });
+
+		new Setting(folderFields)
+			.setName("Tipo de carpeta")
+			.setDesc("Elige si ObSave crea una carpeta nueva o usa una existente.")
+			.addDropdown((dropdown) => {
+				dropdown
+					.addOption("new", "Crear carpeta nueva")
+					.addOption("existing", "Usar carpeta existente")
+					.setValue(this.gdriveFolderMode)
+					.onChange((value) => {
+						this.gdriveFolderMode = value as GoogleDriveFolderMode;
+						this.display();
+					});
+			});
+
+		if (this.gdriveFolderMode === "new") {
+			new Setting(folderFields)
+				.setName("Nombre de la carpeta")
+				.setDesc(`Se creará en Drive al sincronizar. Sugerido: "${defaultFolderName}"`)
+				.addText((text) => {
+					text
+						.setValue(defaultFolderName)
+						.onChange((v) => {
+							folderName = v;
+						});
+				});
+		} else {
+			folderFields.createEl("p", {
+				text: "Tras conectar, podrás elegir la carpeta desde el panel de sincronización.",
+				cls: "setting-item-description",
+			});
+		}
 
 		new Setting(containerEl)
 			.setName("Vincular Google Drive")
@@ -265,6 +306,11 @@ export class ObSaveSettingTab extends PluginSettingTab {
 						btn.setDisabled(true);
 						btn.setButtonText("Conectando…");
 
+						const resolvedFolderName =
+							this.gdriveFolderMode === "new"
+								? folderName.trim() || defaultFolderName
+								: undefined;
+
 						let connected = false;
 						try {
 							await this.plugin.getGoogleDriveLazy().authenticateWithPkce({
@@ -278,7 +324,11 @@ export class ObSaveSettingTab extends PluginSettingTab {
 										email: config.email,
 										displayName: config.displayName,
 										accountEmail: config.accountEmail,
+										folderMode: this.gdriveFolderMode,
+										folderName: resolvedFolderName,
+										folderSelected: this.gdriveFolderMode === "new",
 										folderId: config.folderId,
+										folderPath: config.folderPath,
 									};
 									await this.plugin.saveSettings();
 									new Notice(
@@ -451,6 +501,10 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	}
 
 	private getDefaultRepoName(): string {
+		return this.getDefaultFolderName();
+	}
+
+	private getDefaultFolderName(): string {
 		const vaultName = this.app.vault.getName?.()?.trim();
 		if (vaultName) {
 			return vaultName;
@@ -502,6 +556,9 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		}
 
 		this.renderGeneralSection(containerEl, providerId);
+		if (providerId === "gdrive") {
+			this.renderGoogleDriveFolderSection(containerEl);
+		}
 		this.renderSyncSection(containerEl);
 	}
 
@@ -568,6 +625,102 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		}
 
 		return "Cuenta vinculada";
+	}
+
+	private renderGoogleDriveFolderSection(containerEl: HTMLElement): void {
+		const gdrive = this.plugin.settings.providerConfig.gdrive;
+		if (!gdrive?.refreshToken) return;
+
+		this.renderSectionHeading(containerEl, "Carpeta en Drive");
+
+		const folderReady =
+			gdrive.folderSelected === true && !!gdrive.folderId;
+
+		if (!folderReady) {
+			containerEl.createEl("p", {
+				text:
+					gdrive.folderMode === "new" && gdrive.folderName
+						? `Se creará la carpeta «${gdrive.folderName}» en la primera sincronización.`
+						: "Debes seleccionar una carpeta de Google Drive antes de sincronizar.",
+				cls: "setting-item-description",
+			});
+
+			if (gdrive.folderMode === "existing" || !gdrive.folderId) {
+				new Setting(containerEl).addButton((btn) =>
+					btn
+						.setButtonText("Seleccionar carpeta de Google Drive")
+						.setCta()
+						.onClick(() => this.openGoogleFolderPicker()),
+				);
+			}
+			return;
+		}
+
+		const card = containerEl.createDiv({ cls: "obsave-drive-location-card" });
+		const pathLabel = gdrive.folderPath ?? `/${gdrive.folderName ?? "Carpeta"}`;
+
+		const pathRow = card.createDiv({ cls: "obsave-drive-location-row" });
+		pathRow.createSpan({
+			cls: "obsave-drive-location-label",
+			text: "Ubicación en Drive:",
+		});
+		pathRow.createSpan({
+			cls: "obsave-drive-location-path",
+			text: pathLabel,
+		});
+
+		const actions = card.createDiv({ cls: "obsave-drive-location-actions" });
+
+		const openBtn = actions.createEl("button", {
+			text: "Abrir en Drive ↗",
+			cls: "mod-cta",
+		});
+		openBtn.addEventListener("click", () => {
+			void openExternalUrl(
+				`https://drive.google.com/drive/folders/${gdrive.folderId}`,
+			);
+		});
+
+		const copyBtn = actions.createEl("button", { text: "Copiar 📋" });
+		copyBtn.addEventListener("click", async () => {
+			const link = `https://drive.google.com/drive/folders/${gdrive.folderId}`;
+			const text = `${pathLabel}\n${link}`;
+			try {
+				await navigator.clipboard.writeText(text);
+				new Notice("Ruta copiada");
+			} catch {
+				new Notice("No se pudo copiar al portapapeles.");
+			}
+		});
+
+		const changeBtn = actions.createEl("button", {
+			text: "Cambiar carpeta",
+			cls: "mod-muted",
+		});
+		changeBtn.addEventListener("click", () => this.openGoogleFolderPicker());
+	}
+
+	private openGoogleFolderPicker(): void {
+		const modal = new GoogleFolderPickerModal(
+			this.app,
+			this.plugin.getGoogleDriveLazy(),
+			async (selection) => {
+				const gdrive = this.plugin.settings.providerConfig.gdrive;
+				if (!gdrive) return;
+
+				this.plugin.settings.providerConfig.gdrive = {
+					...gdrive,
+					folderId: selection.folderId,
+					folderName: selection.folderName,
+					folderPath: selection.folderPath,
+					folderSelected: true,
+					folderMode: "existing",
+				};
+				await this.plugin.saveSettings();
+				this.display();
+			},
+		);
+		modal.open();
 	}
 
 	private renderSyncSection(containerEl: HTMLElement): void {

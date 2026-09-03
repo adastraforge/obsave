@@ -7,6 +7,8 @@ export interface OAuthCallbackResult {
 	errorDescription?: string;
 }
 
+export type OAuthCallbackProvider = "gdrive" | "github";
+
 /** Puerto fijo OAuth — no configurable. */
 const OAUTH_PORT = GOOGLE_DRIVE_CALLBACK_PORT;
 
@@ -15,8 +17,29 @@ const CALLBACK_TIMEOUT_MS = 120_000;
 const EADDRINUSE_RETRY_DELAY_MS = 300;
 const EADDRINUSE_MAX_RETRIES = 3;
 
-const SUCCESS_HTML =
-	"<html><body><h2>Autenticación exitosa</h2><p>Puedes cerrar esta ventana y regresar a Obsidian.</p><script>setTimeout(() => { window.close(); }, 1000);</script></body></html>";
+const PROVIDER_BRANDING: Record<
+	OAuthCallbackProvider,
+	{ name: string; logoUrl: string }
+> = {
+	gdrive: {
+		name: "Google Drive",
+		logoUrl:
+			"https://www.gstatic.com/images/branding/productlogos/drive_2026/v2/web-64dp/logo_drive_2026_color_2x_web_64dp.png",
+	},
+	github: {
+		name: "GitHub",
+		logoUrl:
+			"https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+	},
+};
+
+const AUTO_CLOSE_SCRIPT = `<script>
+setTimeout(() => {
+  window.opener = null;
+  window.open('', '_self', '');
+  window.close();
+}, 1200);
+</script>`;
 
 type HttpModule = NonNullable<ReturnType<typeof loadNodeHttp>>;
 type HttpServer = ReturnType<HttpModule["createServer"]>;
@@ -92,25 +115,143 @@ function parseCallbackPath(reqUrl: string): {
 	};
 }
 
-function buildErrorHtml(message: string): string {
-	const safeMessage = message
+function escapeHtml(text: string): string {
+	return text
 		.replace(/&/g, "&amp;")
 		.replace(/</g, "&lt;")
 		.replace(/>/g, "&gt;")
 		.replace(/"/g, "&quot;");
+}
+
+function buildCallbackPage(options: {
+	title: string;
+	subtitle: string;
+	provider: OAuthCallbackProvider;
+	isError?: boolean;
+	errorMessage?: string;
+	showAutoClose?: boolean;
+}): string {
+	const brand = PROVIDER_BRANDING[options.provider];
+	const bodyExtra = options.isError
+		? `<p class="error-detail">${escapeHtml(options.errorMessage ?? "Error desconocido.")}</p>`
+		: "";
+
+	const autoCloseBlock = options.showAutoClose ? AUTO_CLOSE_SCRIPT : "";
 
 	return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>ObSave — Error de autenticación</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ObSave — ${escapeHtml(options.title)}</title>
+<style>
+  :root {
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(160deg, #0f1117 0%, #1a1d27 50%, #12141c 100%);
+    color: #e8eaed;
+    padding: 2rem;
+  }
+  .card {
+    max-width: 420px;
+    width: 100%;
+    text-align: center;
+    padding: 2.5rem 2rem;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35);
+  }
+  .logo {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    margin-bottom: 1.25rem;
+  }
+  h1 {
+    font-size: 1.35rem;
+    font-weight: 600;
+    margin: 0 0 0.75rem;
+    line-height: 1.35;
+  }
+  .subtitle {
+    font-size: 0.95rem;
+    color: #9aa0a6;
+    margin: 0 0 1.5rem;
+    line-height: 1.5;
+  }
+  .error-detail {
+    font-size: 0.9rem;
+    color: #f28b82;
+    margin: 0 0 1.25rem;
+    line-height: 1.45;
+  }
+  button {
+    appearance: none;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 22px;
+    font-size: 0.92rem;
+    font-weight: 500;
+    cursor: pointer;
+    background: #8ab4f8;
+    color: #0f1117;
+    transition: background 0.15s ease;
+  }
+  button:hover { background: #aecbfa; }
+  .provider-tag {
+    display: inline-block;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #9aa0a6;
+    margin-bottom: 0.5rem;
+  }
+</style>
 </head>
-<body style="font-family: system-ui; text-align: center; padding: 3rem;">
-<h2>No se pudo completar la autorización</h2>
-<p>${safeMessage}</p>
-<p>Cierra esta ventana y vuelve a Obsidian para reintentar.</p>
+<body>
+  <div class="card">
+    <img class="logo" src="${brand.logoUrl}" alt="${escapeHtml(brand.name)}" width="64" height="64">
+    <div class="provider-tag">${escapeHtml(brand.name)}</div>
+    <h1>${escapeHtml(options.title)}</h1>
+    <p class="subtitle">${escapeHtml(options.subtitle)}</p>
+    ${bodyExtra}
+    <button type="button" onclick="window.close()">Cerrar pestaña</button>
+  </div>
+  ${autoCloseBlock}
 </body>
 </html>`;
+}
+
+function buildSuccessHtml(provider: OAuthCallbackProvider = "gdrive"): string {
+	return buildCallbackPage({
+		title: "¡Conexión Exitosa con ObSave!",
+		subtitle: "Puedes cerrar esta pestaña y volver a Obsidian",
+		provider,
+		showAutoClose: true,
+	});
+}
+
+function buildErrorHtml(
+	message: string,
+	provider: OAuthCallbackProvider = "gdrive",
+): string {
+	return buildCallbackPage({
+		title: "No se pudo completar la autorización",
+		subtitle: "Cierra esta ventana y vuelve a Obsidian para reintentar.",
+		provider,
+		isError: true,
+		errorMessage: message,
+		showAutoClose: false,
+	});
 }
 
 function listenWithRetry(server: HttpServer, host: string): Promise<void> {
@@ -151,7 +292,9 @@ function listenWithRetry(server: HttpServer, host: string): Promise<void> {
 /**
  * Servidor HTTP efímero exclusivamente en 127.0.0.1:42000/callback.
  */
-export function waitForOAuthCallback(): Promise<OAuthCallbackResult> {
+export function waitForOAuthCallback(
+	provider: OAuthCallbackProvider = "gdrive",
+): Promise<OAuthCallbackResult> {
 	return new Promise((resolve, reject) => {
 		void (async () => {
 			let http: ReturnType<typeof loadNodeHttp>;
@@ -232,7 +375,7 @@ export function waitForOAuthCallback(): Promise<OAuthCallbackResult> {
 							"Autorización rechazada por Google.";
 						sendHtmlAndResolve(
 							res,
-							buildErrorHtml(message),
+							buildErrorHtml(message, provider),
 							{ error, errorDescription, code },
 						);
 						return;
@@ -241,13 +384,16 @@ export function waitForOAuthCallback(): Promise<OAuthCallbackResult> {
 					if (!code) {
 						sendHtmlAndResolve(
 							res,
-							buildErrorHtml("Callback OAuth sin código de autorización."),
+							buildErrorHtml(
+								"Callback OAuth sin código de autorización.",
+								provider,
+							),
 							{ error: "missing_code" },
 						);
 						return;
 					}
 
-					sendHtmlAndResolve(res, SUCCESS_HTML, { code });
+					sendHtmlAndResolve(res, buildSuccessHtml(provider), { code });
 				});
 
 				activeServer = server;

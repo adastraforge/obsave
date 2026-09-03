@@ -48,7 +48,7 @@ export default class ObSavePlugin extends Plugin {
 			this.githubProvider,
 			this.googleDriveLazy,
 		);
-		this.syncEngine = new SyncEngine(this.settings, this.providers);
+		this.syncEngine = new SyncEngine(this.app, this.settings, this.providers);
 
 		try {
 			const githubConfig = getGitHubConfig(this.settings);
@@ -86,7 +86,11 @@ export default class ObSavePlugin extends Plugin {
 				void this.refreshDecoratorsImmediate();
 
 				if (event.trigger === "manual") {
-					new Notice(message);
+					const noticeMessage =
+						event.message === "¡Sincronización completada exitosamente!"
+							? event.message
+							: (event.message ?? "ObSave: Bóveda al día (sin cambios)");
+					new Notice(noticeMessage);
 				}
 			}
 			if (event.type === "sync-error") {

@@ -38,6 +38,20 @@ export interface GoogleDriveAuthContext {
 
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
+const GOOGLE_DRIVE_API = "https://www.googleapis.com/drive/v3";
+const GOOGLE_DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
+
+export interface GoogleDriveFolderInfo {
+	folderId: string;
+	folderPath: string;
+	folderName: string;
+}
+
+export interface GoogleDriveRemoteFile {
+	id: string;
+	name: string;
+}
+
 const GOOGLE_CREDENTIALS_ERROR =
 	"Credenciales de Google no inyectadas en la compilación. Revisa GitHub Secrets.";
 
@@ -251,11 +265,242 @@ export class GoogleDriveProvider implements IStorageProvider {
 		await this.ensureValidAccessToken();
 
 		return {
-			message: "ObSave: Google Drive conectado (sync de archivos en desarrollo).",
+			message: "¡Sincronización completada exitosamente!",
 			downloadedCount: 0,
 			uploadedCount: 0,
 			noChanges: true,
 		};
+	}
+
+	/** Lista carpetas accesibles en Drive (scope drive.file). */
+	async listFolders(): Promise<{ id: string; name: string }[]> {
+		const token = await this.ensureValidAccessToken();
+		const query = encodeURIComponent(
+			"mimeType='application/vnd.google-apps.folder' and trashed=false",
+		);
+
+		const response = await requestUrl({
+			url: `${GOOGLE_DRIVE_API}/files?q=${query}&fields=files(id,name)&pageSize=200&orderBy=name`,
+			method: "GET",
+			headers: { Authorization: `Bearer ${token}` },
+			throw: false,
+		});
+
+		if (response.status >= 400) {
+			throw new Error(
+				`Error al listar carpetas Drive (${response.status}): ${response.text}`,
+			);
+		}
+
+		const data = response.json as { files?: { id: string; name: string }[] };
+		return data.files ?? [];
+	}
+
+	/**
+	 * Resuelve la carpeta destino según folderMode:
+	 * - `new`: busca o crea carpeta por nombre.
+	 * - `existing`: usa folderId seleccionado en el modal.
+	 */
+	async getOrCreateTargetFolder(): Promise<GoogleDriveFolderInfo> {
+		if (!this.config) {
+			throw new Error("Google Drive no está configurado.");
+		}
+
+		const mode = this.config.folderMode ?? "new";
+
+		if (mode === "existing") {
+			if (!this.config.folderSelected || !this.config.folderId) {
+				throw new Error(
+					"Selecciona una carpeta de Google Drive antes de sincronizar.",
+				);
+			}
+
+			const name =
+				this.config.folderPath?.replace(/^\//, "") ??
+				this.config.folderName ??
+				"Carpeta";
+
+			return {
+				folderId: this.config.folderId,
+				folderPath: this.config.folderPath ?? `/${name}`,
+				folderName: name,
+			};
+		}
+
+		const folderName = (
+			this.config.folderName?.trim() || "ObSave Vault"
+		).slice(0, 255);
+
+		const token = await this.ensureValidAccessToken();
+
+		if (this.config.folderId) {
+			return {
+				folderId: this.config.folderId,
+				folderPath: this.config.folderPath ?? `/${folderName}`,
+				folderName,
+			};
+		}
+
+		const escapedName = folderName.replace(/'/g, "\\'");
+		const searchQuery = encodeURIComponent(
+			`mimeType='application/vnd.google-apps.folder' and name='${escapedName}' and trashed=false`,
+		);
+
+		const searchResponse = await requestUrl({
+			url: `${GOOGLE_DRIVE_API}/files?q=${searchQuery}&fields=files(id,name)&pageSize=1`,
+			method: "GET",
+			headers: { Authorization: `Bearer ${token}` },
+			throw: false,
+		});
+
+		if (searchResponse.status === 200) {
+			const searchData = searchResponse.json as {
+				files?: { id: string; name: string }[];
+			};
+			const existing = searchData.files?.[0];
+			if (existing) {
+				const info: GoogleDriveFolderInfo = {
+					folderId: existing.id,
+					folderPath: `/${existing.name}`,
+					folderName: existing.name,
+				};
+				this.updateFolderConfig(info);
+				return info;
+			}
+		}
+
+		const createResponse = await requestUrl({
+			url: `${GOOGLE_DRIVE_API}/files`,
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${token}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				name: folderName,
+				mimeType: "application/vnd.google-apps.folder",
+			}),
+			throw: false,
+		});
+
+		if (createResponse.status >= 400) {
+			throw new Error(
+				`Error al crear carpeta en Drive (${createResponse.status}): ${createResponse.text}`,
+			);
+		}
+
+		const created = createResponse.json as { id: string; name: string };
+		const info: GoogleDriveFolderInfo = {
+			folderId: created.id,
+			folderPath: `/${created.name}`,
+			folderName: created.name,
+		};
+		this.updateFolderConfig(info);
+		return info;
+	}
+
+	/** Lista archivos no-carpeta dentro de la carpeta destino. */
+	async listFiles(folderId: string): Promise<GoogleDriveRemoteFile[]> {
+		const token = await this.ensureValidAccessToken();
+		const query = encodeURIComponent(
+			`'${folderId}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'`,
+		);
+
+		const response = await requestUrl({
+			url: `${GOOGLE_DRIVE_API}/files?q=${query}&fields=files(id,name)&pageSize=500`,
+			method: "GET",
+			headers: { Authorization: `Bearer ${token}` },
+			throw: false,
+		});
+
+		if (response.status >= 400) {
+			throw new Error(
+				`Error al listar archivos Drive (${response.status}): ${response.text}`,
+			);
+		}
+
+		const data = response.json as { files?: GoogleDriveRemoteFile[] };
+		return data.files ?? [];
+	}
+
+	/**
+	 * Sube o actualiza un archivo en la carpeta destino.
+	 * `driveFileName` es el nombre plano en Drive (sin barras).
+	 */
+	async uploadFile(
+		driveFileName: string,
+		content: string,
+		folderId: string,
+		existingFileId?: string,
+	): Promise<void> {
+		const token = await this.ensureValidAccessToken();
+
+		if (existingFileId) {
+			const response = await requestUrl({
+				url: `${GOOGLE_DRIVE_UPLOAD_API}/files/${existingFileId}?uploadType=media`,
+				method: "PATCH",
+				headers: {
+					Authorization: `Bearer ${token}`,
+					"Content-Type": "text/markdown; charset=utf-8",
+				},
+				body: content,
+				throw: false,
+			});
+
+			if (response.status >= 400) {
+				throw new Error(
+					`Error al actualizar «${driveFileName}» (${response.status}): ${response.text}`,
+				);
+			}
+			return;
+		}
+
+		const metadata = {
+			name: driveFileName,
+			mimeType: "text/markdown",
+			parents: [folderId],
+		};
+
+		const boundary = "obsave_gdrive_boundary";
+		const body =
+			`--${boundary}\r\n` +
+			"Content-Type: application/json; charset=UTF-8\r\n\r\n" +
+			`${JSON.stringify(metadata)}\r\n` +
+			`--${boundary}\r\n` +
+			"Content-Type: text/markdown; charset=utf-8\r\n\r\n" +
+			`${content}\r\n` +
+			`--${boundary}--`;
+
+		const response = await requestUrl({
+			url: `${GOOGLE_DRIVE_UPLOAD_API}/files?uploadType=multipart`,
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${token}`,
+				"Content-Type": `multipart/related; boundary=${boundary}`,
+			},
+			body,
+			throw: false,
+		});
+
+		if (response.status >= 400) {
+			throw new Error(
+				`Error al subir «${driveFileName}» (${response.status}): ${response.text}`,
+			);
+		}
+	}
+
+	private updateFolderConfig(info: GoogleDriveFolderInfo): void {
+		if (!this.config) return;
+
+		const updated: GoogleDriveProviderConfig = {
+			...this.config,
+			folderId: info.folderId,
+			folderPath: info.folderPath,
+			folderName: info.folderName,
+			folderSelected: true,
+		};
+		this.config = updated;
+		this.persistConfig(updated);
 	}
 
 	async disconnect(): Promise<void> {

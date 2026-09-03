@@ -1,17 +1,21 @@
+import type { App } from "obsidian";
 import type { CloudProviderId, ObSaveSettings } from "../settings";
-import type { IStorageProvider } from "../providers/IStorageProvider";
+import type { GoogleDriveLazyProvider } from "../providers/GoogleDriveLazyProvider";
+import type { IStorageProvider, SyncResult } from "../providers/IStorageProvider";
 import type { SyncEngineEvent, SyncStatus, SyncTrigger } from "../types";
 
 type SyncEngineListener = (event: SyncEngineEvent) => void;
 
 /**
  * Motor de sincronización — delega al proveedor de nube activo (único).
+ * Google Drive: lee notas `.md` locales y las sube vía GoogleDriveProvider.
  */
 export class SyncEngine {
 	private status: SyncStatus = "idle";
 	private listeners: SyncEngineListener[] = [];
 
 	constructor(
+		private app: App,
 		private settings: ObSaveSettings,
 		private providers: Map<CloudProviderId, IStorageProvider>,
 	) {}
@@ -65,7 +69,10 @@ export class SyncEngine {
 		this.setStatus("syncing");
 
 		try {
-			const result = await provider.sync();
+			const result =
+				providerId === "gdrive"
+					? await this.syncGoogleDrive(provider as GoogleDriveLazyProvider)
+					: await provider.sync();
 
 			this.setStatus("idle");
 			this.emit({
@@ -90,6 +97,41 @@ export class SyncEngine {
 				trigger,
 			});
 		}
+	}
+
+	private async syncGoogleDrive(
+		provider: GoogleDriveLazyProvider,
+	): Promise<SyncResult> {
+		const folder = await provider.getOrCreateTargetFolder();
+		const remoteFiles = await provider.listFiles(folder.folderId);
+		const remoteByName = new Map(remoteFiles.map((f) => [f.name, f.id]));
+
+		const mdFiles = this.app.vault.getMarkdownFiles();
+		let uploadedCount = 0;
+
+		for (const file of mdFiles) {
+			const driveName = this.toDriveFileName(file.path);
+			const content = await this.app.vault.read(file);
+			await provider.uploadFile(
+				driveName,
+				content,
+				folder.folderId,
+				remoteByName.get(driveName),
+			);
+			uploadedCount++;
+		}
+
+		return {
+			message: "¡Sincronización completada exitosamente!",
+			downloadedCount: 0,
+			uploadedCount,
+			noChanges: uploadedCount === 0,
+		};
+	}
+
+	/** Convierte rutas de bóveda a nombres válidos en Drive (sin `/`). */
+	private toDriveFileName(vaultPath: string): string {
+		return vaultPath.replace(/\//g, "_");
 	}
 
 	private setStatus(status: SyncStatus): void {

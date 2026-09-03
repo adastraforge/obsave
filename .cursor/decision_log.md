@@ -529,3 +529,17 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.28`
 
 ---
+
+## DEC-037 | 2026-09-03 | Google Drive — carpetas, modal y sync de notas
+
+**Contexto:** Tras OAuth, faltaba elegir/crear carpeta destino y subir archivos `.md` a Drive.
+
+**Decisión:**
+1. Settings `folderMode`, `folderName`, `folderSelected`, `folderPath`, `folderId`.
+2. Modal visual de carpetas; bloque de ubicación en dashboard con abrir/copiar/cambiar.
+3. `GoogleDriveProvider`: `getOrCreateTargetFolder`, `listFiles`, `uploadFile`.
+4. `SyncEngine` lee `.md` de la bóveda y sube vía provider; landing OAuth dark mode.
+
+**Release:** `v1.0.29`
+
+---
