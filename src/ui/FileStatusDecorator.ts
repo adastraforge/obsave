@@ -1,5 +1,6 @@
 import type ObSavePlugin from "../main";
 import type { FileSyncStatus } from "../types";
+import { hashContent } from "../utils/contentHash";
 
 const DOT_CLASS = "obsave-dot";
 
@@ -35,6 +36,10 @@ export class ObSaveFileStatusDecorator {
 	}
 
 	requestRefresh(): void {
+		if (this.plugin.syncEngine.getStatus() === "syncing") {
+			return;
+		}
+
 		if (this.refreshTimer !== null) {
 			window.clearTimeout(this.refreshTimer);
 		}
@@ -58,21 +63,33 @@ export class ObSaveFileStatusDecorator {
 		return new Map();
 	}
 
-	private computeGoogleDriveStatuses(): Map<string, FileSyncStatus> {
+	private async computeGoogleDriveStatuses(): Promise<Map<string, FileSyncStatus>> {
 		const statuses = new Map<string, FileSyncStatus>();
-		const gdrive = this.plugin.settings.providerConfig.gdrive;
-		const snapshot = gdrive?.syncedFileMtimes ?? {};
+		const isSyncing = this.plugin.syncEngine.getStatus() === "syncing";
+		const ledger = this.plugin.settings.syncedLedger ?? {};
 
 		for (const file of this.plugin.app.vault.getMarkdownFiles()) {
-			const syncedMtime = snapshot[file.path];
+			const entry = ledger[file.path];
 
-			if (syncedMtime === undefined) {
+			if (!entry) {
 				statuses.set(file.path, "new");
-			} else if (file.stat.mtime > syncedMtime) {
-				statuses.set(file.path, "modified");
-			} else {
-				statuses.set(file.path, "synced");
+				continue;
 			}
+
+			if (isSyncing) {
+				statuses.set(file.path, "synced");
+				continue;
+			}
+
+			if (file.stat.mtime !== entry.mtime) {
+				const content = await this.plugin.app.vault.read(file);
+				if (hashContent(content) !== entry.hash) {
+					statuses.set(file.path, "modified");
+					continue;
+				}
+			}
+
+			statuses.set(file.path, "synced");
 		}
 
 		return statuses;

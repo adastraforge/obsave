@@ -118,6 +118,14 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 		return delegate.downloadFile(fileId);
 	}
 
+	async deleteFile(fileId: string): Promise<void> {
+		const delegate = await this.ensureLoaded();
+		if (this.pendingConfig) {
+			await delegate.connect(this.pendingConfig);
+		}
+		return delegate.deleteFile(fileId);
+	}
+
 	async resolveOrCreateFolderPath(
 		rootFolderId: string,
 		relativePath: string,

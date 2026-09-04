@@ -43,6 +43,7 @@ export type {
 	ObSaveSettings,
 	OneDriveProviderConfig,
 	ProviderConfigMap,
+	SyncLedgerEntry,
 } from "./settings";
 export {
 	clampSyncIntervalSeconds,

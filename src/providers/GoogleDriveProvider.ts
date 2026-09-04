@@ -559,6 +559,22 @@ export class GoogleDriveProvider implements IStorageProvider {
 		return response.text;
 	}
 
+	async deleteFile(fileId: string): Promise<void> {
+		const token = await this.ensureValidAccessToken();
+		const response = await requestUrl({
+			url: `${GOOGLE_DRIVE_API}/files/${fileId}`,
+			method: "DELETE",
+			headers: { Authorization: `Bearer ${token}` },
+			throw: false,
+		});
+
+		if (response.status >= 400 && response.status !== 404) {
+			throw new Error(
+				`Error al eliminar archivo Drive (${response.status}): ${response.text}`,
+			);
+		}
+	}
+
 	private parseDriveModifiedTime(modifiedTime?: string): number {
 		if (!modifiedTime) {
 			return 0;

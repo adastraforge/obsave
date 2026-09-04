@@ -64,14 +64,20 @@ export default class ObSavePlugin extends Plugin {
 		);
 		this.registerEvent(
 			this.app.vault.on("create", (file) => {
-				if (file.path.endsWith(".md")) {
+				if (
+					file.path.endsWith(".md") &&
+					this.syncEngine.getStatus() !== "syncing"
+				) {
 					void this.refreshDecoratorsImmediate();
 				}
 			}),
 		);
 		this.registerEvent(
 			this.app.vault.on("modify", (file) => {
-				if (file.path.endsWith(".md")) {
+				if (
+					file.path.endsWith(".md") &&
+					this.syncEngine.getStatus() !== "syncing"
+				) {
 					void this.refreshDecoratorsImmediate();
 				}
 			}),
@@ -221,6 +227,7 @@ export default class ObSavePlugin extends Plugin {
 		this.settings.lastSyncAt = null;
 		this.settings.syncStatus = "idle";
 		this.settings.autoSyncEnabled = false;
+		this.settings.syncedLedger = {};
 		await this.saveSettings();
 		this.updateRibbonIcon("idle");
 		void this.refreshDecoratorsImmediate();

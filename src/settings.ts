@@ -10,6 +10,13 @@ export interface GitHubProviderConfig {
 	token?: string;
 }
 
+/** Entrada del registro de sincronización por ruta de bóveda */
+export interface SyncLedgerEntry {
+	hash: string;
+	mtime: number;
+	driveFileId?: string;
+}
+
 /** Modo de carpeta destino en Google Drive */
 export type GoogleDriveFolderMode = "new" | "existing";
 
@@ -35,10 +42,6 @@ export interface GoogleDriveProviderConfig {
 	folderName?: string;
 	/** `false` en modo existente hasta elegir carpeta en el modal */
 	folderSelected?: boolean;
-	/** Mapa ruta vault → mtime ms tras último sync exitoso (badges explorador) */
-	syncedFileMtimes?: Record<string, number>;
-	/** Hash de contenido tras último sync exitoso (badges explorador) */
-	syncedContentHashes?: Record<string, string>;
 }
 
 /** Skeleton Fase 2 — OAuth2 PKCE */
@@ -98,6 +101,8 @@ export interface ObSaveSettings {
 	autoSyncEnabled: boolean;
 	lastSyncAt: string | null;
 	syncStatus: SyncStatus;
+	/** Huella de archivos sincronizados con éxito (ruta vault → entrada) */
+	syncedLedger: Record<string, SyncLedgerEntry>;
 }
 
 export const DEFAULT_SETTINGS: ObSaveSettings = {
@@ -107,6 +112,7 @@ export const DEFAULT_SETTINGS: ObSaveSettings = {
 	autoSyncEnabled: false,
 	lastSyncAt: null,
 	syncStatus: "idle",
+	syncedLedger: {},
 };
 
 /** Formato legacy pre-proveedor-único (migración desde data.json) */

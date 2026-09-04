@@ -66,7 +66,40 @@ export function mergeStoredSettings(
 			migrated.syncStatus !== undefined
 				? migrated.syncStatus
 				: DEFAULT_SETTINGS.syncStatus,
+		syncedLedger: migrateSyncedLedger(migrated),
 	};
+}
+
+function migrateSyncedLedger(
+	migrated: Partial<ObSaveSettings>,
+): Record<string, import("./settings").SyncLedgerEntry> {
+	if (migrated.syncedLedger && typeof migrated.syncedLedger === "object") {
+		return { ...migrated.syncedLedger };
+	}
+
+	const gdrive = migrated.providerConfig?.gdrive as
+		| (typeof migrated.providerConfig extends { gdrive?: infer G } ? G : never)
+		| undefined;
+	if (!gdrive) {
+		return {};
+	}
+
+	const legacy = gdrive as typeof gdrive & {
+		syncedFileMtimes?: Record<string, number>;
+		syncedContentHashes?: Record<string, string>;
+	};
+	const mtimes = legacy.syncedFileMtimes ?? {};
+	const hashes = legacy.syncedContentHashes ?? {};
+	const ledger: Record<string, import("./settings").SyncLedgerEntry> = {};
+
+	for (const path of Object.keys(mtimes)) {
+		ledger[path] = {
+			hash: hashes[path] ?? "",
+			mtime: mtimes[path],
+		};
+	}
+
+	return ledger;
 }
 
 function resolveSyncIntervalSeconds(migrated: Partial<ObSaveSettings>): number {

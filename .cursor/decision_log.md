@@ -594,3 +594,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.33`
 
 ---
+
+## DEC-042 | 2026-09-03 | Sync Ledger y eliminación bidireccional
+
+**Contexto:** Sync sin propagar borrados; badges parpadeaban a amarillo durante evaluación.
+
+**Decisión:**
+1. `settings.syncedLedger` con hash, mtime y driveFileId.
+2. Matriz 5 casos: delete remoto/local, pull, push y resolución por mtime.
+3. `deleteFile` en Drive; badges verdes durante sync salvo diff real vs ledger.
+
+**Release:** `v1.0.34`
+
+---
