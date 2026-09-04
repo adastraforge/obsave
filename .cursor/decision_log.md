@@ -636,3 +636,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.36`
 
 ---
+
+## DEC-045 | 2026-09-04 | Fix UI carpeta Drive tras picker
+
+**Contexto:** Al elegir carpeta existente (ej. OBSIDIAN_BOVEDA), la UI seguía mostrando `/ObSave Vault` porque el delegate no recibía cambios de carpeta y SyncEngine sobrescribía settings tras sync.
+
+**Decisión:**
+1. `configNeedsSync` incluye campos de carpeta; `applyPendingConfigToDelegate()` en saveSettings.
+2. SyncEngine preserva `folderPath`/`folderName` en modo `existing`.
+3. `formatGoogleDriveLocation()` en UI; reset de ledger al cambiar carpeta.
+
+**Release:** `v1.0.37`
+
+---

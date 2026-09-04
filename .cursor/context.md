@@ -7,10 +7,13 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.36`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.36`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.37`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.37`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Fix carpeta Drive UI v1.0.37
+- Sincroniza folderId/path al delegate tras picker; preserva ruta en sync modo `existing`.
 
 ### Refactor motor sync, OAuth y rendimiento v1.0.36
 - `executeUnifiedSync` + mutex `syncInFlight`; retry 401 en Drive API; fix carrera `pendingConfig`.

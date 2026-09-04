@@ -191,6 +191,7 @@ export default class ObSavePlugin extends Plugin {
 			this.googleDriveLazy?.setPendingConfig(
 				gdriveConfig?.refreshToken ? gdriveConfig : null,
 			);
+			void this.googleDriveLazy?.applyPendingConfigToDelegate();
 		} catch (error) {
 			console.warn("[ObSave] Config Google Drive diferida omitida:", error);
 		}

@@ -73,8 +73,21 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 		return (
 			current.accessToken !== this.pendingConfig.accessToken ||
 			current.expiresAt !== this.pendingConfig.expiresAt ||
-			current.refreshToken !== this.pendingConfig.refreshToken
+			current.refreshToken !== this.pendingConfig.refreshToken ||
+			current.folderId !== this.pendingConfig.folderId ||
+			current.folderPath !== this.pendingConfig.folderPath ||
+			current.folderName !== this.pendingConfig.folderName ||
+			current.folderMode !== this.pendingConfig.folderMode ||
+			current.folderSelected !== this.pendingConfig.folderSelected
 		);
+	}
+
+	/** Propaga pendingConfig al delegate cargado (p. ej. tras cambiar carpeta). */
+	async applyPendingConfigToDelegate(): Promise<void> {
+		if (!this.pendingConfig || !this.delegate) {
+			return;
+		}
+		await this.delegate.connect(this.pendingConfig);
 	}
 
 	private async ensureDelegateSynced(): Promise<

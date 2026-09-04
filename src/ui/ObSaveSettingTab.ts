@@ -670,7 +670,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		}
 
 		const card = containerEl.createDiv({ cls: "obsave-drive-location-card" });
-		const pathLabel = gdrive.folderPath ?? `/${gdrive.folderName ?? "Carpeta"}`;
+		const pathLabel = this.formatGoogleDriveLocation(gdrive);
 
 		const pathRow = card.createDiv({ cls: "obsave-drive-location-row" });
 		pathRow.createSpan({
@@ -713,6 +713,22 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		changeBtn.addEventListener("click", () => this.openGoogleFolderPicker());
 	}
 
+	private formatGoogleDriveLocation(
+		gdrive: NonNullable<
+			typeof this.plugin.settings.providerConfig.gdrive
+		>,
+	): string {
+		const path = gdrive.folderPath?.trim();
+		if (path) {
+			return path.startsWith("/") ? path : `/${path}`;
+		}
+		const name = gdrive.folderName?.trim();
+		if (name) {
+			return `/${name}`;
+		}
+		return "/Carpeta";
+	}
+
 	private openGoogleFolderPicker(): void {
 		const modal = new GoogleFolderPickerModal(
 			this.app,
@@ -729,6 +745,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					folderSelected: true,
 					folderMode: "existing",
 				};
+				this.plugin.settings.syncedLedger = {};
 				this.plugin.settings.autoSyncEnabled = false;
 				await this.plugin.saveSettings();
 				this.display();

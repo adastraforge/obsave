@@ -359,12 +359,22 @@ export class SyncEngine {
 
 		const gdrive = this.settings.providerConfig.gdrive;
 		if (gdrive) {
+			const preserveUserFolder =
+				gdrive.folderMode === "existing" &&
+				!!gdrive.folderId &&
+				gdrive.folderId === folder.folderId;
+
 			this.settings.providerConfig.gdrive = {
 				...gdrive,
 				folderId: folder.folderId,
-				folderPath: folder.folderPath,
-				folderName: folder.folderName,
+				folderPath: preserveUserFolder
+					? (gdrive.folderPath ?? folder.folderPath)
+					: folder.folderPath,
+				folderName: preserveUserFolder
+					? (gdrive.folderName ?? folder.folderName)
+					: folder.folderName,
 				folderSelected: true,
+				folderMode: preserveUserFolder ? "existing" : gdrive.folderMode,
 			};
 		}
 

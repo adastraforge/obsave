@@ -103,10 +103,14 @@ export class GoogleFolderPickerModal extends Modal {
 	}
 
 	private setSelectedFolder(folderId: string, folderName: string): void {
+		const parts = this.breadcrumbs
+			.filter((segment) => segment.id !== "root")
+			.map((segment) => segment.name);
+		parts.push(folderName);
 		this.selectedFolder = {
 			folderId,
 			folderName,
-			folderPath: this.buildPathFromBreadcrumbs(folderName),
+			folderPath: parts.length > 0 ? `/${parts.join("/")}` : `/${folderName}`,
 		};
 		this.updateSelectButton();
 		this.highlightSelectedRow(folderId);
