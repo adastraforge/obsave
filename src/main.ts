@@ -15,6 +15,7 @@ import {
 	clampSyncIntervalSeconds,
 	getGitHubConfig,
 	getGoogleDriveConfig,
+	isProviderConfigured,
 	type ObSaveSettings,
 	type SyncStatus,
 } from "./types";
@@ -100,6 +101,7 @@ export default class ObSavePlugin extends Plugin {
 
 				void this.refreshDecoratorsImmediate();
 				this.refreshSettingsTab();
+				this.updateRibbonIcon("idle");
 
 				if (event.trigger === "manual") {
 					const noticeMessage =
@@ -113,6 +115,7 @@ export default class ObSavePlugin extends Plugin {
 				this.settings.syncStatus = "error";
 				void this.saveSettings();
 				console.warn(`[ObSave] ${event.message ?? "Error de sincronización"}`);
+				this.updateRibbonIcon("error");
 				if (event.trigger === "manual") {
 					new Notice(`ObSave: ${event.message ?? "Error de sincronización"}`);
 				}
@@ -125,10 +128,11 @@ export default class ObSavePlugin extends Plugin {
 		this.addSettingTab(this.settingsTab);
 
 		this.ribbonEl = this.addRibbonIcon(
-			"cloud-download",
-			"ObSave — Sincronizar",
+			"cloud",
+			"ObSave — Sincronizar ahora",
 			async () => {
-				await this.triggerSync(true);
+				new Notice("ObSave: Iniciando sincronización...");
+				await this.syncEngine.executeSync();
 			},
 		);
 		this.updateRibbonIcon(this.settings.syncStatus);
@@ -167,6 +171,7 @@ export default class ObSavePlugin extends Plugin {
 
 		await this.saveData(this.settings);
 		this.restartAutoSync();
+		this.updateRibbonIcon(this.settings.syncStatus);
 		void this.refreshDecoratorsImmediate();
 	}
 
@@ -229,7 +234,7 @@ export default class ObSavePlugin extends Plugin {
 		this.settings.autoSyncEnabled = false;
 		this.settings.syncedLedger = {};
 		await this.saveSettings();
-		this.updateRibbonIcon("idle");
+		this.updateRibbonIcon(this.settings.syncStatus);
 		void this.refreshDecoratorsImmediate();
 	}
 
@@ -256,17 +261,25 @@ export default class ObSavePlugin extends Plugin {
 	private updateRibbonIcon(status: SyncStatus): void {
 		if (!this.ribbonEl) return;
 
-		const iconMap: Record<SyncStatus, string> = {
-			idle: "cloud",
-			syncing: "loader-2",
-			error: "cloud-off",
-		};
+		if (!isProviderConfigured(this.settings)) {
+			this.ribbonEl.empty();
+			setIcon(this.ribbonEl, "cloud-off");
+			this.ribbonEl.setAttribute(
+				"aria-label",
+				"ObSave — Requiere configuración",
+			);
+			return;
+		}
+
+		if (status === "syncing") {
+			this.ribbonEl.empty();
+			setIcon(this.ribbonEl, "refresh-cw");
+			this.ribbonEl.setAttribute("aria-label", "ObSave — Sincronizando...");
+			return;
+		}
 
 		this.ribbonEl.empty();
-		setIcon(this.ribbonEl, iconMap[status]);
-		this.ribbonEl.setAttribute(
-			"aria-label",
-			`ObSave — ${status === "syncing" ? "Sincronizando…" : status === "error" ? "Error de sync" : "Listo"}`,
-		);
+		setIcon(this.ribbonEl, "cloud");
+		this.ribbonEl.setAttribute("aria-label", "ObSave — Sincronizar ahora");
 	}
 }

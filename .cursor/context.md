@@ -7,10 +7,14 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.34`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.34`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.35`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.35`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Ribbon icon y fix DOM v1.0.35
+- Fix `containerEl.isConnected` (propiedad booleana, no función).
+- Clic ribbon: `executeSync()` + Notice inmediato; iconos `cloud` / `refresh-cw` / `cloud-off` con tooltips dinámicos.
 
 ### Sync Ledger y eliminación bidireccional v1.0.34
 - `syncedLedger` (hash/mtime/driveFileId); matriz 5 casos; `deleteFile`; badges estables durante sync.

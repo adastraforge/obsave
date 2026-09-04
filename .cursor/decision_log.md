@@ -607,3 +607,18 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.34`
 
 ---
+
+## DEC-043 | 2026-09-03 | Ribbon icon y fix isConnected DOM
+
+**Contexto:** `refreshIfOpen()` invocaba `containerEl.isConnected()` como función; el ribbon no reflejaba estados ni disparaba sync con feedback inmediato.
+
+**Decisión:**
+1. Usar propiedad booleana `containerEl.isConnected` en `ObSaveSettingTab`.
+2. Exponer `SyncEngine.executeSync()` para sync manual desde ribbon.
+3. Estados visuales: `cloud` (listo), `refresh-cw` (syncing), `cloud-off` (sin configurar); refresco en cada ciclo.
+
+**Alternativas descartadas:** Extraer `RibbonIcon.ts` — la lógica cabe en `main.ts` sin complejidad adicional.
+
+**Release:** `v1.0.35`
+
+---

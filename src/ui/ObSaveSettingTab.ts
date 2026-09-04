@@ -106,7 +106,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 	/** Refresca la vista si el panel de ajustes está abierto. */
 	refreshIfOpen(): void {
-		if (!this.containerEl.isConnected()) {
+		if (!this.containerEl.isConnected) {
 			return;
 		}
 		this.display();

@@ -138,7 +138,7 @@ export class SyncEngine {
 		this.setStatus("syncing");
 
 		try {
-			const result = await this.executeSync(providerId, provider);
+			const result = await this.runProviderSync(providerId, provider);
 
 			this.settings.lastSyncAt = new Date().toISOString();
 			this.setStatus("idle");
@@ -168,7 +168,12 @@ export class SyncEngine {
 		}
 	}
 
-	private async executeSync(
+	/** Dispara sincronización manual inmediata (ribbon, comandos). */
+	async executeSync(): Promise<void> {
+		await this.sync("manual");
+	}
+
+	private async runProviderSync(
 		providerId: CloudProviderId,
 		provider: IStorageProvider,
 	): Promise<SyncResult> {
