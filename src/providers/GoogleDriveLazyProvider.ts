@@ -100,6 +100,24 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 		return delegate.listFiles(folderId);
 	}
 
+	async listAllMarkdownFiles(
+		rootFolderId: string,
+	): Promise<import("./GoogleDriveProvider").GoogleDriveRemoteMarkdown[]> {
+		const delegate = await this.ensureLoaded();
+		if (this.pendingConfig) {
+			await delegate.connect(this.pendingConfig);
+		}
+		return delegate.listAllMarkdownFiles(rootFolderId);
+	}
+
+	async downloadFile(fileId: string): Promise<string> {
+		const delegate = await this.ensureLoaded();
+		if (this.pendingConfig) {
+			await delegate.connect(this.pendingConfig);
+		}
+		return delegate.downloadFile(fileId);
+	}
+
 	async resolveOrCreateFolderPath(
 		rootFolderId: string,
 		relativePath: string,

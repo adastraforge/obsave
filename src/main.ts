@@ -12,14 +12,12 @@ import { ObSaveSettingTab } from "./ui/ObSaveSettingTab";
 import { mergeStoredSettings } from "./settingsMerge";
 import {
 	DEFAULT_SETTINGS,
+	clampSyncIntervalSeconds,
 	getGitHubConfig,
 	getGoogleDriveConfig,
 	type ObSaveSettings,
 	type SyncStatus,
 } from "./types";
-
-const MIN_SYNC_INTERVAL = 1;
-const MAX_SYNC_INTERVAL = 15;
 
 export default class ObSavePlugin extends Plugin {
 	settings: ObSaveSettings = DEFAULT_SETTINGS;
@@ -29,6 +27,7 @@ export default class ObSavePlugin extends Plugin {
 	private providers!: Map<CloudProviderId, IStorageProvider>;
 	private fileDecorators!: ObSaveFileStatusDecorator;
 	private ribbonEl: HTMLElement | null = null;
+	private settingsTab!: ObSaveSettingTab;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -84,7 +83,8 @@ export default class ObSavePlugin extends Plugin {
 				this.updateRibbonIcon(event.status);
 			}
 			if (event.type === "sync-complete") {
-				this.settings.lastSyncAt = new Date().toISOString();
+				this.settings.lastSyncAt =
+					event.timestamp ?? new Date().toISOString();
 				this.settings.syncStatus = "idle";
 				void this.saveSettings();
 
@@ -93,6 +93,7 @@ export default class ObSavePlugin extends Plugin {
 				console.log(`[ObSave] ${message}`);
 
 				void this.refreshDecoratorsImmediate();
+				this.refreshSettingsTab();
 
 				if (event.trigger === "manual") {
 					const noticeMessage =
@@ -110,10 +111,12 @@ export default class ObSavePlugin extends Plugin {
 					new Notice(`ObSave: ${event.message ?? "Error de sincronización"}`);
 				}
 				void this.refreshDecoratorsImmediate();
+				this.refreshSettingsTab();
 			}
 		});
 
-		this.addSettingTab(new ObSaveSettingTab(this.app, this));
+		this.settingsTab = new ObSaveSettingTab(this.app, this);
+		this.addSettingTab(this.settingsTab);
 
 		this.ribbonEl = this.addRibbonIcon(
 			"cloud-download",
@@ -138,15 +141,15 @@ export default class ObSavePlugin extends Plugin {
 	async loadSettings(): Promise<void> {
 		const stored = await this.loadData<Partial<ObSaveSettings>>();
 		this.settings = mergeStoredSettings(stored);
-		this.settings.syncIntervalMinutes = this.clampSyncInterval(
-			this.settings.syncIntervalMinutes,
+		this.settings.syncIntervalSeconds = clampSyncIntervalSeconds(
+			this.settings.syncIntervalSeconds,
 		);
 		this.applyPendingGoogleDriveConfig();
 	}
 
 	async saveSettings(): Promise<void> {
-		this.settings.syncIntervalMinutes = this.clampSyncInterval(
-			this.settings.syncIntervalMinutes,
+		this.settings.syncIntervalSeconds = clampSyncIntervalSeconds(
+			this.settings.syncIntervalSeconds,
 		);
 		this.syncEngine?.updateSettings(this.settings);
 		this.applyPendingGoogleDriveConfig();
@@ -223,8 +226,8 @@ export default class ObSavePlugin extends Plugin {
 		void this.refreshDecoratorsImmediate();
 	}
 
-	clampSyncInterval(minutes: number): number {
-		return Math.min(MAX_SYNC_INTERVAL, Math.max(MIN_SYNC_INTERVAL, minutes));
+	refreshSettingsTab(): void {
+		this.settingsTab?.refreshIfOpen();
 	}
 
 	startAutoSync(): void {

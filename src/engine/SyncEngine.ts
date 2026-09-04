@@ -1,4 +1,4 @@
-import type { App } from "obsidian";
+import { TFile, type App } from "obsidian";
 import {
 	isProviderConfigured,
 	type CloudProviderId,
@@ -12,7 +12,7 @@ type SyncEngineListener = (event: SyncEngineEvent) => void;
 
 /**
  * Motor de sincronización — delega al proveedor de nube activo (único).
- * Google Drive: preserva jerarquía de subcarpetas al subir notas `.md`.
+ * Google Drive: sync bidireccional con jerarquía de subcarpetas preservada.
  */
 export class SyncEngine {
 	private status: SyncStatus = "idle";
@@ -63,7 +63,7 @@ export class SyncEngine {
 			return;
 		}
 
-		const intervalMs = this.settings.syncIntervalMinutes * 60 * 1000;
+		const intervalMs = this.settings.syncIntervalSeconds * 1000;
 		this.autoSyncIntervalId = window.setInterval(() => {
 			void this.sync("automatic");
 		}, intervalMs);
@@ -135,17 +135,15 @@ export class SyncEngine {
 		this.setStatus("syncing");
 
 		try {
-			const result =
-				providerId === "gdrive"
-					? await this.syncGoogleDrive(provider as GoogleDriveLazyProvider)
-					: await provider.sync();
+			const result = await this.executeSync(providerId, provider);
 
+			this.settings.lastSyncAt = new Date().toISOString();
 			this.setStatus("idle");
 			this.emit({
 				type: "sync-complete",
 				status: "idle",
 				message: result.message,
-				timestamp: new Date().toISOString(),
+				timestamp: this.settings.lastSyncAt,
 				trigger,
 				noChanges: result.noChanges,
 				downloadedCount: result.downloadedCount,
@@ -167,52 +165,96 @@ export class SyncEngine {
 		}
 	}
 
-	private async syncGoogleDrive(
+	private async executeSync(
+		providerId: CloudProviderId,
+		provider: IStorageProvider,
+	): Promise<SyncResult> {
+		if (providerId === "gdrive") {
+			return this.executeSyncGoogleDrive(provider as GoogleDriveLazyProvider);
+		}
+		return provider.sync();
+	}
+
+	private async executeSyncGoogleDrive(
 		provider: GoogleDriveLazyProvider,
 	): Promise<SyncResult> {
 		const folder = await provider.getOrCreateTargetFolder();
-		const remoteFilesByFolder = new Map<string, Map<string, string>>();
-		const mdFiles = this.app.vault.getMarkdownFiles();
+		const remoteFiles = await provider.listAllMarkdownFiles(folder.folderId);
+		const remoteByPath = new Map(
+			remoteFiles.map((file) => [file.relativePath, file]),
+		);
+
+		const localFiles = this.app.vault.getMarkdownFiles();
+		const localByPath = new Map(localFiles.map((file) => [file.path, file]));
+
+		let downloadedCount = 0;
 		let uploadedCount = 0;
+		const pulledPaths = new Set<string>();
+
+		for (const remote of remoteFiles) {
+			const local = localByPath.get(remote.relativePath);
+			const shouldPull =
+				!local || remote.modifiedTimeMs > local.stat.mtime;
+
+			if (!shouldPull) {
+				continue;
+			}
+
+			const content = await provider.downloadFile(remote.id);
+			const dirPath = remote.relativePath.includes("/")
+				? remote.relativePath.slice(0, remote.relativePath.lastIndexOf("/"))
+				: "";
+
+			await this.ensureLocalFolderPath(dirPath);
+
+			const existing = this.app.vault.getAbstractFileByPath(remote.relativePath);
+			if (existing instanceof TFile) {
+				await this.app.vault.modify(existing, content);
+			} else {
+				await this.app.vault.create(remote.relativePath, content);
+			}
+
+			pulledPaths.add(remote.relativePath);
+			downloadedCount++;
+		}
+
+		const localAfterPull = this.app.vault.getMarkdownFiles();
 		const syncedFileMtimes: Record<string, number> = {};
 		const syncedContentHashes: Record<string, string> = {};
 
-		for (const file of mdFiles) {
-			const pathParts = file.path.split("/");
-			const fileName = pathParts.pop() ?? file.path;
-			const relativeDir = pathParts.join("/");
+		for (const file of localAfterPull) {
+			const remote = remoteByPath.get(file.path);
 
-			const parentFolderId = relativeDir
-				? await provider.resolveOrCreateFolderPath(
-						folder.folderId,
-						relativeDir,
-					)
-				: folder.folderId;
+			if (!pulledPaths.has(file.path)) {
+				const shouldPush =
+					!remote || file.stat.mtime > remote.modifiedTimeMs;
 
-			let remoteInFolder = remoteFilesByFolder.get(parentFolderId);
-			if (!remoteInFolder) {
-				const remoteFiles = await provider.listFiles(parentFolderId);
-				remoteInFolder = new Map(remoteFiles.map((f) => [f.name, f.id]));
-				remoteFilesByFolder.set(parentFolderId, remoteInFolder);
+				if (shouldPush) {
+					const pathParts = file.path.split("/");
+					const fileName = pathParts.pop() ?? file.path;
+					const relativeDir = pathParts.join("/");
+
+					const parentFolderId = relativeDir
+						? await provider.resolveOrCreateFolderPath(
+								folder.folderId,
+								relativeDir,
+							)
+						: folder.folderId;
+
+					const content = await this.app.vault.read(file);
+					await provider.uploadFile(
+						fileName,
+						content,
+						parentFolderId,
+						remote?.id,
+					);
+					uploadedCount++;
+				}
 			}
 
 			const content = await this.app.vault.read(file);
-			const existingFileId = remoteInFolder.get(fileName);
-
-			await provider.uploadFile(
-				fileName,
-				content,
-				parentFolderId,
-				existingFileId,
-			);
-
-			if (!existingFileId) {
-				remoteInFolder.set(fileName, "pending");
-			}
-
 			syncedFileMtimes[file.path] = file.stat.mtime;
 			syncedContentHashes[file.path] = this.hashContent(content);
-			uploadedCount++;
 		}
 
 		const gdrive = this.settings.providerConfig.gdrive;
@@ -228,12 +270,33 @@ export class SyncEngine {
 			};
 		}
 
+		const noChanges = downloadedCount === 0 && uploadedCount === 0;
+		const message = noChanges
+			? "ObSave: Bóveda al día (sin cambios)"
+			: "¡Sincronización completada exitosamente!";
+
 		return {
-			message: "¡Sincronización completada exitosamente!",
-			downloadedCount: 0,
+			message,
+			downloadedCount,
 			uploadedCount,
-			noChanges: uploadedCount === 0,
+			noChanges,
 		};
+	}
+
+	private async ensureLocalFolderPath(dirPath: string): Promise<void> {
+		if (!dirPath) {
+			return;
+		}
+
+		const segments = dirPath.split("/").filter(Boolean);
+		let current = "";
+
+		for (const segment of segments) {
+			current = current ? `${current}/${segment}` : segment;
+			if (!this.app.vault.getAbstractFileByPath(current)) {
+				await this.app.vault.createFolder(current);
+			}
+		}
 	}
 
 	private hashContent(content: string): string {

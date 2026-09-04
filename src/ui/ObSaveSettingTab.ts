@@ -3,11 +3,12 @@ import { extractGitHubOwner } from "../adapters/githubApi";
 import { GitHubProvider } from "../providers/GitHubProvider";
 import { getVaultFolderName } from "../adapters/vaultPaths";
 import type { CloudProviderId, GoogleDriveFolderMode } from "../settings";
-import { isProviderConfigured, hasProviderCredentials } from "../types";
 import {
-	formatLocalDateTime,
-	formatRelativeSyncTime,
-} from "../utils/dateFormat";
+	formatSyncIntervalLabel,
+	SYNC_INTERVAL_OPTIONS,
+} from "../settings";
+import { isProviderConfigured, hasProviderCredentials } from "../types";
+import { formatLocalDateTime } from "../utils/dateFormat";
 import { openExternalUrl } from "../oauth/runtimeBridge";
 import { GoogleFolderPickerModal } from "./GoogleFolderPickerModal";
 import type ObSavePlugin from "../main";
@@ -101,6 +102,14 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		}
 
 		this.renderFooter(containerEl);
+	}
+
+	/** Refresca la vista si el panel de ajustes está abierto. */
+	refreshIfOpen(): void {
+		if (!this.containerEl.isConnected()) {
+			return;
+		}
+		this.display();
 	}
 
 	private renderHeader(containerEl: HTMLElement): void {
@@ -736,19 +745,21 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		const gdrive = this.plugin.settings.providerConfig.gdrive;
 		const autoSyncBlocked =
 			providerId === "gdrive" && gdrive?.folderSelected !== true;
+		const autoSyncOn = this.plugin.settings.autoSyncEnabled && !autoSyncBlocked;
+		const intervalLabel = formatSyncIntervalLabel(
+			this.plugin.settings.syncIntervalSeconds,
+		);
 
 		const lastSync = this.plugin.settings.lastSyncAt;
-		const relative = formatRelativeSyncTime(lastSync);
-		const exact = formatLocalDateTime(lastSync);
 
 		new Setting(containerEl)
 			.setName("Última sincronización")
-			.setDesc(exact === "Nunca" ? "Nunca" : `${relative} (${exact})`)
+			.setDesc(formatLocalDateTime(lastSync))
 			.setDisabled(true);
 
 		new Setting(containerEl)
 			.setName("Sincronizar ahora")
-			.setDesc("Envía los cambios de tu bóveda al proveedor conectado.")
+			.setDesc("Sincroniza cambios entre tu bóveda y la nube (subida y descarga).")
 			.addButton((btn) =>
 				btn
 					.setButtonText("Sincronizar ahora")
@@ -771,8 +782,8 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			.setDesc(
 				autoSyncBlocked
 					? "Configura una carpeta de Drive para habilitar la sync en segundo plano."
-					: this.plugin.settings.autoSyncEnabled
-						? `Activa — cada ${this.plugin.settings.syncIntervalMinutes} minuto${this.plugin.settings.syncIntervalMinutes === 1 ? "" : "s"}`
+					: autoSyncOn
+						? `Activa — cada ${intervalLabel}`
 						: "Desactivada — solo sincronización manual",
 			);
 
@@ -782,53 +793,36 @@ export class ObSaveSettingTab extends PluginSettingTab {
 				.setDisabled(autoSyncBlocked)
 				.onChange(async (value) => {
 					this.plugin.settings.autoSyncEnabled = value;
-					autoSyncSetting.setDesc(
-						value
-							? `Activa — cada ${this.plugin.settings.syncIntervalMinutes} minuto${this.plugin.settings.syncIntervalMinutes === 1 ? "" : "s"}`
-							: "Desactivada — solo sincronización manual",
-					);
 					await this.plugin.saveSettings();
-					if (value) {
-						this.plugin.restartAutoSync();
-					} else {
-						this.plugin.stopAutoSync();
-					}
+					this.display();
 				});
 		});
 
-		const intervalSetting = new Setting(containerEl)
-			.setName("Intervalo automático")
-			.setDesc(
-				`Cada ${this.plugin.settings.syncIntervalMinutes} minuto${this.plugin.settings.syncIntervalMinutes === 1 ? "" : "s"}`,
-			)
-			.setDisabled(
-				autoSyncBlocked || !this.plugin.settings.autoSyncEnabled,
-			);
+		if (autoSyncOn) {
+			const intervalWrapper = containerEl.createDiv({
+				cls: "obsave-interval-setting",
+			});
 
-		intervalSetting.addSlider((slider) =>
-			slider
-				.setLimits(1, 15, 1)
-				.setValue(this.plugin.settings.syncIntervalMinutes)
-				.setDynamicTooltip()
-				.setDisabled(
-					autoSyncBlocked || !this.plugin.settings.autoSyncEnabled,
-				)
-				.onChange(async (value) => {
-					this.plugin.settings.syncIntervalMinutes = value;
-					intervalSetting.setDesc(
-						`Cada ${value} minuto${value === 1 ? "" : "s"}`,
+			const intervalSetting = new Setting(intervalWrapper)
+				.setName("Intervalo automático")
+				.setDesc(`Cada ${intervalLabel}`);
+
+			intervalSetting.addDropdown((dropdown) => {
+				for (const option of SYNC_INTERVAL_OPTIONS) {
+					dropdown.addOption(
+						String(option.seconds),
+						option.label,
 					);
-					if (this.plugin.settings.autoSyncEnabled) {
-						autoSyncSetting.setDesc(
-							`Activa — cada ${value} minuto${value === 1 ? "" : "s"}`,
-						);
-					}
-					await this.plugin.saveSettings();
-					if (this.plugin.settings.autoSyncEnabled) {
-						this.plugin.restartAutoSync();
-					}
-				}),
-		);
+				}
+				dropdown
+					.setValue(String(this.plugin.settings.syncIntervalSeconds))
+					.onChange(async (value) => {
+						this.plugin.settings.syncIntervalSeconds = Number(value);
+						await this.plugin.saveSettings();
+						this.display();
+					});
+			});
+		}
 	}
 
 	private async handleSetupResult(result: {

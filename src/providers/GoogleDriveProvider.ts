@@ -50,6 +50,14 @@ export interface GoogleDriveFolderInfo {
 export interface GoogleDriveRemoteFile {
 	id: string;
 	name: string;
+	modifiedTimeMs?: number;
+}
+
+export interface GoogleDriveRemoteMarkdown {
+	id: string;
+	name: string;
+	relativePath: string;
+	modifiedTimeMs: number;
 }
 
 export interface GoogleDriveFolderEntry {
@@ -466,7 +474,7 @@ export class GoogleDriveProvider implements IStorageProvider {
 		return info;
 	}
 
-	/** Lista archivos no-carpeta dentro de la carpeta destino. */
+	/** Lista archivos no-carpeta dentro de una carpeta de Drive. */
 	async listFiles(folderId: string): Promise<GoogleDriveRemoteFile[]> {
 		const token = await this.ensureValidAccessToken();
 		const query = encodeURIComponent(
@@ -474,7 +482,7 @@ export class GoogleDriveProvider implements IStorageProvider {
 		);
 
 		const response = await requestUrl({
-			url: `${GOOGLE_DRIVE_API}/files?q=${query}&fields=files(id,name)&pageSize=500`,
+			url: `${GOOGLE_DRIVE_API}/files?q=${query}&fields=files(id,name,modifiedTime,mimeType)&pageSize=500`,
 			method: "GET",
 			headers: { Authorization: `Bearer ${token}` },
 			throw: false,
@@ -486,8 +494,77 @@ export class GoogleDriveProvider implements IStorageProvider {
 			);
 		}
 
-		const data = response.json as { files?: GoogleDriveRemoteFile[] };
-		return data.files ?? [];
+		const data = response.json as {
+			files?: { id: string; name: string; modifiedTime?: string }[];
+		};
+		return (data.files ?? []).map((file) => ({
+			id: file.id,
+			name: file.name,
+			modifiedTimeMs: this.parseDriveModifiedTime(file.modifiedTime),
+		}));
+	}
+
+	/** Inventario recursivo de notas `.md` bajo la carpeta raíz de sync. */
+	async listAllMarkdownFiles(
+		rootFolderId: string,
+	): Promise<GoogleDriveRemoteMarkdown[]> {
+		const results: GoogleDriveRemoteMarkdown[] = [];
+		await this.walkMarkdownTree(rootFolderId, "", results);
+		return results;
+	}
+
+	private async walkMarkdownTree(
+		folderId: string,
+		pathPrefix: string,
+		results: GoogleDriveRemoteMarkdown[],
+	): Promise<void> {
+		const files = await this.listFiles(folderId);
+		for (const file of files) {
+			if (!file.name.endsWith(".md")) {
+				continue;
+			}
+			const relativePath = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
+			results.push({
+				id: file.id,
+				name: file.name,
+				relativePath,
+				modifiedTimeMs: file.modifiedTimeMs ?? 0,
+			});
+		}
+
+		const subfolders = await this.listFoldersInParent(folderId);
+		for (const subfolder of subfolders) {
+			const nextPrefix = pathPrefix
+				? `${pathPrefix}/${subfolder.name}`
+				: subfolder.name;
+			await this.walkMarkdownTree(subfolder.id, nextPrefix, results);
+		}
+	}
+
+	async downloadFile(fileId: string): Promise<string> {
+		const token = await this.ensureValidAccessToken();
+		const response = await requestUrl({
+			url: `${GOOGLE_DRIVE_API}/files/${fileId}?alt=media`,
+			method: "GET",
+			headers: { Authorization: `Bearer ${token}` },
+			throw: false,
+		});
+
+		if (response.status >= 400) {
+			throw new Error(
+				`Error al descargar archivo Drive (${response.status}): ${response.text}`,
+			);
+		}
+
+		return response.text;
+	}
+
+	private parseDriveModifiedTime(modifiedTime?: string): number {
+		if (!modifiedTime) {
+			return 0;
+		}
+		const parsed = Date.parse(modifiedTime);
+		return Number.isNaN(parsed) ? 0 : parsed;
 	}
 
 	/**

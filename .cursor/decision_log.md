@@ -581,3 +581,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.32`
 
 ---
+
+## DEC-041 | 2026-09-03 | Sync bidireccional Drive e intervalos discretos
+
+**Contexto:** Solo PUSH a Drive; intervalos en minutos con slider; timestamp relativo confuso.
+
+**Decisión:**
+1. `executeSync` con PULL (descarga + carpetas locales) y PUSH por mtime.
+2. `downloadFile`, `listAllMarkdownFiles`; `syncIntervalSeconds` con dropdown.
+3. Timestamp solo `YYYY-MM-DD HH:mm:ss`; CI cache npm Node 18.
+
+**Release:** `v1.0.33`
+
+---

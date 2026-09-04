@@ -58,11 +58,42 @@ export interface ProviderConfigMap {
 	icloud?: ICloudProviderConfig | null;
 }
 
+/** Opciones discretas de intervalo de sync automática (segundos) */
+export const SYNC_INTERVAL_OPTIONS = [
+	{ seconds: 15, label: "15 segundos" },
+	{ seconds: 30, label: "30 segundos" },
+	{ seconds: 60, label: "1 minuto" },
+	{ seconds: 300, label: "5 minutos" },
+	{ seconds: 900, label: "15 minutos" },
+	{ seconds: 1800, label: "30 minutos" },
+	{ seconds: 3600, label: "1 hora" },
+] as const;
+
+export const DEFAULT_SYNC_INTERVAL_SECONDS = 15;
+
+const ALLOWED_SYNC_INTERVALS = new Set(
+	SYNC_INTERVAL_OPTIONS.map((option) => option.seconds),
+);
+
+export function formatSyncIntervalLabel(seconds: number): string {
+	const match = SYNC_INTERVAL_OPTIONS.find((option) => option.seconds === seconds);
+	return match?.label ?? `${seconds} segundos`;
+}
+
+export function clampSyncIntervalSeconds(seconds: number): number {
+	return ALLOWED_SYNC_INTERVALS.has(seconds)
+		? seconds
+		: DEFAULT_SYNC_INTERVAL_SECONDS;
+}
+
 /** Ajustes persistentes del plugin ObSave */
 export interface ObSaveSettings {
 	activeProvider: CloudProviderId | null;
 	providerConfig: ProviderConfigMap;
-	syncIntervalMinutes: number;
+	/** Intervalo de sync automática en segundos */
+	syncIntervalSeconds: number;
+	/** @deprecated Migrado a syncIntervalSeconds */
+	syncIntervalMinutes?: number;
 	/** Habilita sync periódica en segundo plano */
 	autoSyncEnabled: boolean;
 	lastSyncAt: string | null;
@@ -72,7 +103,7 @@ export interface ObSaveSettings {
 export const DEFAULT_SETTINGS: ObSaveSettings = {
 	activeProvider: null,
 	providerConfig: {},
-	syncIntervalMinutes: 15,
+	syncIntervalSeconds: DEFAULT_SYNC_INTERVAL_SECONDS,
 	autoSyncEnabled: false,
 	lastSyncAt: null,
 	syncStatus: "idle",

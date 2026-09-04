@@ -1,4 +1,5 @@
 import {
+	clampSyncIntervalSeconds,
 	DEFAULT_SETTINGS,
 	type LegacyStoredSettings,
 	type ObSaveSettings,
@@ -52,10 +53,7 @@ export function mergeStoredSettings(
 						: null
 					: DEFAULT_SETTINGS.providerConfig.icloud,
 		},
-		syncIntervalMinutes:
-			typeof migrated.syncIntervalMinutes === "number"
-				? migrated.syncIntervalMinutes
-				: DEFAULT_SETTINGS.syncIntervalMinutes,
+		syncIntervalSeconds: resolveSyncIntervalSeconds(migrated),
 		autoSyncEnabled:
 			typeof migrated.autoSyncEnabled === "boolean"
 				? migrated.autoSyncEnabled
@@ -69,6 +67,18 @@ export function mergeStoredSettings(
 				? migrated.syncStatus
 				: DEFAULT_SETTINGS.syncStatus,
 	};
+}
+
+function resolveSyncIntervalSeconds(migrated: Partial<ObSaveSettings>): number {
+	if (typeof migrated.syncIntervalSeconds === "number") {
+		return clampSyncIntervalSeconds(migrated.syncIntervalSeconds);
+	}
+
+	if (typeof migrated.syncIntervalMinutes === "number") {
+		return clampSyncIntervalSeconds(migrated.syncIntervalMinutes * 60);
+	}
+
+	return DEFAULT_SETTINGS.syncIntervalSeconds;
 }
 
 function migrateLegacyProviderFields(
