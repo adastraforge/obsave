@@ -8,7 +8,12 @@ import {
 import type { GoogleDriveRemoteMarkdown } from "../providers/GoogleDriveProvider";
 import type { GoogleDriveLazyProvider } from "../providers/GoogleDriveLazyProvider";
 import type { IStorageProvider, SyncResult } from "../providers/IStorageProvider";
-import type { SyncEngineEvent, SyncStatus, SyncTrigger } from "../types";
+import type {
+	SyncEngineEvent,
+	SyncRunResult,
+	SyncStatus,
+	SyncTrigger,
+} from "../types";
 import { hashContent } from "../utils/contentHash";
 
 type SyncEngineListener = (event: SyncEngineEvent) => void;
@@ -21,6 +26,8 @@ export class SyncEngine {
 	private status: SyncStatus = "idle";
 	private listeners: SyncEngineListener[] = [];
 	private autoSyncIntervalId: number | null = null;
+	private syncInFlight: Promise<void> | null = null;
+	private syncGeneration = 0;
 
 	constructor(
 		private app: App,
@@ -47,6 +54,11 @@ export class SyncEngine {
 		return isProviderConfigured(this.settings);
 	}
 
+	isGoogleDriveFolderReady(): boolean {
+		const gdrive = this.settings.providerConfig.gdrive;
+		return gdrive?.folderSelected === true && !!gdrive?.folderId;
+	}
+
 	canAutoSync(): boolean {
 		if (!this.settings.autoSyncEnabled) {
 			return false;
@@ -55,9 +67,14 @@ export class SyncEngine {
 			return false;
 		}
 		if (this.settings.activeProvider === "gdrive") {
-			return this.settings.providerConfig.gdrive?.folderSelected === true;
+			return this.isGoogleDriveFolderReady();
 		}
 		return true;
+	}
+
+	/** Invalida sync en curso (p. ej. al desconectar). */
+	cancelActiveSync(): void {
+		this.syncGeneration++;
 	}
 
 	startAutoSync(): void {
@@ -68,7 +85,7 @@ export class SyncEngine {
 
 		const intervalMs = this.settings.syncIntervalSeconds * 1000;
 		this.autoSyncIntervalId = window.setInterval(() => {
-			void this.sync("automatic");
+			void this.executeUnifiedSync("automatic");
 		}, intervalMs);
 	}
 
@@ -84,11 +101,37 @@ export class SyncEngine {
 		this.startAutoSync();
 	}
 
-	async sync(trigger: SyncTrigger = "automatic"): Promise<void> {
-		if (this.status === "syncing") {
-			return;
+	/** Punto de entrada canónico para sync manual y automática. */
+	async executeUnifiedSync(trigger: SyncTrigger): Promise<SyncRunResult> {
+		if (this.syncInFlight) {
+			if (trigger === "manual") {
+				this.emit({
+					type: "sync-skipped",
+					status: this.status,
+					message: "ObSave: Sincronización ya en curso.",
+					timestamp: new Date().toISOString(),
+					trigger,
+					skippedReason: "already-syncing",
+				});
+			}
+			return { ran: false, skippedReason: "already-syncing" };
 		}
 
+		const preflight = this.validateSyncPreflight(trigger);
+		if (preflight) {
+			return preflight;
+		}
+
+		const generation = this.syncGeneration;
+		this.syncInFlight = this.runSyncCycle(trigger, generation).finally(() => {
+			this.syncInFlight = null;
+		});
+
+		await this.syncInFlight;
+		return { ran: true };
+	}
+
+	private validateSyncPreflight(trigger: SyncTrigger): SyncRunResult | null {
 		const providerId = this.settings.activeProvider;
 		if (!providerId) {
 			if (trigger === "manual") {
@@ -101,29 +144,25 @@ export class SyncEngine {
 				});
 				this.notifyVisualRefresh();
 			}
-			return;
+			return { ran: false, skippedReason: "not-configured" };
 		}
 
-		if (providerId === "gdrive") {
-			const gdrive = this.settings.providerConfig.gdrive;
-			if (gdrive?.folderSelected !== true) {
-				if (trigger === "manual") {
-					this.emit({
-						type: "sync-error",
-						status: "error",
-						message:
-							"Selecciona una carpeta de Google Drive antes de sincronizar.",
-						timestamp: new Date().toISOString(),
-						trigger,
-					});
-					this.notifyVisualRefresh();
-				}
-				return;
+		if (providerId === "gdrive" && !this.isGoogleDriveFolderReady()) {
+			if (trigger === "manual") {
+				this.emit({
+					type: "sync-error",
+					status: "error",
+					message:
+						"Selecciona una carpeta de Google Drive antes de sincronizar.",
+					timestamp: new Date().toISOString(),
+					trigger,
+				});
+				this.notifyVisualRefresh();
 			}
+			return { ran: false, skippedReason: "gdrive-no-folder" };
 		}
 
-		const provider = this.providers.get(providerId);
-		if (!provider) {
+		if (!this.providers.get(providerId)) {
 			this.emit({
 				type: "sync-error",
 				status: "error",
@@ -132,13 +171,36 @@ export class SyncEngine {
 				trigger,
 			});
 			this.notifyVisualRefresh();
-			return;
+			return { ran: false, skippedReason: "not-configured" };
 		}
+
+		return null;
+	}
+
+	private async runSyncCycle(
+		trigger: SyncTrigger,
+		generation: number,
+	): Promise<void> {
+		const providerId = this.settings.activeProvider!;
+		const provider = this.providers.get(providerId)!;
 
 		this.setStatus("syncing");
 
 		try {
 			const result = await this.runProviderSync(providerId, provider);
+
+			if (generation !== this.syncGeneration) {
+				this.setStatus("idle");
+				this.emit({
+					type: "sync-skipped",
+					status: "idle",
+					message: "Sync cancelada por desconexión.",
+					timestamp: new Date().toISOString(),
+					trigger,
+					skippedReason: "cancelled",
+				});
+				return;
+			}
 
 			this.settings.lastSyncAt = new Date().toISOString();
 			this.setStatus("idle");
@@ -154,6 +216,11 @@ export class SyncEngine {
 			});
 			this.notifyVisualRefresh();
 		} catch (error) {
+			if (generation !== this.syncGeneration) {
+				this.setStatus("idle");
+				return;
+			}
+
 			const message =
 				error instanceof Error ? error.message : "Error desconocido de sync";
 			this.setStatus("error");
@@ -168,22 +235,19 @@ export class SyncEngine {
 		}
 	}
 
-	/** Dispara sincronización manual inmediata (ribbon, comandos). */
-	async executeSync(): Promise<void> {
-		await this.sync("manual");
-	}
-
 	private async runProviderSync(
 		providerId: CloudProviderId,
 		provider: IStorageProvider,
 	): Promise<SyncResult> {
 		if (providerId === "gdrive") {
-			return this.executeSyncGoogleDrive(provider as GoogleDriveLazyProvider);
+			return this.runGoogleDriveBidirectionalSync(
+				provider as GoogleDriveLazyProvider,
+			);
 		}
 		return provider.sync();
 	}
 
-	private async executeSyncGoogleDrive(
+	private async runGoogleDriveBidirectionalSync(
 		provider: GoogleDriveLazyProvider,
 	): Promise<SyncResult> {
 		const folder = await provider.getOrCreateTargetFolder();
@@ -233,6 +297,9 @@ export class SyncEngine {
 						content,
 						pulled.stat.mtime,
 						remoteByPath.get(path)!.id,
+						pulled.stat.size,
+						remoteByPath.get(path)!.modifiedTimeMs,
+						remoteByPath.get(path)!.size,
 					);
 				}
 				downloadedCount++;
@@ -249,17 +316,20 @@ export class SyncEngine {
 
 			if (inLocal && !inRemote && !inLedger) {
 				const localFile = localByPath.get(path)!;
+				const content = await this.app.vault.read(localFile);
 				const driveFileId = await this.pushLocalFile(
 					provider,
 					folder.folderId,
 					path,
 					localFile,
+					undefined,
+					content,
 				);
-				const content = await this.app.vault.read(localFile);
 				ledger[path] = this.buildLedgerEntry(
 					content,
 					localFile.stat.mtime,
 					driveFileId,
+					localFile.stat.size,
 				);
 				uploadedCount++;
 				continue;
@@ -320,17 +390,47 @@ export class SyncEngine {
 		remote: GoogleDriveRemoteMarkdown,
 		ledgerEntry: SyncLedgerEntry | undefined,
 	): Promise<{ action: "none" | "pull" | "push"; entry: SyncLedgerEntry }> {
+		const localMtime = localFile.stat.mtime;
+		const localSize = localFile.stat.size;
+		const remoteMtime = remote.modifiedTimeMs;
+		const remoteSize = remote.size;
+
+		if (ledgerEntry) {
+			const localMetaMatches =
+				localMtime === ledgerEntry.mtime &&
+				(ledgerEntry.size == null || localSize === ledgerEntry.size);
+			const remoteMetaMatches =
+				remote.id === ledgerEntry.driveFileId &&
+				(ledgerEntry.remoteMtime == null ||
+					remoteMtime === ledgerEntry.remoteMtime) &&
+				(ledgerEntry.remoteSize == null ||
+					remoteSize == null ||
+					remoteSize === ledgerEntry.remoteSize);
+
+			if (localMetaMatches && remoteMetaMatches) {
+				return {
+					action: "none",
+					entry: {
+						hash: ledgerEntry.hash,
+						mtime: localMtime,
+						size: localSize,
+						remoteMtime,
+						remoteSize,
+						driveFileId: remote.id,
+					},
+				};
+			}
+		}
+
 		const localContent = await this.app.vault.read(localFile);
 		const localHash = hashContent(localContent);
-		const localMtime = localFile.stat.mtime;
-		const remoteMtime = remote.modifiedTimeMs;
 
 		if (ledgerEntry) {
 			const localMatchesLedger =
 				localHash === ledgerEntry.hash && localMtime === ledgerEntry.mtime;
 			const remoteMatchesLedger =
 				remote.id === ledgerEntry.driveFileId &&
-				remoteMtime <= ledgerEntry.mtime;
+				remoteMtime <= (ledgerEntry.remoteMtime ?? ledgerEntry.mtime);
 
 			if (localMatchesLedger && remoteMatchesLedger) {
 				return {
@@ -338,6 +438,9 @@ export class SyncEngine {
 					entry: {
 						hash: localHash,
 						mtime: localMtime,
+						size: localSize,
+						remoteMtime,
+						remoteSize,
 						driveFileId: remote.id,
 					},
 				};
@@ -356,13 +459,23 @@ export class SyncEngine {
 				path,
 				localFile,
 				remote.id,
+				localContent,
 			);
 			const refreshed = this.app.vault.getAbstractFileByPath(path);
 			const mtime =
 				refreshed instanceof TFile ? refreshed.stat.mtime : localMtime;
+			const size =
+				refreshed instanceof TFile ? refreshed.stat.size : localSize;
 			return {
 				action: "push",
-				entry: { hash: localHash, mtime, driveFileId: remote.id },
+				entry: {
+					hash: localHash,
+					mtime,
+					size,
+					remoteMtime,
+					remoteSize,
+					driveFileId: remote.id,
+				},
 			};
 		}
 
@@ -376,13 +489,23 @@ export class SyncEngine {
 					content,
 					pulled.stat.mtime,
 					remote.id,
+					pulled.stat.size,
+					remoteMtime,
+					remoteSize,
 				),
 			};
 		}
 
 		return {
 			action: "pull",
-			entry: this.buildLedgerEntry(localContent, localMtime, remote.id),
+			entry: this.buildLedgerEntry(
+				localContent,
+				localMtime,
+				remote.id,
+				localSize,
+				remoteMtime,
+				remoteSize,
+			),
 		};
 	}
 
@@ -411,6 +534,7 @@ export class SyncEngine {
 		vaultPath: string,
 		localFile: TFile,
 		existingFileId?: string,
+		content?: string,
 	): Promise<string> {
 		const pathParts = vaultPath.split("/");
 		const fileName = pathParts.pop() ?? vaultPath;
@@ -420,10 +544,10 @@ export class SyncEngine {
 			? await provider.resolveOrCreateFolderPath(rootFolderId, relativeDir)
 			: rootFolderId;
 
-		const content = await this.app.vault.read(localFile);
+		const fileContent = content ?? (await this.app.vault.read(localFile));
 		await provider.uploadFile(
 			fileName,
-			content,
+			fileContent,
 			parentFolderId,
 			existingFileId,
 		);
@@ -441,10 +565,16 @@ export class SyncEngine {
 		content: string,
 		mtime: number,
 		driveFileId?: string,
+		size?: number,
+		remoteMtime?: number,
+		remoteSize?: number,
 	): SyncLedgerEntry {
 		return {
 			hash: hashContent(content),
 			mtime,
+			size,
+			remoteMtime,
+			remoteSize,
 			driveFileId: driveFileId || undefined,
 		};
 	}

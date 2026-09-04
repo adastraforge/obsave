@@ -22,7 +22,7 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 	): void {
 		this.onConfigChanged = listener;
 		if (this.delegate) {
-			this.delegate.setConfigChangeListener(listener);
+			this.attachDelegateConfigListener();
 		}
 	}
 
@@ -30,13 +30,25 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 		this.pendingConfig = config;
 	}
 
+	getPendingConfig(): GoogleDriveProviderConfig | null {
+		return this.pendingConfig;
+	}
+
+	private attachDelegateConfigListener(): void {
+		if (!this.delegate) {
+			return;
+		}
+		this.delegate.setConfigChangeListener((config) => {
+			this.pendingConfig = config;
+			this.onConfigChanged?.(config);
+		});
+	}
+
 	async ensureLoaded(): Promise<InstanceType<GoogleDriveProviderClass>> {
 		if (!this.delegate) {
 			const { GoogleDriveProvider } = await import("./GoogleDriveProvider");
 			this.delegate = new GoogleDriveProvider();
-			if (this.onConfigChanged) {
-				this.delegate.setConfigChangeListener(this.onConfigChanged);
-			}
+			this.attachDelegateConfigListener();
 			if (this.pendingConfig) {
 				await this.delegate.connect(this.pendingConfig);
 			}
@@ -48,6 +60,33 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 		return this.delegate !== null;
 	}
 
+	private configNeedsSync(
+		delegate: InstanceType<GoogleDriveProviderClass>,
+	): boolean {
+		if (!this.pendingConfig) {
+			return false;
+		}
+		const current = delegate.getConfig();
+		if (!current) {
+			return true;
+		}
+		return (
+			current.accessToken !== this.pendingConfig.accessToken ||
+			current.expiresAt !== this.pendingConfig.expiresAt ||
+			current.refreshToken !== this.pendingConfig.refreshToken
+		);
+	}
+
+	private async ensureDelegateSynced(): Promise<
+		InstanceType<GoogleDriveProviderClass>
+	> {
+		const delegate = await this.ensureLoaded();
+		if (this.pendingConfig && this.configNeedsSync(delegate)) {
+			await delegate.connect(this.pendingConfig);
+		}
+		return delegate;
+	}
+
 	async connect(config: GoogleDriveProviderConfig): Promise<boolean> {
 		this.pendingConfig = config;
 		const delegate = await this.ensureLoaded();
@@ -55,74 +94,50 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 	}
 
 	async sync(): Promise<SyncResult> {
-		const delegate = await this.ensureLoaded();
-		if (this.pendingConfig) {
-			await delegate.connect(this.pendingConfig);
-		}
+		const delegate = await this.ensureDelegateSynced();
 		return delegate.sync();
 	}
 
 	async listFoldersInParent(
 		parentId: string,
 	): Promise<import("./GoogleDriveProvider").GoogleDriveFolderEntry[]> {
-		const delegate = await this.ensureLoaded();
-		if (this.pendingConfig) {
-			await delegate.connect(this.pendingConfig);
-		}
+		const delegate = await this.ensureDelegateSynced();
 		return delegate.listFoldersInParent(parentId);
 	}
 
 	async listFolders(): Promise<{ id: string; name: string }[]> {
-		const delegate = await this.ensureLoaded();
-		if (this.pendingConfig) {
-			await delegate.connect(this.pendingConfig);
-		}
+		const delegate = await this.ensureDelegateSynced();
 		return delegate.listFolders();
 	}
 
 	async getOrCreateTargetFolder(): Promise<
 		import("./GoogleDriveProvider").GoogleDriveFolderInfo
 	> {
-		const delegate = await this.ensureLoaded();
-		if (this.pendingConfig) {
-			await delegate.connect(this.pendingConfig);
-		}
+		const delegate = await this.ensureDelegateSynced();
 		return delegate.getOrCreateTargetFolder();
 	}
 
 	async listFiles(
 		folderId: string,
 	): Promise<import("./GoogleDriveProvider").GoogleDriveRemoteFile[]> {
-		const delegate = await this.ensureLoaded();
-		if (this.pendingConfig) {
-			await delegate.connect(this.pendingConfig);
-		}
+		const delegate = await this.ensureDelegateSynced();
 		return delegate.listFiles(folderId);
 	}
 
 	async listAllMarkdownFiles(
 		rootFolderId: string,
 	): Promise<import("./GoogleDriveProvider").GoogleDriveRemoteMarkdown[]> {
-		const delegate = await this.ensureLoaded();
-		if (this.pendingConfig) {
-			await delegate.connect(this.pendingConfig);
-		}
+		const delegate = await this.ensureDelegateSynced();
 		return delegate.listAllMarkdownFiles(rootFolderId);
 	}
 
 	async downloadFile(fileId: string): Promise<string> {
-		const delegate = await this.ensureLoaded();
-		if (this.pendingConfig) {
-			await delegate.connect(this.pendingConfig);
-		}
+		const delegate = await this.ensureDelegateSynced();
 		return delegate.downloadFile(fileId);
 	}
 
 	async deleteFile(fileId: string): Promise<void> {
-		const delegate = await this.ensureLoaded();
-		if (this.pendingConfig) {
-			await delegate.connect(this.pendingConfig);
-		}
+		const delegate = await this.ensureDelegateSynced();
 		return delegate.deleteFile(fileId);
 	}
 
@@ -130,10 +145,7 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 		rootFolderId: string,
 		relativePath: string,
 	): Promise<string> {
-		const delegate = await this.ensureLoaded();
-		if (this.pendingConfig) {
-			await delegate.connect(this.pendingConfig);
-		}
+		const delegate = await this.ensureDelegateSynced();
 		return delegate.resolveOrCreateFolderPath(rootFolderId, relativePath);
 	}
 
@@ -143,10 +155,7 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 		folderId: string,
 		existingFileId?: string,
 	): Promise<void> {
-		const delegate = await this.ensureLoaded();
-		if (this.pendingConfig) {
-			await delegate.connect(this.pendingConfig);
-		}
+		const delegate = await this.ensureDelegateSynced();
 		return delegate.uploadFile(
 			fileName,
 			content,
@@ -166,6 +175,8 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 		authContext?: GoogleDriveAuthContext,
 	): Promise<GoogleDriveProviderConfig> {
 		const delegate = await this.ensureLoaded();
-		return delegate.authenticateWithPkce(authContext);
+		const config = await delegate.authenticateWithPkce(authContext);
+		this.pendingConfig = config;
+		return config;
 	}
 }

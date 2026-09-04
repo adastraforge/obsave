@@ -14,6 +14,12 @@ export interface GitHubProviderConfig {
 export interface SyncLedgerEntry {
 	hash: string;
 	mtime: number;
+	/** Tamaño en bytes del archivo local en la última sync estable */
+	size?: number;
+	/** Timestamp ms de modifiedTime remoto en la última sync estable */
+	remoteMtime?: number;
+	/** Tamaño en bytes del archivo remoto en la última sync estable */
+	remoteSize?: number;
 	driveFileId?: string;
 }
 

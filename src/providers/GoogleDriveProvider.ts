@@ -51,6 +51,7 @@ export interface GoogleDriveRemoteFile {
 	id: string;
 	name: string;
 	modifiedTimeMs?: number;
+	size?: number;
 }
 
 export interface GoogleDriveRemoteMarkdown {
@@ -58,6 +59,7 @@ export interface GoogleDriveRemoteMarkdown {
 	name: string;
 	relativePath: string;
 	modifiedTimeMs: number;
+	size?: number;
 }
 
 export interface GoogleDriveFolderEntry {
@@ -292,7 +294,6 @@ export class GoogleDriveProvider implements IStorageProvider {
 	async listFoldersInParent(
 		parentId: string,
 	): Promise<GoogleDriveFolderEntry[]> {
-		const token = await this.ensureValidAccessToken();
 		const parent = parentId === "root" ? "root" : parentId;
 		const query = encodeURIComponent(
 			`mimeType='application/vnd.google-apps.folder' and trashed=false and '${parent}' in parents`,
@@ -305,11 +306,9 @@ export class GoogleDriveProvider implements IStorageProvider {
 			const pageParam = pageToken
 				? `&pageToken=${encodeURIComponent(pageToken)}`
 				: "";
-			const response = await requestUrl({
+			const response = await this.driveRequest({
 				url: `${GOOGLE_DRIVE_API}/files?q=${query}&fields=nextPageToken,files(id,name,parents,mimeType)&pageSize=200&orderBy=name${pageParam}`,
 				method: "GET",
-				headers: { Authorization: `Bearer ${token}` },
-				throw: false,
 			});
 
 			if (response.status >= 400) {
@@ -333,7 +332,6 @@ export class GoogleDriveProvider implements IStorageProvider {
 
 	/** Lista todas las carpetas del Drive del usuario (scope drive). */
 	async listFolders(): Promise<{ id: string; name: string }[]> {
-		const token = await this.ensureValidAccessToken();
 		const query = encodeURIComponent(
 			"mimeType='application/vnd.google-apps.folder' and trashed=false",
 		);
@@ -345,11 +343,9 @@ export class GoogleDriveProvider implements IStorageProvider {
 			const pageParam = pageToken
 				? `&pageToken=${encodeURIComponent(pageToken)}`
 				: "";
-			const response = await requestUrl({
+			const response = await this.driveRequest({
 				url: `${GOOGLE_DRIVE_API}/files?q=${query}&fields=nextPageToken,files(id,name)&pageSize=200&orderBy=name${pageParam}`,
 				method: "GET",
-				headers: { Authorization: `Bearer ${token}` },
-				throw: false,
 			});
 
 			if (response.status >= 400) {
@@ -406,8 +402,6 @@ export class GoogleDriveProvider implements IStorageProvider {
 			this.config.folderName?.trim() || "ObSave Vault"
 		).slice(0, 255);
 
-		const token = await this.ensureValidAccessToken();
-
 		if (this.config.folderId) {
 			return {
 				folderId: this.config.folderId,
@@ -421,11 +415,9 @@ export class GoogleDriveProvider implements IStorageProvider {
 			`mimeType='application/vnd.google-apps.folder' and name='${escapedName}' and trashed=false`,
 		);
 
-		const searchResponse = await requestUrl({
+		const searchResponse = await this.driveRequest({
 			url: `${GOOGLE_DRIVE_API}/files?q=${searchQuery}&fields=files(id,name)&pageSize=1`,
 			method: "GET",
-			headers: { Authorization: `Bearer ${token}` },
-			throw: false,
 		});
 
 		if (searchResponse.status === 200) {
@@ -444,18 +436,16 @@ export class GoogleDriveProvider implements IStorageProvider {
 			}
 		}
 
-		const createResponse = await requestUrl({
+		const createResponse = await this.driveRequest({
 			url: `${GOOGLE_DRIVE_API}/files`,
 			method: "POST",
 			headers: {
-				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify({
 				name: folderName,
 				mimeType: "application/vnd.google-apps.folder",
 			}),
-			throw: false,
 		});
 
 		if (createResponse.status >= 400) {
@@ -476,16 +466,13 @@ export class GoogleDriveProvider implements IStorageProvider {
 
 	/** Lista archivos no-carpeta dentro de una carpeta de Drive. */
 	async listFiles(folderId: string): Promise<GoogleDriveRemoteFile[]> {
-		const token = await this.ensureValidAccessToken();
 		const query = encodeURIComponent(
 			`'${folderId}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'`,
 		);
 
-		const response = await requestUrl({
-			url: `${GOOGLE_DRIVE_API}/files?q=${query}&fields=files(id,name,modifiedTime,mimeType)&pageSize=500`,
+		const response = await this.driveRequest({
+			url: `${GOOGLE_DRIVE_API}/files?q=${query}&fields=files(id,name,modifiedTime,mimeType,size)&pageSize=500`,
 			method: "GET",
-			headers: { Authorization: `Bearer ${token}` },
-			throw: false,
 		});
 
 		if (response.status >= 400) {
@@ -495,12 +482,18 @@ export class GoogleDriveProvider implements IStorageProvider {
 		}
 
 		const data = response.json as {
-			files?: { id: string; name: string; modifiedTime?: string }[];
+			files?: {
+				id: string;
+				name: string;
+				modifiedTime?: string;
+				size?: string;
+			}[];
 		};
 		return (data.files ?? []).map((file) => ({
 			id: file.id,
 			name: file.name,
 			modifiedTimeMs: this.parseDriveModifiedTime(file.modifiedTime),
+			size: file.size ? Number.parseInt(file.size, 10) : undefined,
 		}));
 	}
 
@@ -529,6 +522,7 @@ export class GoogleDriveProvider implements IStorageProvider {
 				name: file.name,
 				relativePath,
 				modifiedTimeMs: file.modifiedTimeMs ?? 0,
+				size: file.size,
 			});
 		}
 
@@ -542,12 +536,9 @@ export class GoogleDriveProvider implements IStorageProvider {
 	}
 
 	async downloadFile(fileId: string): Promise<string> {
-		const token = await this.ensureValidAccessToken();
-		const response = await requestUrl({
+		const response = await this.driveRequest({
 			url: `${GOOGLE_DRIVE_API}/files/${fileId}?alt=media`,
 			method: "GET",
-			headers: { Authorization: `Bearer ${token}` },
-			throw: false,
 		});
 
 		if (response.status >= 400) {
@@ -560,12 +551,9 @@ export class GoogleDriveProvider implements IStorageProvider {
 	}
 
 	async deleteFile(fileId: string): Promise<void> {
-		const token = await this.ensureValidAccessToken();
-		const response = await requestUrl({
+		const response = await this.driveRequest({
 			url: `${GOOGLE_DRIVE_API}/files/${fileId}`,
 			method: "DELETE",
-			headers: { Authorization: `Bearer ${token}` },
-			throw: false,
 		});
 
 		if (response.status >= 400 && response.status !== 404) {
@@ -625,17 +613,14 @@ export class GoogleDriveProvider implements IStorageProvider {
 		parentId: string,
 		name: string,
 	): Promise<string> {
-		const token = await this.ensureValidAccessToken();
 		const escapedName = name.replace(/'/g, "\\'");
 		const searchQuery = encodeURIComponent(
 			`mimeType='application/vnd.google-apps.folder' and name='${escapedName}' and '${parentId}' in parents and trashed=false`,
 		);
 
-		const searchResponse = await requestUrl({
+		const searchResponse = await this.driveRequest({
 			url: `${GOOGLE_DRIVE_API}/files?q=${searchQuery}&fields=files(id,name)&pageSize=1`,
 			method: "GET",
-			headers: { Authorization: `Bearer ${token}` },
-			throw: false,
 		});
 
 		if (searchResponse.status === 200) {
@@ -648,11 +633,10 @@ export class GoogleDriveProvider implements IStorageProvider {
 			}
 		}
 
-		const createResponse = await requestUrl({
+		const createResponse = await this.driveRequest({
 			url: `${GOOGLE_DRIVE_API}/files`,
 			method: "POST",
 			headers: {
-				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify({
@@ -660,7 +644,6 @@ export class GoogleDriveProvider implements IStorageProvider {
 				mimeType: "application/vnd.google-apps.folder",
 				parents: [parentId],
 			}),
-			throw: false,
 		});
 
 		if (createResponse.status >= 400) {
@@ -682,18 +665,14 @@ export class GoogleDriveProvider implements IStorageProvider {
 		folderId: string,
 		existingFileId?: string,
 	): Promise<void> {
-		const token = await this.ensureValidAccessToken();
-
 		if (existingFileId) {
-			const response = await requestUrl({
+			const response = await this.driveRequest({
 				url: `${GOOGLE_DRIVE_UPLOAD_API}/files/${existingFileId}?uploadType=media`,
 				method: "PATCH",
 				headers: {
-					Authorization: `Bearer ${token}`,
 					"Content-Type": "text/markdown; charset=utf-8",
 				},
 				body: content,
-				throw: false,
 			});
 
 			if (response.status >= 400) {
@@ -720,15 +699,13 @@ export class GoogleDriveProvider implements IStorageProvider {
 			`${content}\r\n` +
 			`--${boundary}--`;
 
-		const response = await requestUrl({
+		const response = await this.driveRequest({
 			url: `${GOOGLE_DRIVE_UPLOAD_API}/files?uploadType=multipart`,
 			method: "POST",
 			headers: {
-				Authorization: `Bearer ${token}`,
 				"Content-Type": `multipart/related; boundary=${boundary}`,
 			},
 			body,
-			throw: false,
 		});
 
 		if (response.status >= 400) {
@@ -896,6 +873,29 @@ export class GoogleDriveProvider implements IStorageProvider {
 		}
 
 		return this.config.accessToken;
+	}
+
+	/** Petición autenticada a Drive API con reintento automático en 401. */
+	private async driveRequest(
+		options: Parameters<typeof requestUrl>[0],
+		retried = false,
+	): Promise<Awaited<ReturnType<typeof requestUrl>>> {
+		const token = await this.ensureValidAccessToken();
+		const response = await requestUrl({
+			...options,
+			headers: {
+				...(options.headers ?? {}),
+				Authorization: `Bearer ${token}`,
+			},
+			throw: false,
+		});
+
+		if (response.status === 401 && !retried) {
+			await this.refreshAccessToken();
+			return this.driveRequest(options, true);
+		}
+
+		return response;
 	}
 
 	private async fetchUserProfile(accessToken: string): Promise<{

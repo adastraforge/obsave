@@ -7,9 +7,19 @@ export type SyncTrigger = "manual" | "automatic";
 /** Estado de sync visible en el explorador de archivos */
 export type FileSyncStatus = "new" | "modified" | "synced";
 
+/** Resultado de executeUnifiedSync */
+export interface SyncRunResult {
+	ran: boolean;
+	skippedReason?:
+		| "already-syncing"
+		| "not-configured"
+		| "gdrive-no-folder"
+		| "cancelled";
+}
+
 /** Evento emitido por SyncEngine hacia la UI */
 export interface SyncEngineEvent {
-	type: "status-changed" | "sync-complete" | "sync-error";
+	type: "status-changed" | "sync-complete" | "sync-error" | "sync-skipped";
 	status?: SyncStatus;
 	message?: string;
 	timestamp: string;
@@ -17,6 +27,7 @@ export interface SyncEngineEvent {
 	noChanges?: boolean;
 	downloadedCount?: number;
 	uploadedCount?: number;
+	skippedReason?: SyncRunResult["skippedReason"];
 }
 
 /** Resultado del wizard de primera sincronización GitHub */

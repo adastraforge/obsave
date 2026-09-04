@@ -1,4 +1,5 @@
 import type ObSavePlugin from "../main";
+import { isProviderConfigured } from "../types";
 import type { FileSyncStatus } from "../types";
 import { hashContent } from "../utils/contentHash";
 
@@ -35,6 +36,15 @@ export class ObSaveFileStatusDecorator {
 		this.applyDecorations(statuses);
 	}
 
+	/** Marca todas las notas como rojas (desconexión / sin proveedor). */
+	async refreshDisconnected(): Promise<void> {
+		const statuses = new Map<string, FileSyncStatus>();
+		for (const file of this.plugin.app.vault.getMarkdownFiles()) {
+			statuses.set(file.path, "new");
+		}
+		this.applyDecorations(statuses);
+	}
+
 	requestRefresh(): void {
 		if (this.plugin.syncEngine.getStatus() === "syncing") {
 			return;
@@ -50,6 +60,14 @@ export class ObSaveFileStatusDecorator {
 	}
 
 	async getMarkdownFileStatuses(): Promise<Map<string, FileSyncStatus>> {
+		if (!isProviderConfigured(this.plugin.settings)) {
+			const statuses = new Map<string, FileSyncStatus>();
+			for (const file of this.plugin.app.vault.getMarkdownFiles()) {
+				statuses.set(file.path, "new");
+			}
+			return statuses;
+		}
+
 		const active = this.plugin.settings.activeProvider;
 
 		if (active === "github") {
@@ -81,7 +99,9 @@ export class ObSaveFileStatusDecorator {
 				continue;
 			}
 
-			if (file.stat.mtime !== entry.mtime) {
+			const sizeMatches =
+				entry.size == null || file.stat.size === entry.size;
+			if (file.stat.mtime !== entry.mtime || !sizeMatches) {
 				const content = await this.plugin.app.vault.read(file);
 				if (hashContent(content) !== entry.hash) {
 					statuses.set(file.path, "modified");

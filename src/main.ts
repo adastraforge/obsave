@@ -37,6 +37,7 @@ export default class ObSavePlugin extends Plugin {
 		this.googleDriveLazy = new GoogleDriveLazyProvider();
 		this.googleDriveLazy.setConfigChangeListener((config) => {
 			this.settings.providerConfig.gdrive = config;
+			this.googleDriveLazy.setPendingConfig(config);
 			void this.saveSettings();
 		});
 		this.applyPendingGoogleDriveConfig();
@@ -122,6 +123,9 @@ export default class ObSavePlugin extends Plugin {
 				void this.refreshDecoratorsImmediate();
 				this.refreshSettingsTab();
 			}
+			if (event.type === "sync-skipped" && event.trigger === "manual") {
+				new Notice(event.message ?? "ObSave: Sincronización omitida.");
+			}
 		});
 
 		this.settingsTab = new ObSaveSettingTab(this.app, this);
@@ -131,8 +135,10 @@ export default class ObSavePlugin extends Plugin {
 			"cloud",
 			"ObSave — Sincronizar ahora",
 			async () => {
-				new Notice("ObSave: Iniciando sincronización...");
-				await this.syncEngine.executeSync();
+				if (this.syncEngine.getStatus() !== "syncing") {
+					new Notice("ObSave: Iniciando sincronización...");
+				}
+				await this.syncEngine.executeUnifiedSync("manual");
 			},
 		);
 		this.updateRibbonIcon(this.settings.syncStatus);
@@ -151,6 +157,9 @@ export default class ObSavePlugin extends Plugin {
 	async loadSettings(): Promise<void> {
 		const stored = await this.loadData<Partial<ObSaveSettings>>();
 		this.settings = mergeStoredSettings(stored);
+		if (this.settings.syncStatus === "syncing") {
+			this.settings.syncStatus = "idle";
+		}
 		this.settings.syncIntervalSeconds = clampSyncIntervalSeconds(
 			this.settings.syncIntervalSeconds,
 		);
@@ -209,17 +218,13 @@ export default class ObSavePlugin extends Plugin {
 		return this.fileDecorators?.refresh() ?? Promise.resolve();
 	}
 
-	/** Dispara sincronización manual (`true`) o automática (`false`) */
-	async triggerSync(manual = false): Promise<void> {
-		await this.syncEngine.sync(manual ? "manual" : "automatic");
-	}
-
 	async runSync(): Promise<void> {
-		await this.triggerSync(true);
+		await this.syncEngine.executeUnifiedSync("manual");
 	}
 
 	/** Desconecta el proveedor activo y limpia credenciales de sesión */
 	async disconnectProvider(): Promise<void> {
+		this.syncEngine.cancelActiveSync();
 		this.stopAutoSync();
 
 		const active = this.settings.activeProvider;
@@ -235,7 +240,7 @@ export default class ObSavePlugin extends Plugin {
 		this.settings.syncedLedger = {};
 		await this.saveSettings();
 		this.updateRibbonIcon(this.settings.syncStatus);
-		void this.refreshDecoratorsImmediate();
+		await this.fileDecorators.refreshDisconnected();
 	}
 
 	refreshSettingsTab(): void {

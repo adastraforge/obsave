@@ -622,3 +622,17 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.35`
 
 ---
+
+## DEC-044 | 2026-09-04 | Refactor motor sync, OAuth y rendimiento
+
+**Contexto:** Informe de auditoría v1.0.35 identificó carrera pendingConfig, race conditions en sync, desalineación auto-sync/UI y lecturas innecesarias de disco.
+
+**Decisión:**
+1. `executeUnifiedSync(trigger)` con cerrojo `syncInFlight` y token `syncGeneration` en disconnect.
+2. Wrapper `driveRequest` con retry 401; `pendingConfig` sincronizado al instante tras refresh.
+3. `canAutoSync` exige `folderSelected && folderId && isConnected`.
+4. Early exit en sync por mtime/size; ledger extendido; badges rojos al desconectar.
+
+**Release:** `v1.0.36`
+
+---
