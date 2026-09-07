@@ -186,7 +186,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					section,
 					"Generar carpetas de la bóveda",
 					null,
-					() => void generateVaultTemplateFolders(this.app),
+					() => void this.generateAndSyncVaultFolders(),
 				);
 			},
 		);
@@ -243,6 +243,22 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	openMainPanel(): void {
 		this.currentView = "home";
 		this.display();
+	}
+
+	private async generateAndSyncVaultFolders(): Promise<void> {
+		await generateVaultTemplateFolders(this.app);
+		if (!isProviderConfigured(this.plugin.settings)) {
+			return;
+		}
+		try {
+			await this.plugin.syncEngine.syncTemplateFoldersToCloud();
+			new Notice("ObSave: Estructura de carpetas sincronizada con la nube.");
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : "Error al sincronizar carpetas";
+			new Notice(`ObSave: ${message}`);
+			console.warn("[ObSave] sync carpetas plantilla:", error);
+		}
 	}
 
 	private renderProviderGrid(containerEl: HTMLElement): void {

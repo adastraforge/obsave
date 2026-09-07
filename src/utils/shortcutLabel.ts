@@ -1,7 +1,13 @@
 import { Platform } from "obsidian";
 
-/** Convierte `Mod+Alt+N` → `Cmd+Alt+N` (macOS) o `Ctrl+Alt+N` (Windows/Linux). */
+/**
+ * Convierte atajos internos a etiquetas legibles:
+ * macOS: `Mod+Alt+N` → `Cmd+Option+N`
+ * Windows/Linux: `Mod+Alt+N` → `Ctrl+Alt+N`
+ */
 export function formatShortcutLabel(shortcut: string): string {
-	const mod = Platform.isMacOS ? "Cmd" : "Ctrl";
-	return shortcut.replace(/\bMod\b/g, mod);
+	if (Platform.isMacOS) {
+		return shortcut.replace(/\bMod\b/g, "Cmd").replace(/\bAlt\b/g, "Option");
+	}
+	return shortcut.replace(/\bMod\b/g, "Ctrl");
 }

@@ -17,6 +17,10 @@ import type {
 	SyncTrigger,
 } from "../types";
 import { hashContent } from "../utils/contentHash";
+import {
+	syncTemplateFoldersToGitHub,
+	syncTemplateFoldersToGoogleDrive,
+} from "../productivity/vaultFolderSync";
 
 type SyncEngineListener = (event: SyncEngineEvent) => void;
 
@@ -52,6 +56,35 @@ export class SyncEngine {
 
 	markPendingUpload(vaultPath: string): void {
 		this.pendingLocalPaths.set(vaultPath, Date.now());
+	}
+
+	/** Propaga carpetas plantilla vacías a Drive/GitHub si hay proveedor activo. */
+	async syncTemplateFoldersToCloud(): Promise<void> {
+		const providerId = this.settings.activeProvider;
+		if (!providerId) {
+			return;
+		}
+
+		if (providerId === "gdrive" && this.isGoogleDriveFolderReady()) {
+			const provider = this.providers.get("gdrive") as
+				| GoogleDriveLazyProvider
+				| undefined;
+			if (provider) {
+				await syncTemplateFoldersToGoogleDrive(provider);
+			}
+			return;
+		}
+
+		if (providerId === "github") {
+			const gh = this.settings.providerConfig.github;
+			if (!gh?.token || !gh.remoteUrl) {
+				return;
+			}
+			const provider = this.providers.get("github") as GitHubProvider | undefined;
+			if (provider) {
+				await syncTemplateFoldersToGitHub(this.app, provider);
+			}
+		}
 	}
 
 	private shouldProtectLocalUpload(path: string, file: TFile): boolean {
@@ -295,6 +328,7 @@ export class SyncEngine {
 		provider: GoogleDriveLazyProvider,
 	): Promise<SyncResult> {
 		const folder = await provider.getOrCreateTargetFolder();
+		await syncTemplateFoldersToGoogleDrive(provider);
 		const remoteFiles = await provider.listAllMarkdownFiles(folder.folderId);
 		const remoteByPath = new Map(
 			remoteFiles.map((file) => [file.relativePath, file]),
@@ -446,6 +480,7 @@ export class SyncEngine {
 	private async runGitHubBidirectionalSync(
 		provider: GitHubProvider,
 	): Promise<SyncResult> {
+		await syncTemplateFoldersToGitHub(this.app, provider);
 		const remoteFiles = await provider.listAllMarkdownFiles();
 		const remoteByPath = new Map(
 			remoteFiles.map((file) => [file.relativePath, file]),
@@ -694,6 +729,7 @@ export class SyncEngine {
 
 		const remoteId = ledgerEntry.driveFileId;
 		if (remoteId) {
+			// GET /files/{id} — trash local solo con 404 confirmado (borrado explícito en Drive).
 			const confirmedDeleted =
 				await provider.confirmDriveFileDeleted(remoteId);
 			if (!confirmedDeleted) {
@@ -707,22 +743,23 @@ export class SyncEngine {
 				);
 				return "uploaded";
 			}
-		} else {
-			await this.uploadLocalToGoogleDrive(
-				provider,
-				rootFolderId,
-				path,
-				localFile,
-				ledger,
-				undefined,
-			);
-			return "uploaded";
+
+			await this.app.vault.trash(localFile, true);
+			delete ledger[path];
+			this.clearPendingUpload(path);
+			this.notifyVisualRefresh();
+			return "trashed";
 		}
 
-		await this.app.vault.trash(localFile, true);
-		delete ledger[path];
-		this.clearPendingUpload(path);
-		return "trashed";
+		await this.uploadLocalToGoogleDrive(
+			provider,
+			rootFolderId,
+			path,
+			localFile,
+			ledger,
+			undefined,
+		);
+		return "uploaded";
 	}
 
 	private async resolveLocalMissingOnRemoteGitHub(
@@ -758,6 +795,7 @@ export class SyncEngine {
 		await this.app.vault.trash(localFile, true);
 		delete ledger[path];
 		this.clearPendingUpload(path);
+		this.notifyVisualRefresh();
 		return "trashed";
 	}
 

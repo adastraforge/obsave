@@ -676,3 +676,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.39`
 
 ---
+
+## DEC-048 | 2026-09-07 | macOS labels, carpetas vacías y borrado 404
+
+**Contexto:** Badges Alt en Mac; carpetas plantilla no aparecían en nube vacía; trash Drive requería refresh explícito.
+
+**Decisión:**
+1. `formatShortcutLabel`: Alt→Option en macOS.
+2. `vaultFolderSync`: Drive `resolveOrCreateFolderPath`; GitHub `.gitkeep` en carpetas vacías; hook en SyncEngine y botón generar.
+3. Trash local Drive solo tras GET 404 + `notifyVisualRefresh`.
+
+**Release:** `v1.0.40`
+
+---
