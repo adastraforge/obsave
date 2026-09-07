@@ -9,6 +9,10 @@ import {
 import type { CloudProviderId } from "./settings";
 import { ObSaveFileStatusDecorator } from "./ui/FileStatusDecorator";
 import { ObSaveSettingTab } from "./ui/ObSaveSettingTab";
+import { CaptureNoteModal } from "./ui/CaptureNoteModal";
+import { VaultReportModal } from "./ui/VaultReportModal";
+import { createQuickDailyNote } from "./productivity/noteCapture";
+import { installNoteTypeRenameListener } from "./productivity/noteTypeRename";
 import { mergeStoredSettings } from "./settingsMerge";
 import {
 	DEFAULT_SETTINGS,
@@ -60,6 +64,10 @@ export default class ObSavePlugin extends Plugin {
 
 		this.fileDecorators = new ObSaveFileStatusDecorator(this);
 		this.fileDecorators.install();
+
+		installNoteTypeRenameListener(this.app, (event) => this.registerEvent(event));
+
+		this.registerCommands();
 
 		this.registerEvent(
 			this.app.workspace.on("layout-change", () => this.refreshDecorators()),
@@ -262,6 +270,42 @@ export default class ObSavePlugin extends Plugin {
 
 	canAutoSync(): boolean {
 		return this.syncEngine?.canAutoSync() ?? false;
+	}
+
+	openObSavePanel(): void {
+		this.app.setting.open();
+		this.app.setting.openTabById(this.manifest.id);
+		this.settingsTab.openMainPanel();
+	}
+
+	private registerCommands(): void {
+		this.addCommand({
+			id: "open-obsave-panel",
+			name: "Abrir panel principal de ObSave",
+			hotkeys: [{ modifiers: ["Mod", "Shift"], key: "o" }],
+			callback: () => this.openObSavePanel(),
+		});
+
+		this.addCommand({
+			id: "obsave-quick-note",
+			name: "Crear nota rápida ObSave",
+			hotkeys: [{ modifiers: ["Mod", "Shift"], key: "n" }],
+			callback: () => void createQuickDailyNote(this.app),
+		});
+
+		this.addCommand({
+			id: "obsave-capture-note",
+			name: "Abrir captura de nota ObSave",
+			hotkeys: [{ modifiers: ["Mod", "Shift"], key: "m" }],
+			callback: () => new CaptureNoteModal(this.app).open(),
+		});
+
+		this.addCommand({
+			id: "obsave-vault-report",
+			name: "Abrir informe operativo de bóveda",
+			hotkeys: [{ modifiers: ["Mod", "Shift"], key: "i" }],
+			callback: () => new VaultReportModal(this.app).open(),
+		});
 	}
 
 	private updateRibbonIcon(status: SyncStatus): void {

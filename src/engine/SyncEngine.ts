@@ -7,6 +7,8 @@ import {
 } from "../settings";
 import type { GoogleDriveRemoteMarkdown } from "../providers/GoogleDriveProvider";
 import type { GoogleDriveLazyProvider } from "../providers/GoogleDriveLazyProvider";
+import type { GitHubProvider } from "../providers/GitHubProvider";
+import type { GitHubRemoteMarkdown } from "../oauth/GitHubProvider";
 import type { IStorageProvider, SyncResult } from "../providers/IStorageProvider";
 import type {
 	SyncEngineEvent,
@@ -68,6 +70,10 @@ export class SyncEngine {
 		}
 		if (this.settings.activeProvider === "gdrive") {
 			return this.isGoogleDriveFolderReady();
+		}
+		if (this.settings.activeProvider === "github") {
+			const gh = this.settings.providerConfig.github;
+			return !!gh?.token && !!gh?.remoteUrl;
 		}
 		return true;
 	}
@@ -162,6 +168,20 @@ export class SyncEngine {
 			return { ran: false, skippedReason: "gdrive-no-folder" };
 		}
 
+		if (providerId === "github" && !this.settings.providerConfig.github?.remoteUrl) {
+			if (trigger === "manual") {
+				this.emit({
+					type: "sync-error",
+					status: "error",
+					message: "Configura un repositorio de GitHub antes de sincronizar.",
+					timestamp: new Date().toISOString(),
+					trigger,
+				});
+				this.notifyVisualRefresh();
+			}
+			return { ran: false, skippedReason: "not-configured" };
+		}
+
 		if (!this.providers.get(providerId)) {
 			this.emit({
 				type: "sync-error",
@@ -243,6 +263,9 @@ export class SyncEngine {
 			return this.runGoogleDriveBidirectionalSync(
 				provider as GoogleDriveLazyProvider,
 			);
+		}
+		if (providerId === "github") {
+			return this.runGitHubBidirectionalSync(provider as GitHubProvider);
 		}
 		return provider.sync();
 	}
@@ -390,6 +413,245 @@ export class SyncEngine {
 			uploadedCount,
 			noChanges,
 		};
+	}
+
+	private async runGitHubBidirectionalSync(
+		provider: GitHubProvider,
+	): Promise<SyncResult> {
+		const remoteFiles = await provider.listAllMarkdownFiles();
+		const remoteByPath = new Map(
+			remoteFiles.map((file) => [file.relativePath, file]),
+		);
+
+		const localFiles = this.app.vault.getMarkdownFiles();
+		const localByPath = new Map(localFiles.map((file) => [file.path, file]));
+
+		const ledger: Record<string, SyncLedgerEntry> = {
+			...this.settings.syncedLedger,
+		};
+
+		const allPaths = new Set<string>([
+			...localByPath.keys(),
+			...remoteByPath.keys(),
+			...Object.keys(ledger),
+		]);
+
+		let downloadedCount = 0;
+		let uploadedCount = 0;
+		let deletedCount = 0;
+
+		for (const path of allPaths) {
+			const inLocal = localByPath.has(path);
+			const inRemote = remoteByPath.has(path);
+			const ledgerEntry = ledger[path];
+
+			if (!inLocal && inRemote && ledgerEntry) {
+				const remote = remoteByPath.get(path)!;
+				const sha = ledgerEntry.driveFileId ?? remote.sha;
+				await provider.deleteRemoteFile(path, sha);
+				delete ledger[path];
+				deletedCount++;
+				continue;
+			}
+
+			if (!inLocal && inRemote && !ledgerEntry) {
+				await this.pullRemoteGitHubFile(provider, remoteByPath.get(path)!);
+				const pulled = this.app.vault.getAbstractFileByPath(path);
+				if (pulled instanceof TFile) {
+					const content = await this.app.vault.read(pulled);
+					const remote = remoteByPath.get(path)!;
+					ledger[path] = this.buildLedgerEntry(
+						content,
+						pulled.stat.mtime,
+						remote.sha,
+						pulled.stat.size,
+						remote.modifiedTimeMs,
+						remote.size,
+					);
+				}
+				downloadedCount++;
+				continue;
+			}
+
+			if (inLocal && !inRemote && ledgerEntry) {
+				await this.app.vault.trash(localByPath.get(path)!, true);
+				delete ledger[path];
+				deletedCount++;
+				continue;
+			}
+
+			if (inLocal && !inRemote && !ledgerEntry) {
+				const localFile = localByPath.get(path)!;
+				const content = await this.app.vault.read(localFile);
+				const sha = await provider.uploadRemoteFile(path, content);
+				ledger[path] = this.buildLedgerEntry(
+					content,
+					localFile.stat.mtime,
+					sha,
+					localFile.stat.size,
+				);
+				uploadedCount++;
+				continue;
+			}
+
+			if (inLocal && inRemote) {
+				const changed = await this.syncBothPresentGitHub(
+					provider,
+					path,
+					localByPath.get(path)!,
+					remoteByPath.get(path)!,
+					ledgerEntry,
+				);
+				if (changed.action === "pull") downloadedCount++;
+				else if (changed.action === "push") uploadedCount++;
+				ledger[path] = changed.entry;
+			}
+		}
+
+		this.settings.syncedLedger = ledger;
+
+		const noChanges =
+			downloadedCount === 0 && uploadedCount === 0 && deletedCount === 0;
+		const message = noChanges
+			? "ObSave: Bóveda al día (sin cambios)"
+			: "¡Sincronización completada exitosamente!";
+
+		return { message, downloadedCount, uploadedCount, noChanges };
+	}
+
+	private async syncBothPresentGitHub(
+		provider: GitHubProvider,
+		path: string,
+		localFile: TFile,
+		remote: GitHubRemoteMarkdown,
+		ledgerEntry: SyncLedgerEntry | undefined,
+	): Promise<{ action: "none" | "pull" | "push"; entry: SyncLedgerEntry }> {
+		const localMtime = localFile.stat.mtime;
+		const localSize = localFile.stat.size;
+		const remoteMtime = remote.modifiedTimeMs;
+		const remoteSize = remote.size;
+
+		if (ledgerEntry) {
+			const localMetaMatches =
+				localMtime === ledgerEntry.mtime &&
+				(ledgerEntry.size == null || localSize === ledgerEntry.size);
+			const remoteMetaMatches =
+				remote.sha === ledgerEntry.driveFileId &&
+				(ledgerEntry.remoteMtime == null ||
+					remoteMtime === ledgerEntry.remoteMtime) &&
+				(ledgerEntry.remoteSize == null ||
+					remoteSize == null ||
+					remoteSize === ledgerEntry.remoteSize);
+
+			if (localMetaMatches && remoteMetaMatches) {
+				return {
+					action: "none",
+					entry: {
+						hash: ledgerEntry.hash,
+						mtime: localMtime,
+						size: localSize,
+						remoteMtime,
+						remoteSize,
+						driveFileId: remote.sha,
+					},
+				};
+			}
+		}
+
+		const localContent = await this.app.vault.read(localFile);
+		const localHash = hashContent(localContent);
+
+		if (ledgerEntry) {
+			const localMatchesLedger =
+				localHash === ledgerEntry.hash && localMtime === ledgerEntry.mtime;
+			const remoteMatchesLedger =
+				remote.sha === ledgerEntry.driveFileId &&
+				remoteMtime <= (ledgerEntry.remoteMtime ?? ledgerEntry.mtime);
+
+			if (localMatchesLedger && remoteMatchesLedger) {
+				return {
+					action: "none",
+					entry: {
+						hash: localHash,
+						mtime: localMtime,
+						size: localSize,
+						remoteMtime,
+						remoteSize,
+						driveFileId: remote.sha,
+					},
+				};
+			}
+		}
+
+		const pushLocal =
+			!ledgerEntry ||
+			localMtime > remoteMtime ||
+			(localHash !== ledgerEntry.hash && localMtime >= remoteMtime);
+
+		if (pushLocal) {
+			const sha = await provider.uploadRemoteFile(
+				path,
+				localContent,
+				remote.sha,
+			);
+			return {
+				action: "push",
+				entry: {
+					hash: localHash,
+					mtime: localMtime,
+					size: localSize,
+					remoteMtime,
+					remoteSize,
+					driveFileId: sha,
+				},
+			};
+		}
+
+		await this.pullRemoteGitHubFile(provider, remote);
+		const pulled = this.app.vault.getAbstractFileByPath(path);
+		if (pulled instanceof TFile) {
+			const content = await this.app.vault.read(pulled);
+			return {
+				action: "pull",
+				entry: this.buildLedgerEntry(
+					content,
+					pulled.stat.mtime,
+					remote.sha,
+					pulled.stat.size,
+					remoteMtime,
+					remoteSize,
+				),
+			};
+		}
+
+		return {
+			action: "pull",
+			entry: this.buildLedgerEntry(
+				localContent,
+				localMtime,
+				remote.sha,
+				localSize,
+				remoteMtime,
+				remoteSize,
+			),
+		};
+	}
+
+	private async pullRemoteGitHubFile(
+		provider: GitHubProvider,
+		remote: GitHubRemoteMarkdown,
+	): Promise<void> {
+		const content = await provider.downloadRemoteFile(remote.relativePath);
+		const dirPath = remote.relativePath.includes("/")
+			? remote.relativePath.slice(0, remote.relativePath.lastIndexOf("/"))
+			: "";
+		await this.ensureLocalFolderPath(dirPath);
+		const existing = this.app.vault.getAbstractFileByPath(remote.relativePath);
+		if (existing instanceof TFile) {
+			await this.app.vault.modify(existing, content);
+		} else {
+			await this.app.vault.create(remote.relativePath, content);
+		}
 	}
 
 	private async syncBothPresent(

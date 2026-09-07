@@ -5,7 +5,6 @@ import http from "isomorphic-git/http/node";
 import type { App } from "obsidian";
 import {
 	buildAuthenticatedUrl,
-	createGitHubRepo,
 	parseGitHubUrl,
 	resolveGitHubUsername,
 } from "../adapters/githubApi";
@@ -18,6 +17,12 @@ import {
 import type { GitHubProviderConfig } from "../settings";
 import type { FileSyncStatus, GitSetupResult } from "../types";
 import type { IStorageProvider, SyncResult } from "./IStorageProvider";
+import {
+	GitHubApiClient,
+	createGitHubRepository,
+	validateGitHubToken,
+	type GitHubRemoteMarkdown,
+} from "../oauth/GitHubProvider";
 
 export type { GitSetupResult };
 
@@ -69,6 +74,47 @@ export class GitHubProvider implements IStorageProvider {
 			throw new Error("GitHub no está conectado.");
 		}
 		return this.performSync(this.config);
+	}
+
+	getApiClient(): GitHubApiClient {
+		if (!this.config?.token || !this.config.remoteUrl) {
+			throw new Error("GitHub no está configurado (token o URL faltante).");
+		}
+		return GitHubApiClient.fromRemoteUrl(this.config.token, this.config.remoteUrl);
+	}
+
+	async listAllMarkdownFiles(): Promise<GitHubRemoteMarkdown[]> {
+		return this.getApiClient().listAllMarkdownFiles();
+	}
+
+	async downloadRemoteFile(path: string): Promise<string> {
+		return this.getApiClient().downloadFile(path);
+	}
+
+	async uploadRemoteFile(
+		path: string,
+		content: string,
+		existingSha?: string,
+	): Promise<string> {
+		return this.getApiClient().uploadFile(path, content, existingSha);
+	}
+
+	async deleteRemoteFile(path: string, sha: string): Promise<void> {
+		return this.getApiClient().deleteFile(path, sha);
+	}
+
+	async connectWithTokenValidation(
+		config: GitHubProviderConfig,
+	): Promise<{ login: string }> {
+		if (!config.token) {
+			throw new Error("Token de GitHub obligatorio.");
+		}
+		const user = await validateGitHubToken(config.token);
+		this.config = {
+			...config,
+			username: config.username?.trim() || user.login,
+		};
+		return user;
 	}
 
 	async disconnect(): Promise<void> {
@@ -458,33 +504,63 @@ export class GitHubProvider implements IStorageProvider {
 		return new Promise((resolve) => setTimeout(resolve, ms));
 	}
 
-	async setupNewRepository(input: NewRepoWizardInput): Promise<GitSetupResult> {
+	async setupNewRepository(
+		input: NewRepoWizardInput,
+		isPrivate = true,
+	): Promise<GitSetupResult> {
 		const repoName = resolveRepoLabel(this.app, input.repoName);
 		if (!repoName) {
 			return { success: false, message: "El nombre del repositorio es obligatorio." };
 		}
 
-		const basePath = getVaultBasePath(this.app);
+		await validateGitHubToken(input.token);
 		const owner = input.username.trim() || (await resolveGitHubUsername(input.token));
-		const created = await createGitHubRepo(repoName, input.token);
-		const authUrl = buildAuthenticatedUrl(created.httpsUrl, owner, input.token);
+		const created = await createGitHubRepository(input.token, repoName, isPrivate);
+		const authUrl = buildAuthenticatedUrl(created.cloneUrl, owner, input.token);
 
+		const basePath = getVaultBasePath(this.app);
 		await this.initializeLocalRepo(basePath, authUrl, owner, input.token);
-		await this.fetchRemote(basePath, owner, input.token);
-		await this.integrateRemoteChanges(basePath, owner, input.token);
-		await this.commitLocalChanges(basePath);
-		await this.pushWithRetry(basePath, owner, input.token);
 
 		return {
 			success: true,
-			message: `Repositorio "${repoName}" creado y sincronizado con GitHub.`,
+			message: `Repositorio "${repoName}" creado y conectado con GitHub.`,
 			githubConfig: this.buildGitHubConfig({
 				label: repoName,
 				owner,
-				repo: created.repo,
-				httpsUrl: created.httpsUrl,
+				repo: created.name,
+				httpsUrl: created.cloneUrl,
 				username: owner,
 				token: input.token,
+			}),
+		};
+	}
+
+	async setupFromRepoSelection(
+		token: string,
+		username: string,
+		selection: {
+			owner: string;
+			repo: string;
+			cloneUrl: string;
+			label: string;
+		},
+	): Promise<GitSetupResult> {
+		await validateGitHubToken(token);
+		const resolvedUser = username.trim() || (await resolveGitHubUsername(token));
+		const authUrl = buildAuthenticatedUrl(selection.cloneUrl, resolvedUser, token);
+		const basePath = getVaultBasePath(this.app);
+		await this.initializeLocalRepo(basePath, authUrl, resolvedUser, token);
+
+		return {
+			success: true,
+			message: `Repositorio "${selection.owner}/${selection.repo}" conectado.`,
+			githubConfig: this.buildGitHubConfig({
+				label: selection.label,
+				owner: selection.owner,
+				repo: selection.repo,
+				httpsUrl: selection.cloneUrl,
+				username: resolvedUser,
+				token,
 			}),
 		};
 	}

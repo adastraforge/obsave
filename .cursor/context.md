@@ -7,10 +7,14 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.37`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.37`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.38`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.38`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### GitHub REST, VISTA 1 y productividad v1.0.38
+- Cliente REST GitHub (`oauth/GitHubProvider.ts`), repo picker, sync ledger 3 vías.
+- VISTA 1 en 3 secciones; plantillas de carpetas, captura de notas, informe operativo, atajos Mod+Shift.
 
 ### Fix carpeta Drive UI v1.0.37
 - Sincroniza folderId/path al delegate tras picker; preserva ruta en sync modo `existing`.

@@ -649,3 +649,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.37`
 
 ---
+
+## DEC-046 | 2026-09-07 | GitHub REST, rediseño VISTA 1 y productividad
+
+**Contexto:** GitHub solo usaba isomorphic-git; VISTA 1 plana; sin herramientas de productividad integradas.
+
+**Decisión:**
+1. `GitHubApiClient` REST v3 con PAT, repo picker, sync ledger bidireccional en SyncEngine.
+2. VISTA 1 en 3 tarjetas; regla uniproveedor bloquea GitHub si GDrive activo.
+3. Plantillas de carpetas, captura enriquecida, informe operativo, rename→tipo YAML, atajos Mod+Shift.
+
+**Release:** `v1.0.38`
+
+---

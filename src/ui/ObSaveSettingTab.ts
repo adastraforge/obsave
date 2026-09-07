@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab, Setting, TextComponent } from "obsidian";
+import { App, Modal, Notice, PluginSettingTab, Setting, TextComponent } from "obsidian";
 import { extractGitHubOwner } from "../adapters/githubApi";
 import { GitHubProvider } from "../providers/GitHubProvider";
 import { getVaultFolderName } from "../adapters/vaultPaths";
@@ -11,6 +11,11 @@ import { isProviderConfigured, hasProviderCredentials } from "../types";
 import { formatLocalDateTime } from "../utils/dateFormat";
 import { openExternalUrl } from "../oauth/runtimeBridge";
 import { GoogleFolderPickerModal } from "./GoogleFolderPickerModal";
+import { GitHubRepoPickerModal } from "./GitHubRepoPickerModal";
+import { CaptureNoteModal } from "./CaptureNoteModal";
+import { VaultReportModal } from "./VaultReportModal";
+import { generateVaultTemplateFolders } from "../productivity/vaultStructure";
+import { createQuickDailyNote } from "../productivity/noteCapture";
 import type ObSavePlugin from "../main";
 
 interface ProviderOption {
@@ -71,6 +76,13 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	private selectedProvider: CloudProviderId | null = null;
 	private githubRepoMode: GitHubRepoMode = "new";
 	private gdriveFolderMode: GoogleDriveFolderMode = "new";
+	private githubRepoPrivate = true;
+	private selectedExistingRepo: {
+		owner: string;
+		repo: string;
+		cloneUrl: string;
+		label: string;
+	} | null = null;
 
 	constructor(app: App, plugin: ObSavePlugin) {
 		super(app, plugin);
@@ -147,11 +159,86 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	/* ── VISTA 1: HOME ── */
 
 	private renderHomeView(containerEl: HTMLElement): void {
-		containerEl.createEl("p", {
-			text: "Elige dónde quieres respaldar tu bóveda.",
-			cls: "setting-item-description",
-		});
-		this.renderProviderGrid(containerEl);
+		this.renderHomeSection(
+			containerEl,
+			"Respaldo y nube",
+			"obsave-home-section-cloud",
+			(section) => {
+				section.createEl("p", {
+					text: "Elige dónde quieres respaldar tu bóveda.",
+					cls: "setting-item-description",
+				});
+				this.renderProviderGrid(section);
+			},
+		);
+
+		this.renderHomeSection(
+			containerEl,
+			"Estructura de bóveda",
+			"obsave-home-section-structure",
+			(section) => {
+				section.createEl("p", {
+					text: "Organiza tu bóveda con carpetas de productividad predefinidas.",
+					cls: "setting-item-description",
+				});
+				this.renderActionButton(
+					section,
+					"Generar carpetas de la bóveda",
+					null,
+					() => void generateVaultTemplateFolders(this.app),
+				);
+			},
+		);
+
+		this.renderHomeSection(
+			containerEl,
+			"Herramientas y productividad",
+			"obsave-home-section-tools",
+			(section) => {
+				this.renderActionButton(section, "Nota rápida (1 clic)", "Mod+Shift+N", () =>
+					void createQuickDailyNote(this.app),
+				);
+				this.renderActionButton(section, "Captura de nota enriquecida", "Mod+Shift+M", () =>
+					new CaptureNoteModal(this.app).open(),
+				);
+				this.renderActionButton(
+					section,
+					"Informe operativo de bóveda",
+					"Mod+Shift+I",
+					() => new VaultReportModal(this.app).open(),
+				);
+			},
+		);
+	}
+
+	private renderHomeSection(
+		containerEl: HTMLElement,
+		title: string,
+		cls: string,
+		renderBody: (section: HTMLElement) => void,
+	): void {
+		const card = containerEl.createDiv({ cls: `obsave-home-section ${cls}` });
+		card.createEl("h3", { text: title, cls: "obsave-home-section-title" });
+		renderBody(card);
+	}
+
+	private renderActionButton(
+		containerEl: HTMLElement,
+		label: string,
+		shortcut: string | null,
+		onClick: () => void,
+	): void {
+		const row = containerEl.createDiv({ cls: "obsave-tool-row" });
+		const btn = row.createEl("button", { text: label, cls: "mod-cta" });
+		if (shortcut) {
+			row.createEl("kbd", { text: shortcut, cls: "obsave-kbd" });
+		}
+		btn.addEventListener("click", onClick);
+	}
+
+	openMainPanel(): void {
+		this.currentView = "home";
+		this.display();
 	}
 
 	private renderProviderGrid(containerEl: HTMLElement): void {
@@ -213,6 +300,16 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		providerId: CloudProviderId,
 		connected: boolean,
 	): void {
+		if (
+			providerId === "github" &&
+			this.plugin.settings.providerConfig.gdrive != null
+		) {
+			this.showProviderBlockedModal(
+				"Actualmente tienes Google Drive activo. Debes desconectarte primero desde su panel de configuración para cambiar a GitHub.",
+			);
+			return;
+		}
+
 		this.selectedProvider = providerId;
 
 		if (connected) {
@@ -228,6 +325,16 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		}
 
 		this.display();
+	}
+
+	private showProviderBlockedModal(message: string): void {
+		const modal = new Modal(this.app);
+		modal.titleEl.setText("ObSave — Cambio de proveedor");
+		modal.contentEl.createEl("p", { text: message, cls: "obsave-alert" });
+		new Setting(modal.contentEl).addButton((btn) =>
+			btn.setButtonText("Entendido").setCta().onClick(() => modal.close()),
+		);
+		modal.open();
 	}
 
 	/* ── VISTA 2: ASISTENTE DE CONEXIÓN ── */
@@ -421,9 +528,50 @@ export class ObSaveSettingTab extends PluginSettingTab {
 							repoName = v;
 						});
 				});
-		} else {
+
 			new Setting(repoFields)
-				.setName("URL / Nombre del repositorio existente")
+				.setName("Repositorio privado")
+				.setDesc("Desactiva para crear un repositorio público.")
+				.addToggle((toggle) =>
+					toggle
+						.setValue(this.githubRepoPrivate)
+						.onChange((value) => {
+							this.githubRepoPrivate = value;
+						}),
+				);
+		} else {
+			if (this.selectedExistingRepo) {
+				repoFields.createEl("p", {
+					text: `Repositorio seleccionado: ${this.selectedExistingRepo.owner}/${this.selectedExistingRepo.repo}`,
+					cls: "setting-item-description",
+				});
+			}
+
+			new Setting(repoFields)
+				.setName("Seleccionar repositorio")
+				.setDesc("Abre el selector de repositorios de tu cuenta GitHub.")
+				.addButton((btn) =>
+					btn.setButtonText("Elegir repositorio…").onClick(() => {
+						if (!token.trim()) {
+							new Notice("ObSave: ingresa el token antes de elegir repositorio.");
+							return;
+						}
+						const modal = new GitHubRepoPickerModal(
+							this.app,
+							token.trim(),
+							(selection) => {
+								this.selectedExistingRepo = selection;
+								username = selection.owner;
+								if (usernameText) usernameText.setValue(selection.owner);
+								this.display();
+							},
+						);
+						modal.open();
+					}),
+				);
+
+			new Setting(repoFields)
+				.setName("URL / Nombre del repositorio (alternativo)")
 				.setDesc("Ejemplo: usuario/mi-repo o https://github.com/usuario/mi-repo")
 				.addText((text) => {
 					remoteUrlText = text;
@@ -463,8 +611,8 @@ export class ObSaveSettingTab extends PluginSettingTab {
 							return;
 						}
 
-						if (this.githubRepoMode === "existing" && !remoteUrl.trim()) {
-							new Notice("ObSave: indica la URL o nombre del repositorio.");
+						if (this.githubRepoMode === "existing" && !this.selectedExistingRepo && !remoteUrl.trim()) {
+							new Notice("ObSave: selecciona o indica un repositorio.");
 							return;
 						}
 
@@ -476,23 +624,41 @@ export class ObSaveSettingTab extends PluginSettingTab {
 						);
 
 						try {
-							const result =
-								this.githubRepoMode === "new"
-									? await this.githubProvider.setupNewRepository({
-											username,
-											token,
-											repoName:
-												repoNameText?.getValue().trim() ||
-												repoName.trim() ||
-												defaultRepoName,
-										})
-									: await this.githubProvider.setupExistingRepository({
-											remoteUrl:
-												remoteUrlText?.getValue().trim() ||
-												remoteUrl.trim(),
-											username,
-											token,
-										});
+							await this.githubProvider.connectWithTokenValidation({
+								label: "",
+								token,
+								username,
+							});
+
+							let result;
+							if (this.githubRepoMode === "new") {
+								result = await this.githubProvider.setupNewRepository(
+									{
+										username,
+										token,
+										repoName:
+											repoNameText?.getValue().trim() ||
+											repoName.trim() ||
+											defaultRepoName,
+									},
+									this.githubRepoPrivate,
+								);
+							} else if (this.selectedExistingRepo) {
+								result = await this.githubProvider.setupFromRepoSelection(
+									token,
+									username,
+									this.selectedExistingRepo,
+								);
+							} else {
+								result =
+									await this.githubProvider.setupExistingRepository({
+										remoteUrl:
+											remoteUrlText?.getValue().trim() ||
+											remoteUrl.trim(),
+										username,
+										token,
+									});
+							}
 
 							await this.handleSetupResult(result);
 						} catch (error) {
@@ -524,6 +690,10 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	private getOtherProviderBlockMessage(
 		targetProvider: CloudProviderId,
 	): string | null {
+		if (targetProvider === "github" && this.plugin.settings.providerConfig.gdrive != null) {
+			return "Actualmente tienes Google Drive activo. Debes desconectarte primero desde su panel de configuración para cambiar a GitHub.";
+		}
+
 		if (!isProviderConfigured(this.plugin.settings)) {
 			return null;
 		}
