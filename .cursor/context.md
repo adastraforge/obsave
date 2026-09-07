@@ -7,10 +7,13 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.38`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.38`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.39`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.39`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Fix auditoría productividad y sync v1.0.39
+- Grace period 60 s, confirmación 404 antes de trash, upload ID desde respuesta Drive, atajos Mod+Alt, ledger reset GitHub.
 
 ### GitHub REST, VISTA 1 y productividad v1.0.38
 - Cliente REST GitHub (`oauth/GitHubProvider.ts`), repo picker, sync ledger 3 vías.

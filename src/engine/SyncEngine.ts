@@ -30,6 +30,8 @@ export class SyncEngine {
 	private autoSyncIntervalId: number | null = null;
 	private syncInFlight: Promise<void> | null = null;
 	private syncGeneration = 0;
+	private pendingLocalPaths = new Map<string, number>();
+	private static readonly UPLOAD_GRACE_MS = 60_000;
 
 	constructor(
 		private app: App,
@@ -46,6 +48,25 @@ export class SyncEngine {
 
 	getStatus(): SyncStatus {
 		return this.status;
+	}
+
+	markPendingUpload(vaultPath: string): void {
+		this.pendingLocalPaths.set(vaultPath, Date.now());
+	}
+
+	private shouldProtectLocalUpload(path: string, file: TFile): boolean {
+		const marked = this.pendingLocalPaths.get(path);
+		if (
+			marked != null &&
+			Date.now() - marked < SyncEngine.UPLOAD_GRACE_MS
+		) {
+			return true;
+		}
+		return file.stat.ctime > Date.now() - SyncEngine.UPLOAD_GRACE_MS;
+	}
+
+	private clearPendingUpload(path: string): void {
+		this.pendingLocalPaths.delete(path);
 	}
 
 	updateSettings(settings: ObSaveSettings): void {
@@ -331,9 +352,16 @@ export class SyncEngine {
 
 			if (inLocal && !inRemote && inLedger) {
 				const localFile = localByPath.get(path)!;
-				await this.app.vault.trash(localFile, true);
-				delete ledger[path];
-				deletedCount++;
+				const outcome = await this.resolveLocalMissingOnRemoteGoogleDrive(
+					provider,
+					folder.folderId,
+					path,
+					localFile,
+					ledgerEntry!,
+					ledger,
+				);
+				if (outcome === "uploaded") uploadedCount++;
+				else if (outcome === "trashed") deletedCount++;
 				continue;
 			}
 
@@ -474,9 +502,16 @@ export class SyncEngine {
 			}
 
 			if (inLocal && !inRemote && ledgerEntry) {
-				await this.app.vault.trash(localByPath.get(path)!, true);
-				delete ledger[path];
-				deletedCount++;
+				const localFile = localByPath.get(path)!;
+				const outcome = await this.resolveLocalMissingOnRemoteGitHub(
+					provider,
+					path,
+					localFile,
+					ledgerEntry,
+					ledger,
+				);
+				if (outcome === "uploaded") uploadedCount++;
+				else if (outcome === "trashed") deletedCount++;
 				continue;
 			}
 
@@ -635,6 +670,139 @@ export class SyncEngine {
 				remoteSize,
 			),
 		};
+	}
+
+	private async resolveLocalMissingOnRemoteGoogleDrive(
+		provider: GoogleDriveLazyProvider,
+		rootFolderId: string,
+		path: string,
+		localFile: TFile,
+		ledgerEntry: SyncLedgerEntry,
+		ledger: Record<string, SyncLedgerEntry>,
+	): Promise<"uploaded" | "trashed"> {
+		if (this.shouldProtectLocalUpload(path, localFile)) {
+			await this.uploadLocalToGoogleDrive(
+				provider,
+				rootFolderId,
+				path,
+				localFile,
+				ledger,
+				ledgerEntry.driveFileId,
+			);
+			return "uploaded";
+		}
+
+		const remoteId = ledgerEntry.driveFileId;
+		if (remoteId) {
+			const confirmedDeleted =
+				await provider.confirmDriveFileDeleted(remoteId);
+			if (!confirmedDeleted) {
+				await this.uploadLocalToGoogleDrive(
+					provider,
+					rootFolderId,
+					path,
+					localFile,
+					ledger,
+					remoteId,
+				);
+				return "uploaded";
+			}
+		} else {
+			await this.uploadLocalToGoogleDrive(
+				provider,
+				rootFolderId,
+				path,
+				localFile,
+				ledger,
+				undefined,
+			);
+			return "uploaded";
+		}
+
+		await this.app.vault.trash(localFile, true);
+		delete ledger[path];
+		this.clearPendingUpload(path);
+		return "trashed";
+	}
+
+	private async resolveLocalMissingOnRemoteGitHub(
+		provider: GitHubProvider,
+		path: string,
+		localFile: TFile,
+		ledgerEntry: SyncLedgerEntry,
+		ledger: Record<string, SyncLedgerEntry>,
+	): Promise<"uploaded" | "trashed"> {
+		if (this.shouldProtectLocalUpload(path, localFile)) {
+			await this.uploadLocalToGitHub(
+				provider,
+				path,
+				localFile,
+				ledger,
+				ledgerEntry.driveFileId,
+			);
+			return "uploaded";
+		}
+
+		const confirmedDeleted = await provider.confirmRemotePathDeleted(path);
+		if (!confirmedDeleted) {
+			await this.uploadLocalToGitHub(
+				provider,
+				path,
+				localFile,
+				ledger,
+				ledgerEntry.driveFileId,
+			);
+			return "uploaded";
+		}
+
+		await this.app.vault.trash(localFile, true);
+		delete ledger[path];
+		this.clearPendingUpload(path);
+		return "trashed";
+	}
+
+	private async uploadLocalToGoogleDrive(
+		provider: GoogleDriveLazyProvider,
+		rootFolderId: string,
+		path: string,
+		localFile: TFile,
+		ledger: Record<string, SyncLedgerEntry>,
+		existingFileId?: string,
+	): Promise<void> {
+		const content = await this.app.vault.read(localFile);
+		const driveFileId = await this.pushLocalFile(
+			provider,
+			rootFolderId,
+			path,
+			localFile,
+			existingFileId,
+			content,
+		);
+		ledger[path] = this.buildLedgerEntry(
+			content,
+			localFile.stat.mtime,
+			driveFileId,
+			localFile.stat.size,
+		);
+		this.clearPendingUpload(path);
+	}
+
+	private async uploadLocalToGitHub(
+		provider: GitHubProvider,
+		path: string,
+		localFile: TFile,
+		ledger: Record<string, SyncLedgerEntry>,
+		existingSha?: string,
+	): Promise<void> {
+		const content = await this.app.vault.read(localFile);
+		const sha = await provider.uploadRemoteFile(path, content, existingSha);
+		ledger[path] = this.buildLedgerEntry(
+			content,
+			localFile.stat.mtime,
+			sha,
+			localFile.stat.size,
+		);
+		this.clearPendingUpload(path);
 	}
 
 	private async pullRemoteGitHubFile(
@@ -817,15 +985,15 @@ export class SyncEngine {
 			: rootFolderId;
 
 		const fileContent = content ?? (await this.app.vault.read(localFile));
-		await provider.uploadFile(
+		const fileId = await provider.uploadFile(
 			fileName,
 			fileContent,
 			parentFolderId,
 			existingFileId,
 		);
 
-		if (existingFileId) {
-			return existingFileId;
+		if (fileId) {
+			return fileId;
 		}
 
 		const remoteFiles = await provider.listFiles(parentFolderId);

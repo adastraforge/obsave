@@ -275,4 +275,12 @@ export class GitHubApiClient implements CloudStorageProvider {
 			throw new Error(`Error al eliminar «${path}» (${response.status})`);
 		}
 	}
+
+	/** `true` solo si GET /contents confirma 404 (archivo eliminado en GitHub). */
+	async confirmPathDeleted(path: string): Promise<boolean> {
+		const response = await fetch(this.repoPath(`/contents/${encodePath(path)}`), {
+			headers: authHeaders(this.token),
+		});
+		return response.status === 404;
+	}
 }

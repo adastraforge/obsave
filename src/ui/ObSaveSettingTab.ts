@@ -9,6 +9,7 @@ import {
 } from "../settings";
 import { isProviderConfigured, hasProviderCredentials } from "../types";
 import { formatLocalDateTime } from "../utils/dateFormat";
+import { formatShortcutLabel } from "../utils/shortcutLabel";
 import { openExternalUrl } from "../oauth/runtimeBridge";
 import { GoogleFolderPickerModal } from "./GoogleFolderPickerModal";
 import { GitHubRepoPickerModal } from "./GitHubRepoPickerModal";
@@ -195,16 +196,16 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			"Herramientas y productividad",
 			"obsave-home-section-tools",
 			(section) => {
-				this.renderActionButton(section, "Nota rápida (1 clic)", "Mod+Shift+N", () =>
+				this.renderActionButton(section, "Nota rápida (1 clic)", "Mod+Alt+N", () =>
 					void createQuickDailyNote(this.app),
 				);
-				this.renderActionButton(section, "Captura de nota enriquecida", "Mod+Shift+M", () =>
+				this.renderActionButton(section, "Captura de nota enriquecida", "Mod+Alt+M", () =>
 					new CaptureNoteModal(this.app).open(),
 				);
 				this.renderActionButton(
 					section,
 					"Informe operativo de bóveda",
-					"Mod+Shift+I",
+					"Mod+Alt+I",
 					() => new VaultReportModal(this.app).open(),
 				);
 			},
@@ -231,7 +232,10 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		const row = containerEl.createDiv({ cls: "obsave-tool-row" });
 		const btn = row.createEl("button", { text: label, cls: "mod-cta" });
 		if (shortcut) {
-			row.createEl("kbd", { text: shortcut, cls: "obsave-kbd" });
+			row.createEl("kbd", {
+				text: formatShortcutLabel(shortcut),
+				cls: "obsave-kbd",
+			});
 		}
 		btn.addEventListener("click", onClick);
 	}
@@ -1023,6 +1027,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		}
 
 		if (result.githubConfig) {
+			this.plugin.settings.syncedLedger = {};
 			this.plugin.settings.activeProvider = "github";
 			this.plugin.settings.providerConfig.github = result.githubConfig;
 			await this.plugin.saveSettings();

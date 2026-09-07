@@ -1,4 +1,4 @@
-import { Notice, Plugin, setIcon } from "obsidian";
+import { Notice, Plugin, setIcon, TFile } from "obsidian";
 import { SyncEngine } from "./engine/SyncEngine";
 import {
 	createProviderRegistry,
@@ -74,11 +74,11 @@ export default class ObSavePlugin extends Plugin {
 		);
 		this.registerEvent(
 			this.app.vault.on("create", (file) => {
-				if (
-					file.path.endsWith(".md") &&
-					this.syncEngine.getStatus() !== "syncing"
-				) {
-					void this.refreshDecoratorsImmediate();
+				if (file instanceof TFile && file.extension === "md") {
+					this.syncEngine.markPendingUpload(file.path);
+					if (this.syncEngine.getStatus() !== "syncing") {
+						void this.refreshDecoratorsImmediate();
+					}
 				}
 			}),
 		);
@@ -274,7 +274,17 @@ export default class ObSavePlugin extends Plugin {
 
 	openObSavePanel(): void {
 		this.app.setting.open();
-		this.app.setting.openTabById(this.manifest.id);
+		const setting = this.app.setting as typeof this.app.setting & {
+			openTabById?: (id: string) => void;
+			pluginTabs?: Array<{ id?: string; display: () => void }>;
+		};
+		if (typeof setting.openTabById === "function") {
+			setting.openTabById(this.manifest.id);
+		} else {
+			setting.pluginTabs
+				?.find((tab) => tab.id === this.manifest.id)
+				?.display();
+		}
 		this.settingsTab.openMainPanel();
 	}
 
@@ -282,28 +292,28 @@ export default class ObSavePlugin extends Plugin {
 		this.addCommand({
 			id: "open-obsave-panel",
 			name: "Abrir panel principal de ObSave",
-			hotkeys: [{ modifiers: ["Mod", "Shift"], key: "o" }],
+			hotkeys: [{ modifiers: ["Mod", "Alt"], key: "o" }],
 			callback: () => this.openObSavePanel(),
 		});
 
 		this.addCommand({
 			id: "obsave-quick-note",
 			name: "Crear nota rápida ObSave",
-			hotkeys: [{ modifiers: ["Mod", "Shift"], key: "n" }],
+			hotkeys: [{ modifiers: ["Mod", "Alt"], key: "n" }],
 			callback: () => void createQuickDailyNote(this.app),
 		});
 
 		this.addCommand({
 			id: "obsave-capture-note",
 			name: "Abrir captura de nota ObSave",
-			hotkeys: [{ modifiers: ["Mod", "Shift"], key: "m" }],
+			hotkeys: [{ modifiers: ["Mod", "Alt"], key: "m" }],
 			callback: () => new CaptureNoteModal(this.app).open(),
 		});
 
 		this.addCommand({
 			id: "obsave-vault-report",
 			name: "Abrir informe operativo de bóveda",
-			hotkeys: [{ modifiers: ["Mod", "Shift"], key: "i" }],
+			hotkeys: [{ modifiers: ["Mod", "Alt"], key: "i" }],
 			callback: () => new VaultReportModal(this.app).open(),
 		});
 	}

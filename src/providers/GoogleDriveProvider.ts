@@ -563,6 +563,15 @@ export class GoogleDriveProvider implements IStorageProvider {
 		}
 	}
 
+	/** `true` solo si la API confirma 404 (archivo eliminado en Drive). */
+	async confirmDriveFileDeleted(fileId: string): Promise<boolean> {
+		const response = await this.driveRequest({
+			url: `${GOOGLE_DRIVE_API}/files/${fileId}?fields=id`,
+			method: "GET",
+		});
+		return response.status === 404;
+	}
+
 	private parseDriveModifiedTime(modifiedTime?: string): number {
 		if (!modifiedTime) {
 			return 0;
@@ -664,7 +673,7 @@ export class GoogleDriveProvider implements IStorageProvider {
 		content: string,
 		folderId: string,
 		existingFileId?: string,
-	): Promise<void> {
+	): Promise<string> {
 		if (existingFileId) {
 			const response = await this.driveRequest({
 				url: `${GOOGLE_DRIVE_UPLOAD_API}/files/${existingFileId}?uploadType=media`,
@@ -680,7 +689,7 @@ export class GoogleDriveProvider implements IStorageProvider {
 					`Error al actualizar «${fileName}» (${response.status}): ${response.text}`,
 				);
 			}
-			return;
+			return existingFileId;
 		}
 
 		const metadata = {
@@ -713,6 +722,15 @@ export class GoogleDriveProvider implements IStorageProvider {
 				`Error al subir «${fileName}» (${response.status}): ${response.text}`,
 			);
 		}
+
+		const created = response.json as { id?: string };
+		if (created.id) {
+			return created.id;
+		}
+
+		const remoteFiles = await this.listFiles(folderId);
+		const match = remoteFiles.find((file) => file.name === fileName);
+		return match?.id ?? "";
 	}
 
 	private updateFolderConfig(info: GoogleDriveFolderInfo): void {

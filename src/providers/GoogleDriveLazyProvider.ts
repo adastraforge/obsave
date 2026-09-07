@@ -154,6 +154,11 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 		return delegate.deleteFile(fileId);
 	}
 
+	async confirmDriveFileDeleted(fileId: string): Promise<boolean> {
+		const delegate = await this.ensureDelegateSynced();
+		return delegate.confirmDriveFileDeleted(fileId);
+	}
+
 	async resolveOrCreateFolderPath(
 		rootFolderId: string,
 		relativePath: string,
@@ -167,7 +172,7 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 		content: string,
 		folderId: string,
 		existingFileId?: string,
-	): Promise<void> {
+	): Promise<string> {
 		const delegate = await this.ensureDelegateSynced();
 		return delegate.uploadFile(
 			fileName,

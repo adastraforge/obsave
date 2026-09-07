@@ -662,3 +662,17 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.38`
 
 ---
+
+## DEC-047 | 2026-09-07 | Fix auditoría productividad, sync y atajos
+
+**Contexto:** Notas de productividad eliminadas por sync; atajos Mod+Shift en conflicto; upload Drive sin ID fiable.
+
+**Decisión:**
+1. Grace period 60 s + `markPendingUpload`; trash local solo tras 404 confirmado en API remota.
+2. `uploadFile` Drive retorna `id` desde JSON multipart.
+3. Atajos `Mod+Alt+O/N/M/I`, `formatShortcutLabel`, fallback `openObSavePanel`.
+4. `folderExists` + try/catch en generador; ledger reset al conectar GitHub.
+
+**Release:** `v1.0.39`
+
+---
