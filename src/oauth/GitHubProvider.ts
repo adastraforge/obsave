@@ -158,6 +158,55 @@ export class GitHubApiClient implements CloudStorageProvider {
 		return `${GITHUB_API}/repos/${this.owner}/${this.repo}${path}`;
 	}
 
+	async listAllRemoteFiles(): Promise<{ path: string; sha: string }[]> {
+		const refResponse = await fetch(
+			this.repoPath("/git/ref/heads/main"),
+			{ headers: authHeaders(this.token) },
+		);
+
+		if (refResponse.status === 404) {
+			return [];
+		}
+
+		if (!refResponse.ok) {
+			throw new Error(`Error al resolver rama main (${refResponse.status})`);
+		}
+
+		const refData = (await refResponse.json()) as {
+			object: { sha: string };
+		};
+
+		const treeResponse = await fetch(
+			this.repoPath(`/git/trees/${refData.object.sha}?recursive=1`),
+			{ headers: authHeaders(this.token) },
+		);
+
+		if (!treeResponse.ok) {
+			throw new Error(`Error al listar árbol del repo (${treeResponse.status})`);
+		}
+
+		const treeData = (await treeResponse.json()) as {
+			tree?: { path: string; type: string; sha: string }[];
+		};
+
+		return (treeData.tree ?? [])
+			.filter((entry) => entry.type === "blob")
+			.map((entry) => ({ path: entry.path, sha: entry.sha }));
+	}
+
+	async getFileMeta(path: string): Promise<{ sha: string }> {
+		const response = await fetch(this.repoPath(`/contents/${encodePath(path)}`), {
+			headers: authHeaders(this.token),
+		});
+
+		if (!response.ok) {
+			throw new Error(`Error al leer meta de «${path}» (${response.status})`);
+		}
+
+		const data = (await response.json()) as { sha?: string };
+		return { sha: data.sha ?? "" };
+	}
+
 	async listAllMarkdownFiles(): Promise<GitHubRemoteMarkdown[]> {
 		const refResponse = await fetch(
 			this.repoPath("/git/ref/heads/main"),

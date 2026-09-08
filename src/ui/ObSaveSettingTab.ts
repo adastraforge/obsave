@@ -942,6 +942,8 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					folderMode: "existing",
 				};
 				this.plugin.settings.syncedLedger = {};
+				await this.plugin.ledgerManager.load();
+				await this.plugin.ledgerManager.rebuildFromLocalVault();
 				this.plugin.settings.autoSyncEnabled = false;
 				await this.plugin.saveSettings();
 				this.display();
@@ -1036,6 +1038,42 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					});
 			});
 		}
+
+		new Setting(containerEl)
+			.setName("Reparar / Reconstruir Bóveda Remota")
+			.setDesc(
+				"Escanea la bóveda local, regenera el manifiesto ledger desde cero, limpia el almacenamiento remoto y vuelve a subir toda la estructura.",
+			)
+			.addButton((btn) =>
+				btn
+					.setButtonText("Reparar / Reconstruir Bóveda Remota")
+					.setWarning()
+					.onClick(async () => {
+						const confirmed = confirm(
+							"¿Reconstruir la bóveda remota desde cero? Se eliminará el contenido remoto actual y se subirá la copia local completa.",
+						);
+						if (!confirmed) {
+							return;
+						}
+						btn.setDisabled(true);
+						btn.setButtonText("Reconstruyendo…");
+						try {
+							new Notice("ObSave: Reconstruyendo bóveda remota…");
+							await this.plugin.repairRemoteVault();
+							new Notice("ObSave: Bóveda remota reconstruida.");
+						} catch (error) {
+							const message =
+								error instanceof Error
+									? error.message
+									: "Error al reconstruir bóveda remota";
+							new Notice(`ObSave: ${message}`);
+						} finally {
+							btn.setDisabled(false);
+							btn.setButtonText("Reparar / Reconstruir Bóveda Remota");
+							this.display();
+						}
+					}),
+			);
 	}
 
 	private async handleSetupResult(result: {
@@ -1050,6 +1088,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 		if (result.githubConfig) {
 			this.plugin.settings.syncedLedger = {};
+			await this.plugin.ledgerManager.rebuildFromLocalVault();
 			this.plugin.settings.activeProvider = "github";
 			this.plugin.settings.providerConfig.github = result.githubConfig;
 			await this.plugin.saveSettings();

@@ -703,3 +703,22 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.41`
 
 ---
+
+## DEC-050 | 2026-09-08 | Manifiesto centralizado `.obsave/ledger.json`
+
+**Contexto:** Matriz 3 vías por archivo (`syncedLedger` en data.json) generaba complejidad, parpadeo en badges y consumo de red innecesario.
+
+**Decisión:**
+1. Ledger plano unificado (C/U/D/S) local + remoto en `.obsave/ledger.json`.
+2. SyncEngine: Paso 1 hash manifiesto (abort si idéntico y sin pendientes); Paso 2 pull/push C/U/D.
+3. Badges leen solo ledger en memoria; carpetas por agregación recursiva.
+4. Migración automática desde `syncedLedger` legacy; botón reparar reconstruye remoto desde cero.
+5. Regla uniproveedor GDrive/GitHub sin cambios; auth GDrive intacta.
+
+**Alternativas descartadas:**
+- Mantener matriz por archivo sin manifiesto remoto (alto consumo de listados).
+- CRDT/OT multi-dispositivo (fuera de alcance MVP).
+
+**Release:** `v1.1.0`
+
+---

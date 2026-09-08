@@ -108,7 +108,10 @@ export interface ObSaveSettings {
 	lastSyncAt: string | null;
 	syncStatus: SyncStatus;
 	/** Huella de archivos sincronizados con éxito (ruta vault → entrada) */
+	/** @deprecated v1.1 — migrado a `.obsidian/plugins/obsave/ledger.json` */
 	syncedLedger: Record<string, SyncLedgerEntry>;
+	/** Nombre del dispositivo en el manifiesto remoto */
+	deviceName?: string;
 	/** Sincronizar estructura de carpetas plantilla en el próximo ciclo o vía UI */
 	structureSyncNeeded?: boolean;
 }
@@ -121,6 +124,7 @@ export const DEFAULT_SETTINGS: ObSaveSettings = {
 	lastSyncAt: null,
 	syncStatus: "idle",
 	syncedLedger: {},
+	deviceName: "Obsidian",
 };
 
 /** Formato legacy pre-proveedor-único (migración desde data.json) */

@@ -7,10 +7,15 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.0.41`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.0.41`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.1.0`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.1.0`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Manifiesto centralizado ledger v1.1.0
+- Motor sync basado en `.obsave/ledger.json` (local: `.obsidian/plugins/obsave/ledger.json`).
+- Estados C/U/D/S; verificación ligera por hash; cola pendingAutoSync; badges solo desde ledger en memoria.
+- Herramienta «Reparar / Reconstruir Bóveda Remota» en ajustes.
 
 ### Fix auditoría P0/P1 v1.0.41
 - Sync reactivo debounce 3s, cola pendingAutoSync, trash Drive trashed:true, badges carpetas/archivos, folder sync fuera del hot path.

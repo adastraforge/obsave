@@ -1,14 +1,11 @@
-import { TFile, type App } from "obsidian";
+import { TFile, TFolder, type App } from "obsidian";
 import {
 	isProviderConfigured,
 	type CloudProviderId,
 	type ObSaveSettings,
-	type SyncLedgerEntry,
 } from "../settings";
-import type { GoogleDriveRemoteMarkdown } from "../providers/GoogleDriveProvider";
 import type { GoogleDriveLazyProvider } from "../providers/GoogleDriveLazyProvider";
 import type { GitHubProvider } from "../providers/GitHubProvider";
-import type { GitHubRemoteMarkdown } from "../oauth/GitHubProvider";
 import type { IStorageProvider, SyncResult } from "../providers/IStorageProvider";
 import type {
 	SyncEngineEvent,
@@ -17,6 +14,10 @@ import type {
 	SyncTrigger,
 } from "../types";
 import { hashContent } from "../utils/contentHash";
+import { LedgerManager } from "../ledger/LedgerManager";
+import { hashManifest } from "../ledger/manifestHash";
+import { RemoteManifestStore } from "../ledger/RemoteManifestStore";
+import type { LedgerEntry, LedgerManifest } from "../ledger/types";
 import {
 	syncTemplateFoldersToGitHub,
 	syncTemplateFoldersToGoogleDrive,
@@ -24,9 +25,10 @@ import {
 
 type SyncEngineListener = (event: SyncEngineEvent) => void;
 
+const GITKEEP = "";
+
 /**
- * Motor de sincronización — delega al proveedor de nube activo (único).
- * Google Drive: sync bidireccional con Sync Ledger y eliminación en ambos lados.
+ * Motor de sincronización v1.1 — manifiesto centralizado `.obsave/ledger.json`.
  */
 export class SyncEngine {
 	private status: SyncStatus = "idle";
@@ -35,14 +37,17 @@ export class SyncEngine {
 	private syncInFlight: Promise<void> | null = null;
 	private syncGeneration = 0;
 	private pendingAutoSync = false;
-	private pendingLocalPaths = new Map<string, number>();
-	private static readonly UPLOAD_GRACE_MS = 60_000;
+	private remoteStore: RemoteManifestStore;
+	private remoteLedgerId: string | undefined;
 
 	constructor(
 		private app: App,
 		private settings: ObSaveSettings,
 		private providers: Map<CloudProviderId, IStorageProvider>,
-	) {}
+		private ledgerManager: LedgerManager,
+	) {
+		this.remoteStore = new RemoteManifestStore(app, settings, providers);
+	}
 
 	on(listener: SyncEngineListener): () => void {
 		this.listeners.push(listener);
@@ -55,15 +60,14 @@ export class SyncEngine {
 		return this.status;
 	}
 
-	markPendingUpload(vaultPath: string): void {
-		this.pendingLocalPaths.set(vaultPath, Date.now());
+	getLedgerManager(): LedgerManager {
+		return this.ledgerManager;
 	}
 
 	requestStructureSync(): void {
 		this.settings.structureSyncNeeded = true;
 	}
 
-	/** Propaga carpetas plantilla vacías a Drive/GitHub si hay proveedor activo. */
 	async syncTemplateFoldersToCloud(): Promise<void> {
 		const providerId = this.settings.activeProvider;
 		if (!providerId) {
@@ -92,23 +96,9 @@ export class SyncEngine {
 		}
 	}
 
-	private shouldProtectLocalUpload(path: string, file: TFile): boolean {
-		const marked = this.pendingLocalPaths.get(path);
-		if (
-			marked != null &&
-			Date.now() - marked < SyncEngine.UPLOAD_GRACE_MS
-		) {
-			return true;
-		}
-		return file.stat.ctime > Date.now() - SyncEngine.UPLOAD_GRACE_MS;
-	}
-
-	private clearPendingUpload(path: string): void {
-		this.pendingLocalPaths.delete(path);
-	}
-
 	updateSettings(settings: ObSaveSettings): void {
 		this.settings = settings;
+		this.remoteStore.updateSettings(settings);
 	}
 
 	isConnected(): boolean {
@@ -137,7 +127,6 @@ export class SyncEngine {
 		return true;
 	}
 
-	/** Invalida sync en curso (p. ej. al desconectar). */
 	cancelActiveSync(): void {
 		this.syncGeneration++;
 	}
@@ -166,7 +155,6 @@ export class SyncEngine {
 		this.startAutoSync();
 	}
 
-	/** Punto de entrada canónico para sync manual y automática. */
 	async executeUnifiedSync(trigger: SyncTrigger): Promise<SyncRunResult> {
 		if (this.syncInFlight) {
 			if (trigger === "automatic") {
@@ -198,6 +186,14 @@ export class SyncEngine {
 		} while (this.pendingAutoSync);
 
 		return lastResult;
+	}
+
+	/** Escanea bóveda local, limpia remoto y reconstruye desde cero. */
+	async repairRemoteVault(): Promise<void> {
+		await this.ledgerManager.rebuildFromLocalVault();
+		await this.remoteStore.clearRemoteStorage();
+		this.remoteLedgerId = undefined;
+		await this.executeUnifiedSync("manual");
 	}
 
 	private async runOneSyncCycle(trigger: SyncTrigger): Promise<SyncRunResult> {
@@ -274,13 +270,10 @@ export class SyncEngine {
 		trigger: SyncTrigger,
 		generation: number,
 	): Promise<void> {
-		const providerId = this.settings.activeProvider!;
-		const provider = this.providers.get(providerId)!;
-
 		this.setStatus("syncing");
 
 		try {
-			const result = await this.runProviderSync(providerId, provider);
+			const result = await this.runLedgerSync();
 
 			if (generation !== this.syncGeneration) {
 				this.setStatus("idle");
@@ -328,783 +321,444 @@ export class SyncEngine {
 		}
 	}
 
-	private async runProviderSync(
-		providerId: CloudProviderId,
-		provider: IStorageProvider,
-	): Promise<SyncResult> {
+	private async runLedgerSync(): Promise<SyncResult> {
 		if (this.settings.structureSyncNeeded) {
 			await this.syncTemplateFoldersToCloud();
 			this.settings.structureSyncNeeded = false;
 		}
 
-		if (providerId === "gdrive") {
-			return this.runGoogleDriveBidirectionalSync(
-				provider as GoogleDriveLazyProvider,
-			);
-		}
-		if (providerId === "github") {
-			return this.runGitHubBidirectionalSync(provider as GitHubProvider);
-		}
-		return provider.sync();
-	}
-
-	private async runGoogleDriveBidirectionalSync(
-		provider: GoogleDriveLazyProvider,
-	): Promise<SyncResult> {
-		const folder = await provider.getOrCreateTargetFolder();
-		const remoteFiles = await provider.listAllMarkdownFiles(folder.folderId);
-		const remoteByPath = new Map(
-			remoteFiles.map((file) => [file.relativePath, file]),
-		);
-
-		const localFiles = this.app.vault.getMarkdownFiles();
-		const localByPath = new Map(localFiles.map((file) => [file.path, file]));
-
-		const ledger: Record<string, SyncLedgerEntry> = {
-			...this.settings.syncedLedger,
-		};
-
-		const allPaths = new Set<string>([
-			...localByPath.keys(),
-			...remoteByPath.keys(),
-			...Object.keys(ledger),
-		]);
-
-		let downloadedCount = 0;
-		let uploadedCount = 0;
-		let deletedCount = 0;
-
-		for (const path of allPaths) {
-			const inLocal = localByPath.has(path);
-			const inRemote = remoteByPath.has(path);
-			const ledgerEntry = ledger[path];
-			const inLedger = ledgerEntry != null;
-
-			if (!inLocal && inRemote && inLedger) {
-				const remote = remoteByPath.get(path)!;
-				const fileId = ledgerEntry.driveFileId ?? remote.id;
-				await provider.deleteFile(fileId);
-				delete ledger[path];
-				deletedCount++;
-				continue;
-			}
-
-			if (!inLocal && inRemote && !inLedger) {
-				await this.pullRemoteFile(provider, remoteByPath.get(path)!);
-				const pulled = this.app.vault.getAbstractFileByPath(path);
-				if (pulled instanceof TFile) {
-					const content = await this.app.vault.read(pulled);
-					ledger[path] = this.buildLedgerEntry(
-						content,
-						pulled.stat.mtime,
-						remoteByPath.get(path)!.id,
-						pulled.stat.size,
-						remoteByPath.get(path)!.modifiedTimeMs,
-						remoteByPath.get(path)!.size,
-					);
-				}
-				downloadedCount++;
-				continue;
-			}
-
-			if (inLocal && !inRemote && inLedger) {
-				const localFile = localByPath.get(path)!;
-				const outcome = await this.resolveLocalMissingOnRemoteGoogleDrive(
-					provider,
-					folder.folderId,
-					path,
-					localFile,
-					ledgerEntry!,
-					ledger,
-				);
-				if (outcome === "uploaded") uploadedCount++;
-				else if (outcome === "trashed") deletedCount++;
-				continue;
-			}
-
-			if (inLocal && !inRemote && !inLedger) {
-				const localFile = localByPath.get(path)!;
-				const content = await this.app.vault.read(localFile);
-				const driveFileId = await this.pushLocalFile(
-					provider,
-					folder.folderId,
-					path,
-					localFile,
-					undefined,
-					content,
-				);
-				if (driveFileId) {
-					ledger[path] = this.buildLedgerEntry(
-						content,
-						localFile.stat.mtime,
-						driveFileId,
-						localFile.stat.size,
-					);
-					uploadedCount++;
-				}
-				continue;
-			}
-
-			if (inLocal && inRemote) {
-				const changed = await this.syncBothPresent(
-					provider,
-					folder.folderId,
-					path,
-					localByPath.get(path)!,
-					remoteByPath.get(path)!,
-					ledgerEntry,
-				);
-
-				if (changed.action === "pull") {
-					downloadedCount++;
-				} else if (changed.action === "push") {
-					uploadedCount++;
-				}
-
-				ledger[path] = changed.entry;
-			}
+		if (!this.ledgerManager.isLoaded()) {
+			await this.ledgerManager.load();
 		}
 
-		this.settings.syncedLedger = ledger;
+		const localManifest = this.ledgerManager.getManifest();
+		const localHash = hashManifest(localManifest);
+		const remoteSnapshot = await this.remoteStore.fetchRemoteLedger();
 
-		const gdrive = this.settings.providerConfig.gdrive;
-		if (gdrive) {
-			const preserveUserFolder =
-				gdrive.folderMode === "existing" &&
-				!!gdrive.folderId &&
-				gdrive.folderId === folder.folderId;
-
-			this.settings.providerConfig.gdrive = {
-				...gdrive,
-				folderId: folder.folderId,
-				folderPath: preserveUserFolder
-					? (gdrive.folderPath ?? folder.folderPath)
-					: folder.folderPath,
-				folderName: preserveUserFolder
-					? (gdrive.folderName ?? folder.folderName)
-					: folder.folderName,
-				folderSelected: true,
-				folderMode: preserveUserFolder ? "existing" : gdrive.folderMode,
+		if (
+			remoteSnapshot.hash === localHash &&
+			!this.ledgerManager.hasPendingChanges()
+		) {
+			return {
+				message: "ObSave: Bóveda al día (sin cambios)",
+				noChanges: true,
+				downloadedCount: 0,
+				uploadedCount: 0,
 			};
 		}
 
-		const noChanges =
-			downloadedCount === 0 && uploadedCount === 0 && deletedCount === 0;
-		const message = noChanges
-			? "ObSave: Bóveda al día (sin cambios)"
-			: "¡Sincronización completada exitosamente!";
+		let downloadedCount = 0;
+		let uploadedCount = 0;
 
+		if (remoteSnapshot.manifest) {
+			const pulled = await this.applyRemoteManifestChanges(
+				remoteSnapshot.manifest,
+			);
+			downloadedCount += pulled;
+		}
+
+		const pushed = await this.pushLocalPendingChanges();
+		uploadedCount += pushed;
+
+		await this.ledgerManager.save();
+
+		const finalManifest = this.ledgerManager.getManifest();
+		this.remoteLedgerId = await this.remoteStore.uploadRemoteLedger(
+			finalManifest,
+			this.remoteLedgerId ?? remoteSnapshot.remoteId,
+		);
+
+		if (this.settings.activeProvider === "gdrive") {
+			await this.persistGoogleDriveFolderInfo();
+		}
+
+		const noChanges = downloadedCount === 0 && uploadedCount === 0;
 		return {
-			message,
+			message: noChanges
+				? "ObSave: Bóveda al día (sin cambios)"
+				: "¡Sincronización completada exitosamente!",
 			downloadedCount,
 			uploadedCount,
 			noChanges,
 		};
 	}
 
-	private async runGitHubBidirectionalSync(
-		provider: GitHubProvider,
-	): Promise<SyncResult> {
-		const remoteFiles = await provider.listAllMarkdownFiles();
-		const remoteByPath = new Map(
-			remoteFiles.map((file) => [file.relativePath, file]),
-		);
+	private async applyRemoteManifestChanges(
+		remote: LedgerManifest,
+	): Promise<number> {
+		let downloaded = 0;
 
-		const localFiles = this.app.vault.getMarkdownFiles();
-		const localByPath = new Map(localFiles.map((file) => [file.path, file]));
-
-		const ledger: Record<string, SyncLedgerEntry> = {
-			...this.settings.syncedLedger,
-		};
-
-		const allPaths = new Set<string>([
-			...localByPath.keys(),
-			...remoteByPath.keys(),
-			...Object.keys(ledger),
-		]);
-
-		let downloadedCount = 0;
-		let uploadedCount = 0;
-		let deletedCount = 0;
-
-		for (const path of allPaths) {
-			const inLocal = localByPath.has(path);
-			const inRemote = remoteByPath.has(path);
-			const ledgerEntry = ledger[path];
-
-			if (!inLocal && inRemote && ledgerEntry) {
-				const remote = remoteByPath.get(path)!;
-				const sha = ledgerEntry.driveFileId ?? remote.sha;
-				await provider.deleteRemoteFile(path, sha);
-				delete ledger[path];
-				deletedCount++;
+		for (const [path, remoteEntry] of Object.entries(remote.entries)) {
+			const localEntry = this.ledgerManager.getEntry(path);
+			if (
+				localEntry &&
+				(localEntry.status === "C" ||
+					localEntry.status === "U" ||
+					localEntry.status === "D")
+			) {
 				continue;
 			}
 
-			if (!inLocal && inRemote && !ledgerEntry) {
-				await this.pullRemoteGitHubFile(provider, remoteByPath.get(path)!);
-				const pulled = this.app.vault.getAbstractFileByPath(path);
-				if (pulled instanceof TFile) {
-					const content = await this.app.vault.read(pulled);
-					const remote = remoteByPath.get(path)!;
-					ledger[path] = this.buildLedgerEntry(
-						content,
-						pulled.stat.mtime,
-						remote.sha,
-						pulled.stat.size,
-						remote.modifiedTimeMs,
-						remote.size,
-					);
-				}
-				downloadedCount++;
+			if (remoteEntry.status === "D") {
+				await this.deleteLocalPath(path, remoteEntry);
+				this.ledgerManager.removeEntry(path);
+				this.removeDescendantEntries(path);
 				continue;
 			}
 
-			if (inLocal && !inRemote && ledgerEntry) {
-				const localFile = localByPath.get(path)!;
-				const outcome = await this.resolveLocalMissingOnRemoteGitHub(
-					provider,
-					path,
-					localFile,
-					ledgerEntry,
-					ledger,
-				);
-				if (outcome === "uploaded") uploadedCount++;
-				else if (outcome === "trashed") deletedCount++;
-				continue;
-			}
-
-			if (inLocal && !inRemote && !ledgerEntry) {
-				const localFile = localByPath.get(path)!;
-				const content = await this.app.vault.read(localFile);
-				const sha = await provider.uploadRemoteFile(path, content);
-				if (sha) {
-					ledger[path] = this.buildLedgerEntry(
-						content,
-						localFile.stat.mtime,
-						sha,
-						localFile.stat.size,
-					);
-					uploadedCount++;
+			if (remoteEntry.status === "C" || remoteEntry.status === "U") {
+				if (remoteEntry.type === "folder") {
+					await this.ensureLocalFolder(path);
+					this.ledgerManager.markSynchronized(path, {
+						type: "folder",
+						remoteId: remoteEntry.remoteId,
+					});
+				} else {
+					const pulled = await this.pullRemoteFile(path, remoteEntry);
+					if (pulled) {
+						downloaded++;
+					}
 				}
 				continue;
 			}
 
-			if (inLocal && inRemote) {
-				const changed = await this.syncBothPresentGitHub(
-					provider,
-					path,
-					localByPath.get(path)!,
-					remoteByPath.get(path)!,
-					ledgerEntry,
-				);
-				if (changed.action === "pull") downloadedCount++;
-				else if (changed.action === "push") uploadedCount++;
-				ledger[path] = changed.entry;
+			if (remoteEntry.status === "S") {
+				this.ledgerManager.markSynchronized(path, remoteEntry);
 			}
 		}
 
-		this.settings.syncedLedger = ledger;
-
-		const noChanges =
-			downloadedCount === 0 && uploadedCount === 0 && deletedCount === 0;
-		const message = noChanges
-			? "ObSave: Bóveda al día (sin cambios)"
-			: "¡Sincronización completada exitosamente!";
-
-		return { message, downloadedCount, uploadedCount, noChanges };
+		return downloaded;
 	}
 
-	private async syncBothPresentGitHub(
-		provider: GitHubProvider,
-		path: string,
-		localFile: TFile,
-		remote: GitHubRemoteMarkdown,
-		ledgerEntry: SyncLedgerEntry | undefined,
-	): Promise<{ action: "none" | "pull" | "push"; entry: SyncLedgerEntry }> {
-		const localMtime = localFile.stat.mtime;
-		const localSize = localFile.stat.size;
-		const remoteMtime = remote.modifiedTimeMs;
-		const remoteSize = remote.size;
-
-		if (ledgerEntry) {
-			const localMetaMatches =
-				localMtime === ledgerEntry.mtime &&
-				(ledgerEntry.size == null || localSize === ledgerEntry.size);
-			const remoteMetaMatches =
-				remote.sha === ledgerEntry.driveFileId &&
-				(ledgerEntry.remoteMtime == null ||
-					remoteMtime === ledgerEntry.remoteMtime) &&
-				(ledgerEntry.remoteSize == null ||
-					remoteSize == null ||
-					remoteSize === ledgerEntry.remoteSize);
-
-			if (localMetaMatches && remoteMetaMatches) {
-				return {
-					action: "none",
-					entry: {
-						hash: ledgerEntry.hash,
-						mtime: localMtime,
-						size: localSize,
-						remoteMtime,
-						remoteSize,
-						driveFileId: remote.sha,
-					},
-				};
-			}
-		}
-
-		const localContent = await this.app.vault.read(localFile);
-		const localHash = hashContent(localContent);
-
-		if (ledgerEntry) {
-			const localMatchesLedger =
-				localHash === ledgerEntry.hash && localMtime === ledgerEntry.mtime;
-			const remoteMatchesLedger =
-				remote.sha === ledgerEntry.driveFileId &&
-				remoteMtime <= (ledgerEntry.remoteMtime ?? ledgerEntry.mtime);
-
-			if (localMatchesLedger && remoteMatchesLedger) {
-				return {
-					action: "none",
-					entry: {
-						hash: localHash,
-						mtime: localMtime,
-						size: localSize,
-						remoteMtime,
-						remoteSize,
-						driveFileId: remote.sha,
-					},
-				};
-			}
-		}
-
-		const pushLocal =
-			!ledgerEntry ||
-			localMtime > remoteMtime ||
-			(localHash !== ledgerEntry.hash && localMtime >= remoteMtime);
-
-		if (pushLocal) {
-			const sha = await provider.uploadRemoteFile(
-				path,
-				localContent,
-				remote.sha,
-			);
-			return {
-				action: "push",
-				entry: {
-					hash: localHash,
-					mtime: localMtime,
-					size: localSize,
-					remoteMtime,
-					remoteSize,
-					driveFileId: sha,
-				},
-			};
-		}
-
-		await this.pullRemoteGitHubFile(provider, remote);
-		const pulled = this.app.vault.getAbstractFileByPath(path);
-		if (pulled instanceof TFile) {
-			const content = await this.app.vault.read(pulled);
-			return {
-				action: "pull",
-				entry: this.buildLedgerEntry(
-					content,
-					pulled.stat.mtime,
-					remote.sha,
-					pulled.stat.size,
-					remoteMtime,
-					remoteSize,
-				),
-			};
-		}
-
-		return {
-			action: "pull",
-			entry: this.buildLedgerEntry(
-				localContent,
-				localMtime,
-				remote.sha,
-				localSize,
-				remoteMtime,
-				remoteSize,
-			),
-		};
-	}
-
-	private async resolveLocalMissingOnRemoteGoogleDrive(
-		provider: GoogleDriveLazyProvider,
-		rootFolderId: string,
-		path: string,
-		localFile: TFile,
-		ledgerEntry: SyncLedgerEntry,
-		ledger: Record<string, SyncLedgerEntry>,
-	): Promise<"uploaded" | "trashed"> {
-		if (this.shouldProtectLocalUpload(path, localFile)) {
-			await this.uploadLocalToGoogleDrive(
-				provider,
-				rootFolderId,
-				path,
-				localFile,
-				ledger,
-				ledgerEntry.driveFileId,
-			);
-			return "uploaded";
-		}
-
-		const remoteId = ledgerEntry.driveFileId;
-		if (remoteId) {
-			// GET /files/{id} — trash local solo con 404 confirmado (borrado explícito en Drive).
-			const confirmedDeleted =
-				await provider.confirmDriveFileDeleted(remoteId);
-			if (!confirmedDeleted) {
-				await this.uploadLocalToGoogleDrive(
-					provider,
-					rootFolderId,
-					path,
-					localFile,
-					ledger,
-					remoteId,
-				);
-				return "uploaded";
-			}
-
-			await this.app.vault.trash(localFile, true);
-			delete ledger[path];
-			this.clearPendingUpload(path);
-			this.notifyVisualRefresh();
-			return "trashed";
-		}
-
-		await this.uploadLocalToGoogleDrive(
-			provider,
-			rootFolderId,
-			path,
-			localFile,
-			ledger,
-			undefined,
+	private async pushLocalPendingChanges(): Promise<number> {
+		let uploaded = 0;
+		const pending = [...this.ledgerManager.pendingPaths()].sort(
+			(a, b) => a.length - b.length,
 		);
-		return "uploaded";
-	}
 
-	private async resolveLocalMissingOnRemoteGitHub(
-		provider: GitHubProvider,
-		path: string,
-		localFile: TFile,
-		ledgerEntry: SyncLedgerEntry,
-		ledger: Record<string, SyncLedgerEntry>,
-	): Promise<"uploaded" | "trashed"> {
-		if (this.shouldProtectLocalUpload(path, localFile)) {
-			await this.uploadLocalToGitHub(
-				provider,
-				path,
-				localFile,
-				ledger,
-				ledgerEntry.driveFileId,
-			);
-			return "uploaded";
-		}
+		for (const path of pending) {
+			const entry = this.ledgerManager.getEntry(path);
+			if (!entry) {
+				continue;
+			}
 
-		const confirmedDeleted = await provider.confirmRemotePathDeleted(path);
-		if (!confirmedDeleted) {
-			await this.uploadLocalToGitHub(
-				provider,
-				path,
-				localFile,
-				ledger,
-				ledgerEntry.driveFileId,
-			);
-			return "uploaded";
-		}
+			if (entry.status === "D") {
+				await this.deleteRemotePath(path, entry);
+				this.ledgerManager.removeEntry(path);
+				this.removeDescendantEntries(path);
+				continue;
+			}
 
-		await this.app.vault.trash(localFile, true);
-		delete ledger[path];
-		this.clearPendingUpload(path);
-		this.notifyVisualRefresh();
-		return "trashed";
-	}
+			if (entry.type === "folder") {
+				const remoteId = await this.pushRemoteFolder(path, entry);
+				if (remoteId) {
+					this.ledgerManager.markSynchronized(path, {
+						type: "folder",
+						remoteId,
+					});
+					uploaded++;
+				}
+				continue;
+			}
 
-	private async uploadLocalToGoogleDrive(
-		provider: GoogleDriveLazyProvider,
-		rootFolderId: string,
-		path: string,
-		localFile: TFile,
-		ledger: Record<string, SyncLedgerEntry>,
-		existingFileId?: string,
-	): Promise<void> {
-		const content = await this.app.vault.read(localFile);
-		const driveFileId = await this.pushLocalFile(
-			provider,
-			rootFolderId,
-			path,
-			localFile,
-			existingFileId,
-			content,
-		);
-		if (!driveFileId) {
-			console.warn(`[ObSave] Upload sin driveFileId confirmado: ${path}`);
-			return;
-		}
-		ledger[path] = this.buildLedgerEntry(
-			content,
-			localFile.stat.mtime,
-			driveFileId,
-			localFile.stat.size,
-		);
-		this.clearPendingUpload(path);
-	}
-
-	private async uploadLocalToGitHub(
-		provider: GitHubProvider,
-		path: string,
-		localFile: TFile,
-		ledger: Record<string, SyncLedgerEntry>,
-		existingSha?: string,
-	): Promise<void> {
-		const content = await this.app.vault.read(localFile);
-		const sha = await provider.uploadRemoteFile(path, content, existingSha);
-		if (!sha) {
-			console.warn(`[ObSave] Upload GitHub sin SHA confirmado: ${path}`);
-			return;
-		}
-		ledger[path] = this.buildLedgerEntry(
-			content,
-			localFile.stat.mtime,
-			sha,
-			localFile.stat.size,
-		);
-		this.clearPendingUpload(path);
-	}
-
-	private async pullRemoteGitHubFile(
-		provider: GitHubProvider,
-		remote: GitHubRemoteMarkdown,
-	): Promise<void> {
-		const content = await provider.downloadRemoteFile(remote.relativePath);
-		const dirPath = remote.relativePath.includes("/")
-			? remote.relativePath.slice(0, remote.relativePath.lastIndexOf("/"))
-			: "";
-		await this.ensureLocalFolderPath(dirPath);
-		const existing = this.app.vault.getAbstractFileByPath(remote.relativePath);
-		if (existing instanceof TFile) {
-			await this.app.vault.modify(existing, content);
-		} else {
-			await this.app.vault.create(remote.relativePath, content);
-		}
-	}
-
-	private async syncBothPresent(
-		provider: GoogleDriveLazyProvider,
-		rootFolderId: string,
-		path: string,
-		localFile: TFile,
-		remote: GoogleDriveRemoteMarkdown,
-		ledgerEntry: SyncLedgerEntry | undefined,
-	): Promise<{ action: "none" | "pull" | "push"; entry: SyncLedgerEntry }> {
-		const localMtime = localFile.stat.mtime;
-		const localSize = localFile.stat.size;
-		const remoteMtime = remote.modifiedTimeMs;
-		const remoteSize = remote.size;
-
-		if (ledgerEntry) {
-			const localMetaMatches =
-				localMtime === ledgerEntry.mtime &&
-				(ledgerEntry.size == null || localSize === ledgerEntry.size);
-			const remoteMetaMatches =
-				remote.id === ledgerEntry.driveFileId &&
-				(ledgerEntry.remoteMtime == null ||
-					remoteMtime === ledgerEntry.remoteMtime) &&
-				(ledgerEntry.remoteSize == null ||
-					remoteSize == null ||
-					remoteSize === ledgerEntry.remoteSize);
-
-			if (localMetaMatches && remoteMetaMatches) {
-				return {
-					action: "none",
-					entry: {
-						hash: ledgerEntry.hash,
-						mtime: localMtime,
-						size: localSize,
-						remoteMtime,
-						remoteSize,
-						driveFileId: remote.id,
-					},
-				};
+			const pushed = await this.pushRemoteFile(path, entry);
+			if (pushed) {
+				uploaded++;
 			}
 		}
 
-		const localContent = await this.app.vault.read(localFile);
-		const localHash = hashContent(localContent);
-
-		if (ledgerEntry) {
-			const localMatchesLedger =
-				localHash === ledgerEntry.hash && localMtime === ledgerEntry.mtime;
-			const remoteMatchesLedger =
-				remote.id === ledgerEntry.driveFileId &&
-				remoteMtime <= (ledgerEntry.remoteMtime ?? ledgerEntry.mtime);
-
-			if (localMatchesLedger && remoteMatchesLedger) {
-				return {
-					action: "none",
-					entry: {
-						hash: localHash,
-						mtime: localMtime,
-						size: localSize,
-						remoteMtime,
-						remoteSize,
-						driveFileId: remote.id,
-					},
-				};
-			}
-		}
-
-		const pushLocal =
-			!ledgerEntry ||
-			localMtime > remoteMtime ||
-			(localHash !== ledgerEntry.hash && localMtime >= remoteMtime);
-
-		if (pushLocal) {
-			await this.pushLocalFile(
-				provider,
-				rootFolderId,
-				path,
-				localFile,
-				remote.id,
-				localContent,
-			);
-			const refreshed = this.app.vault.getAbstractFileByPath(path);
-			const mtime =
-				refreshed instanceof TFile ? refreshed.stat.mtime : localMtime;
-			const size =
-				refreshed instanceof TFile ? refreshed.stat.size : localSize;
-			return {
-				action: "push",
-				entry: {
-					hash: localHash,
-					mtime,
-					size,
-					remoteMtime,
-					remoteSize,
-					driveFileId: remote.id,
-				},
-			};
-		}
-
-		await this.pullRemoteFile(provider, remote);
-		const pulled = this.app.vault.getAbstractFileByPath(path);
-		if (pulled instanceof TFile) {
-			const content = await this.app.vault.read(pulled);
-			return {
-				action: "pull",
-				entry: this.buildLedgerEntry(
-					content,
-					pulled.stat.mtime,
-					remote.id,
-					pulled.stat.size,
-					remoteMtime,
-					remoteSize,
-				),
-			};
-		}
-
-		return {
-			action: "pull",
-			entry: this.buildLedgerEntry(
-				localContent,
-				localMtime,
-				remote.id,
-				localSize,
-				remoteMtime,
-				remoteSize,
-			),
-		};
+		return uploaded;
 	}
 
 	private async pullRemoteFile(
-		provider: GoogleDriveLazyProvider,
-		remote: GoogleDriveRemoteMarkdown,
-	): Promise<void> {
-		const content = await provider.downloadFile(remote.id);
-		const dirPath = remote.relativePath.includes("/")
-			? remote.relativePath.slice(0, remote.relativePath.lastIndexOf("/"))
-			: "";
+		path: string,
+		entry: LedgerEntry,
+	): Promise<boolean> {
+		const providerId = this.settings.activeProvider!;
 
-		await this.ensureLocalFolderPath(dirPath);
-
-		const existing = this.app.vault.getAbstractFileByPath(remote.relativePath);
-		if (existing instanceof TFile) {
-			await this.app.vault.modify(existing, content);
-		} else {
-			await this.app.vault.create(remote.relativePath, content);
-		}
-	}
-
-	private async pushLocalFile(
-		provider: GoogleDriveLazyProvider,
-		rootFolderId: string,
-		vaultPath: string,
-		localFile: TFile,
-		existingFileId?: string,
-		content?: string,
-	): Promise<string> {
-		const pathParts = vaultPath.split("/");
-		const fileName = pathParts.pop() ?? vaultPath;
-		const relativeDir = pathParts.join("/");
-
-		const parentFolderId = relativeDir
-			? await provider.resolveOrCreateFolderPath(rootFolderId, relativeDir)
-			: rootFolderId;
-
-		const fileContent = content ?? (await this.app.vault.read(localFile));
-		const fileId = await provider.uploadFile(
-			fileName,
-			fileContent,
-			parentFolderId,
-			existingFileId,
-		);
-
-		if (fileId) {
-			return fileId;
+		if (providerId === "gdrive") {
+			const provider = this.providers.get("gdrive") as GoogleDriveLazyProvider;
+			const remoteId = entry.remoteId;
+			if (!remoteId) {
+				return false;
+			}
+			const content = await provider.downloadFile(remoteId);
+			await this.ensureLocalFolder(this.parentPath(path));
+			const existing = this.app.vault.getAbstractFileByPath(path);
+			if (existing instanceof TFile) {
+				await this.app.vault.modify(existing, content);
+			} else {
+				await this.app.vault.create(path, content);
+			}
+			const file = this.app.vault.getAbstractFileByPath(path);
+			if (file instanceof TFile) {
+				this.ledgerManager.markSynchronized(path, {
+					type: "file",
+					remoteId,
+					hash: hashContent(content),
+					mtime: file.stat.mtime,
+					size: file.stat.size,
+				});
+			}
+			return true;
 		}
 
-		const remoteFiles = await provider.listFiles(parentFolderId);
-		const created = remoteFiles.find((file) => file.name === fileName);
-		return created?.id ?? existingFileId ?? "";
+		if (providerId === "github") {
+			const provider = this.providers.get("github") as GitHubProvider;
+			const content = await provider.downloadRemoteFile(path);
+			await this.ensureLocalFolder(this.parentPath(path));
+			const existing = this.app.vault.getAbstractFileByPath(path);
+			if (existing instanceof TFile) {
+				await this.app.vault.modify(existing, content);
+			} else {
+				await this.app.vault.create(path, content);
+			}
+			const meta = await provider.getApiClient().getFileMeta(path);
+			const file = this.app.vault.getAbstractFileByPath(path);
+			if (file instanceof TFile) {
+				this.ledgerManager.markSynchronized(path, {
+					type: "file",
+					remoteId: meta.sha,
+					hash: hashContent(content),
+					mtime: file.stat.mtime,
+					size: file.stat.size,
+				});
+			}
+			return true;
+		}
+
+		return false;
 	}
 
-	private buildLedgerEntry(
-		content: string,
-		mtime: number,
-		driveFileId?: string,
-		size?: number,
-		remoteMtime?: number,
-		remoteSize?: number,
-	): SyncLedgerEntry {
-		return {
-			hash: hashContent(content),
-			mtime,
-			size,
-			remoteMtime,
-			remoteSize,
-			driveFileId: driveFileId || undefined,
-		};
+	private async pushRemoteFile(
+		path: string,
+		entry: LedgerEntry,
+	): Promise<boolean> {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			this.ledgerManager.removeEntry(path);
+			return false;
+		}
+
+		const content = await this.app.vault.read(file);
+		const hash = hashContent(content);
+		const providerId = this.settings.activeProvider!;
+
+		if (providerId === "gdrive") {
+			const provider = this.providers.get("gdrive") as GoogleDriveLazyProvider;
+			const root = await provider.getOrCreateTargetFolder();
+			const pathParts = path.split("/");
+			const fileName = pathParts.pop() ?? path;
+			const relativeDir = pathParts.join("/");
+			const parentId = relativeDir
+				? await provider.resolveOrCreateFolderPath(root.folderId, relativeDir)
+				: root.folderId;
+
+			const remoteId = await provider.uploadFile(
+				fileName,
+				content,
+				parentId,
+				entry.remoteId,
+			);
+
+			this.ledgerManager.markSynchronized(path, {
+				type: "file",
+				remoteId,
+				hash,
+				mtime: file.stat.mtime,
+				size: file.stat.size,
+			});
+			return true;
+		}
+
+		if (providerId === "github") {
+			const provider = this.providers.get("github") as GitHubProvider;
+			const sha = await provider.uploadRemoteFile(
+				path,
+				content,
+				entry.remoteId,
+			);
+			this.ledgerManager.markSynchronized(path, {
+				type: "file",
+				remoteId: sha,
+				hash,
+				mtime: file.stat.mtime,
+				size: file.stat.size,
+			});
+			return true;
+		}
+
+		return false;
 	}
 
-	private async ensureLocalFolderPath(dirPath: string): Promise<void> {
-		if (!dirPath) {
+	private async pushRemoteFolder(
+		path: string,
+		entry: LedgerEntry,
+	): Promise<string | undefined> {
+		const providerId = this.settings.activeProvider!;
+
+		if (providerId === "gdrive") {
+			const provider = this.providers.get("gdrive") as GoogleDriveLazyProvider;
+			const root = await provider.getOrCreateTargetFolder();
+			const folderId = await provider.resolveOrCreateFolderPath(
+				root.folderId,
+				path,
+			);
+			return folderId;
+		}
+
+		if (providerId === "github") {
+			const folder = this.app.vault.getAbstractFileByPath(path);
+			if (folder instanceof TFolder && folder.children.length === 0) {
+				const gitkeepPath = `${path}/.gitkeep`;
+				const provider = this.providers.get("github") as GitHubProvider;
+				const existing = this.ledgerManager.getEntry(gitkeepPath);
+				const sha = await provider.uploadRemoteFile(
+					gitkeepPath,
+					GITKEEP,
+					existing?.remoteId,
+				);
+				return sha || path;
+			}
+			return entry.remoteId ?? path;
+		}
+
+		return undefined;
+	}
+
+	private async deleteLocalPath(path: string, entry: LedgerEntry): Promise<void> {
+		const node = this.app.vault.getAbstractFileByPath(path);
+		if (!node) {
 			return;
 		}
 
+		if (entry.type === "folder" && node instanceof TFolder) {
+			await this.app.vault.trash(node, true);
+			return;
+		}
+
+		if (node instanceof TFile) {
+			await this.app.vault.trash(node, true);
+		}
+	}
+
+	private async deleteRemotePath(path: string, entry: LedgerEntry): Promise<void> {
+		const providerId = this.settings.activeProvider!;
+
+		if (entry.type === "folder") {
+			await this.deleteRemoteFolderRecursive(path);
+			return;
+		}
+
+		if (providerId === "gdrive") {
+			const remoteId = entry.remoteId;
+			if (!remoteId) {
+				return;
+			}
+			const provider = this.providers.get("gdrive") as GoogleDriveLazyProvider;
+			await provider.deleteFile(remoteId);
+			return;
+		}
+
+		if (providerId === "github") {
+			const provider = this.providers.get("github") as GitHubProvider;
+			if (entry.remoteId) {
+				await provider.deleteRemoteFile(path, entry.remoteId);
+			}
+		}
+	}
+
+	private async deleteRemoteFolderRecursive(folderPath: string): Promise<void> {
+		const prefix = `${folderPath}/`;
+		const providerId = this.settings.activeProvider!;
+
+		const childPaths = Object.keys(this.ledgerManager.getEntries())
+			.filter((key) => key.startsWith(prefix))
+			.sort((a, b) => b.length - a.length);
+
+		for (const childPath of childPaths) {
+			const child = this.ledgerManager.getEntry(childPath);
+			if (!child || child.status !== "D") {
+				continue;
+			}
+			await this.deleteRemotePath(childPath, child);
+		}
+
+		const entry = this.ledgerManager.getEntry(folderPath);
+		if (!entry) {
+			return;
+		}
+
+		if (providerId === "gdrive" && entry.remoteId) {
+			const provider = this.providers.get("gdrive") as GoogleDriveLazyProvider;
+			await provider.deleteFile(entry.remoteId);
+			return;
+		}
+
+		if (providerId === "github") {
+			const provider = this.providers.get("github") as GitHubProvider;
+			const gitkeepPath = `${folderPath}/.gitkeep`;
+			const gitkeepEntry = this.ledgerManager.getEntry(gitkeepPath);
+			if (gitkeepEntry?.remoteId) {
+				await provider.deleteRemoteFile(gitkeepPath, gitkeepEntry.remoteId);
+			}
+		}
+	}
+
+	private removeDescendantEntries(folderPath: string): void {
+		const prefix = `${folderPath}/`;
+		for (const key of Object.keys(this.ledgerManager.getEntries())) {
+			if (key.startsWith(prefix)) {
+				this.ledgerManager.removeEntry(key);
+			}
+		}
+	}
+
+	private async ensureLocalFolder(dirPath: string): Promise<void> {
+		if (!dirPath) {
+			return;
+		}
 		const segments = dirPath.split("/").filter(Boolean);
 		let current = "";
-
 		for (const segment of segments) {
 			current = current ? `${current}/${segment}` : segment;
 			if (!this.app.vault.getAbstractFileByPath(current)) {
 				await this.app.vault.createFolder(current);
+				this.ledgerManager.trackFolder(current);
 			}
 		}
+	}
+
+	private parentPath(path: string): string {
+		const idx = path.lastIndexOf("/");
+		return idx >= 0 ? path.slice(0, idx) : "";
+	}
+
+	private async persistGoogleDriveFolderInfo(): Promise<void> {
+		const provider = this.providers.get("gdrive") as GoogleDriveLazyProvider;
+		const folder = await provider.getOrCreateTargetFolder();
+		const gdrive = this.settings.providerConfig.gdrive;
+		if (!gdrive) {
+			return;
+		}
+
+		const preserveUserFolder =
+			gdrive.folderMode === "existing" &&
+			!!gdrive.folderId &&
+			gdrive.folderId === folder.folderId;
+
+		this.settings.providerConfig.gdrive = {
+			...gdrive,
+			folderId: folder.folderId,
+			folderPath: preserveUserFolder
+				? (gdrive.folderPath ?? folder.folderPath)
+				: folder.folderPath,
+			folderName: preserveUserFolder
+				? (gdrive.folderName ?? folder.folderName)
+				: folder.folderName,
+			folderSelected: true,
+			folderMode: preserveUserFolder ? "existing" : gdrive.folderMode,
+		};
 	}
 
 	private notifyVisualRefresh(): void {

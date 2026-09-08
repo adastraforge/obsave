@@ -67,6 +67,10 @@ export function mergeStoredSettings(
 				? migrated.syncStatus
 				: DEFAULT_SETTINGS.syncStatus,
 		syncedLedger: migrateSyncedLedger(migrated),
+		deviceName:
+			typeof migrated.deviceName === "string" && migrated.deviceName.trim()
+				? migrated.deviceName.trim()
+				: DEFAULT_SETTINGS.deviceName,
 		structureSyncNeeded:
 			typeof migrated.structureSyncNeeded === "boolean"
 				? migrated.structureSyncNeeded

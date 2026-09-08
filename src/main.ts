@@ -1,5 +1,6 @@
-import { Notice, Plugin, setIcon, TFile } from "obsidian";
+import { Notice, Plugin, setIcon, TAbstractFile, TFile, TFolder } from "obsidian";
 import { SyncEngine } from "./engine/SyncEngine";
+import { LedgerManager } from "./ledger/LedgerManager";
 import {
 	createProviderRegistry,
 	GitHubProvider,
@@ -27,6 +28,7 @@ import {
 export default class ObSavePlugin extends Plugin {
 	settings: ObSaveSettings = DEFAULT_SETTINGS;
 	syncEngine!: SyncEngine;
+	ledgerManager!: LedgerManager;
 	private githubProvider!: GitHubProvider;
 	private googleDriveLazy!: GoogleDriveLazyProvider;
 	private providers!: Map<CloudProviderId, IStorageProvider>;
@@ -39,6 +41,14 @@ export default class ObSavePlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+
+		this.ledgerManager = new LedgerManager(this.app, () =>
+			this.settings.deviceName?.trim() || "Obsidian",
+		);
+		await this.ledgerManager.load();
+		await this.ledgerManager.migrateFromLegacyLedger(
+			this.settings.syncedLedger,
+		);
 
 		this.githubProvider = new GitHubProvider(this.app);
 		this.googleDriveLazy = new GoogleDriveLazyProvider();
@@ -54,7 +64,12 @@ export default class ObSavePlugin extends Plugin {
 			this.githubProvider,
 			this.googleDriveLazy,
 		);
-		this.syncEngine = new SyncEngine(this.app, this.settings, this.providers);
+		this.syncEngine = new SyncEngine(
+			this.app,
+			this.settings,
+			this.providers,
+			this.ledgerManager,
+		);
 
 		try {
 			const githubConfig = getGitHubConfig(this.settings);
@@ -180,7 +195,6 @@ export default class ObSavePlugin extends Plugin {
 		void this.refreshDecoratorsImmediate();
 	}
 
-	/** Guarda config GDrive sin cargar módulos OAuth/Node hasta sync o botón conectar. */
 	private applyPendingGoogleDriveConfig(): void {
 		try {
 			const gdriveConfig = getGoogleDriveConfig(this.settings);
@@ -205,12 +219,10 @@ export default class ObSavePlugin extends Plugin {
 		return !!this.googleDriveLazy;
 	}
 
-	/** Refresco diferido de puntos de estado en el Explorador. */
 	refreshDecorators(): void {
 		this.fileDecorators?.requestRefresh();
 	}
 
-	/** Refresco inmediato tras sync o cambios de configuración. */
 	refreshDecoratorsImmediate(): Promise<void> {
 		return this.fileDecorators?.refresh() ?? Promise.resolve();
 	}
@@ -219,7 +231,10 @@ export default class ObSavePlugin extends Plugin {
 		await this.syncEngine.executeUnifiedSync("manual");
 	}
 
-	/** Desconecta el proveedor activo y limpia credenciales de sesión */
+	async repairRemoteVault(): Promise<void> {
+		await this.syncEngine.repairRemoteVault();
+	}
+
 	async disconnectProvider(): Promise<void> {
 		this.syncEngine.cancelActiveSync();
 		this.stopAutoSync();
@@ -274,22 +289,94 @@ export default class ObSavePlugin extends Plugin {
 	}
 
 	private registerVaultSyncEvents(): void {
-		const onVaultChange = (file?: { path?: string; extension?: string }): void => {
-			if (file instanceof TFile && file.extension === "md") {
-				this.syncEngine.markPendingUpload(file.path);
+		const persistLedger = (): void => {
+			void this.ledgerManager.save();
+		};
+
+		this.registerEvent(
+			this.app.vault.on("create", (file) => {
+				void this.onVaultCreate(file).then(persistLedger);
+			}),
+		);
+
+		this.registerEvent(
+			this.app.vault.on("modify", (file) => {
+				void this.onVaultModify(file).then(persistLedger);
+			}),
+		);
+
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				this.onVaultDelete(file);
+				persistLedger();
+			}),
+		);
+
+		this.registerEvent(
+			this.app.vault.on("rename", (file, oldPath) => {
+				this.onVaultRename(file, oldPath);
+				persistLedger();
+			}),
+		);
+	}
+
+	private shouldTrackPath(path: string): boolean {
+		return !path.startsWith(".obsidian") && !path.startsWith(".obsave");
+	}
+
+	private async onVaultCreate(file: TAbstractFile): Promise<void> {
+		if (!this.shouldTrackPath(file.path)) {
+			return;
+		}
+
+		if (file instanceof TFolder) {
+			this.ledgerManager.trackFolder(file.path);
+		} else if (file instanceof TFile && file.extension === "md") {
+			await this.ledgerManager.trackFileFromDisk(file);
+		}
+
+		this.scheduleDebouncedSync();
+		void this.refreshDecoratorsImmediate();
+	}
+
+	private async onVaultModify(file: TAbstractFile): Promise<void> {
+		if (file instanceof TFile && file.extension === "md") {
+			if (!this.shouldTrackPath(file.path)) {
+				return;
 			}
+			await this.ledgerManager.trackFileFromDisk(file);
 			this.scheduleDebouncedSync();
 			if (this.syncEngine.getStatus() !== "syncing") {
 				void this.refreshDecoratorsImmediate();
 			}
-		};
+		}
+	}
 
-		this.registerEvent(this.app.vault.on("create", onVaultChange));
-		this.registerEvent(this.app.vault.on("modify", onVaultChange));
-		this.registerEvent(this.app.vault.on("delete", () => onVaultChange()));
-		this.registerEvent(
-			this.app.vault.on("rename", (file) => onVaultChange(file)),
-		);
+	private onVaultDelete(file: TAbstractFile): void {
+		if (!this.shouldTrackPath(file.path)) {
+			return;
+		}
+		this.ledgerManager.trackDelete(file);
+		this.scheduleDebouncedSync();
+		if (this.syncEngine.getStatus() !== "syncing") {
+			void this.refreshDecoratorsImmediate();
+		}
+	}
+
+	private onVaultRename(file: TAbstractFile, oldPath: string): void {
+		if (!this.shouldTrackPath(oldPath) && !this.shouldTrackPath(file.path)) {
+			return;
+		}
+		this.ledgerManager.renameEntry(oldPath, file.path);
+		if (file instanceof TFolder) {
+			this.ledgerManager.trackFolder(file.path);
+		} else if (file instanceof TFile && file.extension === "md") {
+			void this.ledgerManager.trackFileFromDisk(file);
+		}
+		this.scheduleDebouncedSync();
+		if (this.syncEngine.getStatus() !== "syncing") {
+			void this.refreshDecoratorsImmediate();
+		}
 	}
 
 	openObSavePanel(): void {

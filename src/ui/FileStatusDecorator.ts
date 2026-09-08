@@ -1,7 +1,7 @@
 import type ObSavePlugin from "../main";
 import { isProviderConfigured } from "../types";
 import type { FileSyncStatus } from "../types";
-import { hashContent } from "../utils/contentHash";
+import type { LedgerEntry } from "../ledger/types";
 
 const DOT_CLASS = "obsave-dot";
 
@@ -12,8 +12,7 @@ interface FileExplorerEntry {
 }
 
 /**
- * Badges de color en el Explorador de Archivos según estado de sync:
- * 🔴 nuevo local · 🟡 modificado pendiente · 🟢 sincronizado
+ * Badges de color en el Explorador — leen exclusivamente el ledger local en memoria.
  */
 export class ObSaveFileStatusDecorator {
 	private refreshTimer: number | null = null;
@@ -33,12 +32,11 @@ export class ObSaveFileStatusDecorator {
 	}
 
 	async refresh(): Promise<void> {
-		const fileStatuses = await this.getMarkdownFileStatuses();
+		const fileStatuses = this.computeFileStatuses();
 		const folderStatuses = this.computeFolderStatuses(fileStatuses);
 		this.applyDecorations(fileStatuses, folderStatuses);
 	}
 
-	/** Marca todas las notas y carpetas como rojas (desconexión / sin proveedor). */
 	async refreshDisconnected(): Promise<void> {
 		const fileStatuses = new Map<string, FileSyncStatus>();
 		for (const file of this.plugin.app.vault.getMarkdownFiles()) {
@@ -52,10 +50,6 @@ export class ObSaveFileStatusDecorator {
 	}
 
 	requestRefresh(): void {
-		if (this.plugin.syncEngine.getStatus() === "syncing") {
-			return;
-		}
-
 		if (this.refreshTimer !== null) {
 			window.clearTimeout(this.refreshTimer);
 		}
@@ -65,60 +59,49 @@ export class ObSaveFileStatusDecorator {
 		}, 400);
 	}
 
-	async getMarkdownFileStatuses(): Promise<Map<string, FileSyncStatus>> {
+	private computeFileStatuses(): Map<string, FileSyncStatus> {
+		const statuses = new Map<string, FileSyncStatus>();
+
 		if (!isProviderConfigured(this.plugin.settings)) {
-			const statuses = new Map<string, FileSyncStatus>();
 			for (const file of this.plugin.app.vault.getMarkdownFiles()) {
 				statuses.set(file.path, "new");
 			}
 			return statuses;
 		}
 
-		const active = this.plugin.settings.activeProvider;
-
-		if (active === "github" || active === "gdrive") {
-			return this.computeLedgerStatuses();
-		}
-
-		return new Map();
-	}
-
-	private hasValidRemoteId(entry: { driveFileId?: string } | undefined): boolean {
-		return !!entry?.driveFileId && entry.driveFileId.trim().length > 0;
-	}
-
-	private async computeLedgerStatuses(): Promise<Map<string, FileSyncStatus>> {
-		const statuses = new Map<string, FileSyncStatus>();
 		const isSyncing = this.plugin.syncEngine.getStatus() === "syncing";
-		const ledger = this.plugin.settings.syncedLedger ?? {};
+		const entries = this.plugin.ledgerManager.getEntries();
 
 		for (const file of this.plugin.app.vault.getMarkdownFiles()) {
-			const entry = ledger[file.path];
-
-			if (!entry || !this.hasValidRemoteId(entry)) {
-				statuses.set(file.path, "new");
-				continue;
-			}
-
-			if (isSyncing) {
-				statuses.set(file.path, "modified");
-				continue;
-			}
-
-			const sizeMatches =
-				entry.size == null || file.stat.size === entry.size;
-			if (file.stat.mtime !== entry.mtime || !sizeMatches) {
-				const content = await this.plugin.app.vault.read(file);
-				if (hashContent(content) !== entry.hash) {
-					statuses.set(file.path, "modified");
-					continue;
-				}
-			}
-
-			statuses.set(file.path, "synced");
+			statuses.set(
+				file.path,
+				this.mapLedgerStatus(entries[file.path], isSyncing),
+			);
 		}
 
 		return statuses;
+	}
+
+	private mapLedgerStatus(
+		entry: LedgerEntry | undefined,
+		isSyncing: boolean,
+	): FileSyncStatus {
+		if (isSyncing) {
+			return "modified";
+		}
+		if (!entry) {
+			return "new";
+		}
+		if (entry.status === "C") {
+			return "new";
+		}
+		if (entry.status === "U" || entry.status === "D") {
+			return "modified";
+		}
+		if (entry.status === "S" && entry.remoteId) {
+			return "synced";
+		}
+		return "new";
 	}
 
 	private computeFolderStatuses(
@@ -133,8 +116,19 @@ export class ObSaveFileStatusDecorator {
 			return folderStatuses;
 		}
 
+		const isSyncing = this.plugin.syncEngine.getStatus() === "syncing";
+		const entries = this.plugin.ledgerManager.getEntries();
+
 		for (const folder of this.plugin.app.vault.getAllFolders()) {
-			folderStatuses.set(folder.path, this.aggregateFolderStatus(folder.path, fileStatuses));
+			folderStatuses.set(
+				folder.path,
+				this.aggregateFolderStatus(
+					folder.path,
+					entries[folder.path],
+					fileStatuses,
+					isSyncing,
+				),
+			);
 		}
 
 		return folderStatuses;
@@ -142,21 +136,24 @@ export class ObSaveFileStatusDecorator {
 
 	private aggregateFolderStatus(
 		folderPath: string,
+		folderEntry: LedgerEntry | undefined,
 		fileStatuses: Map<string, FileSyncStatus>,
+		isSyncing: boolean,
 	): FileSyncStatus {
-		const prefix = folderPath ? `${folderPath}/` : "";
-		const descendants = [...fileStatuses.entries()].filter(
-			([filePath]) => filePath.startsWith(prefix) && filePath.length > prefix.length,
-		);
-
-		if (descendants.length === 0) {
-			return "synced";
+		if (isSyncing) {
+			return "modified";
 		}
+
+		const prefix = folderPath ? `${folderPath}/` : "";
+		const childFileStatuses = [...fileStatuses.entries()].filter(
+			([filePath]) =>
+				filePath.startsWith(prefix) && filePath.length > prefix.length,
+		);
 
 		let hasNew = false;
 		let hasModified = false;
 
-		for (const [, status] of descendants) {
+		for (const [, status] of childFileStatuses) {
 			if (status === "new") {
 				hasNew = true;
 			} else if (status === "modified") {
@@ -164,13 +161,42 @@ export class ObSaveFileStatusDecorator {
 			}
 		}
 
-		if (hasNew) {
+		const childFolders = this.plugin.app.vault
+			.getAllFolders()
+			.filter(
+				(f) =>
+					f.path.startsWith(prefix) &&
+					f.path.length > prefix.length &&
+					f.path !== folderPath,
+			);
+
+		for (const child of childFolders) {
+			const childStatus = this.aggregateFolderStatus(
+				child.path,
+				this.plugin.ledgerManager.getEntry(child.path),
+				fileStatuses,
+				isSyncing,
+			);
+			if (childStatus === "new") {
+				hasNew = true;
+			} else if (childStatus === "modified") {
+				hasModified = true;
+			}
+		}
+
+		if (folderEntry?.status === "C" || hasNew) {
 			return "new";
 		}
-		if (hasModified) {
+		if (folderEntry?.status === "U" || hasModified) {
 			return "modified";
 		}
-		return "synced";
+		if (folderEntry?.status === "S" && folderEntry.remoteId) {
+			return "synced";
+		}
+		if (!folderEntry && !hasNew && !hasModified && childFileStatuses.length === 0) {
+			return "synced";
+		}
+		return hasModified ? "modified" : hasNew ? "new" : "synced";
 	}
 
 	private applyDecorations(
