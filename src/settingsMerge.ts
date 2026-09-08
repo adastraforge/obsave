@@ -67,6 +67,10 @@ export function mergeStoredSettings(
 				? migrated.syncStatus
 				: DEFAULT_SETTINGS.syncStatus,
 		syncedLedger: migrateSyncedLedger(migrated),
+		structureSyncNeeded:
+			typeof migrated.structureSyncNeeded === "boolean"
+				? migrated.structureSyncNeeded
+				: false,
 	};
 }
 

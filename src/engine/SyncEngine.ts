@@ -34,6 +34,7 @@ export class SyncEngine {
 	private autoSyncIntervalId: number | null = null;
 	private syncInFlight: Promise<void> | null = null;
 	private syncGeneration = 0;
+	private pendingAutoSync = false;
 	private pendingLocalPaths = new Map<string, number>();
 	private static readonly UPLOAD_GRACE_MS = 60_000;
 
@@ -56,6 +57,10 @@ export class SyncEngine {
 
 	markPendingUpload(vaultPath: string): void {
 		this.pendingLocalPaths.set(vaultPath, Date.now());
+	}
+
+	requestStructureSync(): void {
+		this.settings.structureSyncNeeded = true;
 	}
 
 	/** Propaga carpetas plantilla vacías a Drive/GitHub si hay proveedor activo. */
@@ -164,16 +169,18 @@ export class SyncEngine {
 	/** Punto de entrada canónico para sync manual y automática. */
 	async executeUnifiedSync(trigger: SyncTrigger): Promise<SyncRunResult> {
 		if (this.syncInFlight) {
-			if (trigger === "manual") {
-				this.emit({
-					type: "sync-skipped",
-					status: this.status,
-					message: "ObSave: Sincronización ya en curso.",
-					timestamp: new Date().toISOString(),
-					trigger,
-					skippedReason: "already-syncing",
-				});
+			if (trigger === "automatic") {
+				this.pendingAutoSync = true;
+				return { ran: false, skippedReason: "already-syncing" };
 			}
+			this.emit({
+				type: "sync-skipped",
+				status: this.status,
+				message: "ObSave: Sincronización ya en curso.",
+				timestamp: new Date().toISOString(),
+				trigger,
+				skippedReason: "already-syncing",
+			});
 			return { ran: false, skippedReason: "already-syncing" };
 		}
 
@@ -182,6 +189,18 @@ export class SyncEngine {
 			return preflight;
 		}
 
+		let lastResult: SyncRunResult = { ran: true };
+
+		do {
+			this.pendingAutoSync = false;
+			lastResult = await this.runOneSyncCycle(trigger);
+			trigger = "automatic";
+		} while (this.pendingAutoSync);
+
+		return lastResult;
+	}
+
+	private async runOneSyncCycle(trigger: SyncTrigger): Promise<SyncRunResult> {
 		const generation = this.syncGeneration;
 		this.syncInFlight = this.runSyncCycle(trigger, generation).finally(() => {
 			this.syncInFlight = null;
@@ -313,6 +332,11 @@ export class SyncEngine {
 		providerId: CloudProviderId,
 		provider: IStorageProvider,
 	): Promise<SyncResult> {
+		if (this.settings.structureSyncNeeded) {
+			await this.syncTemplateFoldersToCloud();
+			this.settings.structureSyncNeeded = false;
+		}
+
 		if (providerId === "gdrive") {
 			return this.runGoogleDriveBidirectionalSync(
 				provider as GoogleDriveLazyProvider,
@@ -328,7 +352,6 @@ export class SyncEngine {
 		provider: GoogleDriveLazyProvider,
 	): Promise<SyncResult> {
 		const folder = await provider.getOrCreateTargetFolder();
-		await syncTemplateFoldersToGoogleDrive(provider);
 		const remoteFiles = await provider.listAllMarkdownFiles(folder.folderId);
 		const remoteByPath = new Map(
 			remoteFiles.map((file) => [file.relativePath, file]),
@@ -410,13 +433,15 @@ export class SyncEngine {
 					undefined,
 					content,
 				);
-				ledger[path] = this.buildLedgerEntry(
-					content,
-					localFile.stat.mtime,
-					driveFileId,
-					localFile.stat.size,
-				);
-				uploadedCount++;
+				if (driveFileId) {
+					ledger[path] = this.buildLedgerEntry(
+						content,
+						localFile.stat.mtime,
+						driveFileId,
+						localFile.stat.size,
+					);
+					uploadedCount++;
+				}
 				continue;
 			}
 
@@ -480,7 +505,6 @@ export class SyncEngine {
 	private async runGitHubBidirectionalSync(
 		provider: GitHubProvider,
 	): Promise<SyncResult> {
-		await syncTemplateFoldersToGitHub(this.app, provider);
 		const remoteFiles = await provider.listAllMarkdownFiles();
 		const remoteByPath = new Map(
 			remoteFiles.map((file) => [file.relativePath, file]),
@@ -554,13 +578,15 @@ export class SyncEngine {
 				const localFile = localByPath.get(path)!;
 				const content = await this.app.vault.read(localFile);
 				const sha = await provider.uploadRemoteFile(path, content);
-				ledger[path] = this.buildLedgerEntry(
-					content,
-					localFile.stat.mtime,
-					sha,
-					localFile.stat.size,
-				);
-				uploadedCount++;
+				if (sha) {
+					ledger[path] = this.buildLedgerEntry(
+						content,
+						localFile.stat.mtime,
+						sha,
+						localFile.stat.size,
+					);
+					uploadedCount++;
+				}
 				continue;
 			}
 
@@ -816,6 +842,10 @@ export class SyncEngine {
 			existingFileId,
 			content,
 		);
+		if (!driveFileId) {
+			console.warn(`[ObSave] Upload sin driveFileId confirmado: ${path}`);
+			return;
+		}
 		ledger[path] = this.buildLedgerEntry(
 			content,
 			localFile.stat.mtime,
@@ -834,6 +864,10 @@ export class SyncEngine {
 	): Promise<void> {
 		const content = await this.app.vault.read(localFile);
 		const sha = await provider.uploadRemoteFile(path, content, existingSha);
+		if (!sha) {
+			console.warn(`[ObSave] Upload GitHub sin SHA confirmado: ${path}`);
+			return;
+		}
 		ledger[path] = this.buildLedgerEntry(
 			content,
 			localFile.stat.mtime,

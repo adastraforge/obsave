@@ -109,6 +109,8 @@ export interface ObSaveSettings {
 	syncStatus: SyncStatus;
 	/** Huella de archivos sincronizados con éxito (ruta vault → entrada) */
 	syncedLedger: Record<string, SyncLedgerEntry>;
+	/** Sincronizar estructura de carpetas plantilla en el próximo ciclo o vía UI */
+	structureSyncNeeded?: boolean;
 }
 
 export const DEFAULT_SETTINGS: ObSaveSettings = {

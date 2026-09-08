@@ -689,3 +689,17 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.0.40`
 
 ---
+
+## DEC-049 | 2026-09-08 | Fix auditoría P0/P1 — sync reactivo y badges
+
+**Contexto:** Regresiones v1.0.40: timer descartaba ticks, badges verdes falsos, borrado Drive no propagaba (trashed), atajos Mod+Alt conflictivos.
+
+**Decisión:**
+1. Debounce 3s en vault events + cola `pendingAutoSync` post-`syncInFlight`.
+2. `confirmDriveFileDeleted` acepta 404 o `trashed:true`.
+3. Badge verde solo con `driveFileId` válido; badges agregados en carpetas.
+4. Folder sync solo vía botón UI o `structureSyncNeeded`; sin hotkeys default.
+
+**Release:** `v1.0.41`
+
+---

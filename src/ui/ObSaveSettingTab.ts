@@ -196,16 +196,20 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			"Herramientas y productividad",
 			"obsave-home-section-tools",
 			(section) => {
-				this.renderActionButton(section, "Nota rápida (1 clic)", "Mod+Alt+N", () =>
+				section.createEl("p", {
+					text: "Puedes personalizar los atajos de teclado para ObSave desde Ajustes → Atajos.",
+					cls: "setting-item-description",
+				});
+				this.renderActionButton(section, "Nota rápida (1 clic)", null, () =>
 					void createQuickDailyNote(this.app),
 				);
-				this.renderActionButton(section, "Captura de nota enriquecida", "Mod+Alt+M", () =>
+				this.renderActionButton(section, "Captura de nota enriquecida", null, () =>
 					new CaptureNoteModal(this.app).open(),
 				);
 				this.renderActionButton(
 					section,
 					"Informe operativo de bóveda",
-					"Mod+Alt+I",
+					null,
 					() => new VaultReportModal(this.app).open(),
 				);
 			},
@@ -252,6 +256,8 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		}
 		try {
 			await this.plugin.syncEngine.syncTemplateFoldersToCloud();
+			this.plugin.settings.structureSyncNeeded = false;
+			await this.plugin.saveSettings();
 			new Notice("ObSave: Estructura de carpetas sincronizada con la nube.");
 		} catch (error) {
 			const message =

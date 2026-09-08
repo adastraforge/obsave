@@ -8,6 +8,7 @@ const DOT_CLASS = "obsave-dot";
 interface FileExplorerEntry {
 	path: string;
 	anchor: HTMLElement;
+	kind: "file" | "folder";
 }
 
 /**
@@ -32,17 +33,22 @@ export class ObSaveFileStatusDecorator {
 	}
 
 	async refresh(): Promise<void> {
-		const statuses = await this.getMarkdownFileStatuses();
-		this.applyDecorations(statuses);
+		const fileStatuses = await this.getMarkdownFileStatuses();
+		const folderStatuses = this.computeFolderStatuses(fileStatuses);
+		this.applyDecorations(fileStatuses, folderStatuses);
 	}
 
-	/** Marca todas las notas como rojas (desconexión / sin proveedor). */
+	/** Marca todas las notas y carpetas como rojas (desconexión / sin proveedor). */
 	async refreshDisconnected(): Promise<void> {
-		const statuses = new Map<string, FileSyncStatus>();
+		const fileStatuses = new Map<string, FileSyncStatus>();
 		for (const file of this.plugin.app.vault.getMarkdownFiles()) {
-			statuses.set(file.path, "new");
+			fileStatuses.set(file.path, "new");
 		}
-		this.applyDecorations(statuses);
+		const folderStatuses = new Map<string, FileSyncStatus>();
+		for (const folder of this.plugin.app.vault.getAllFolders()) {
+			folderStatuses.set(folder.path, "new");
+		}
+		this.applyDecorations(fileStatuses, folderStatuses);
 	}
 
 	requestRefresh(): void {
@@ -70,18 +76,18 @@ export class ObSaveFileStatusDecorator {
 
 		const active = this.plugin.settings.activeProvider;
 
-		if (active === "github") {
-			return this.plugin.getGitHubProvider().getMarkdownFileStatuses();
-		}
-
-		if (active === "gdrive") {
-			return this.computeGoogleDriveStatuses();
+		if (active === "github" || active === "gdrive") {
+			return this.computeLedgerStatuses();
 		}
 
 		return new Map();
 	}
 
-	private async computeGoogleDriveStatuses(): Promise<Map<string, FileSyncStatus>> {
+	private hasValidRemoteId(entry: { driveFileId?: string } | undefined): boolean {
+		return !!entry?.driveFileId && entry.driveFileId.trim().length > 0;
+	}
+
+	private async computeLedgerStatuses(): Promise<Map<string, FileSyncStatus>> {
 		const statuses = new Map<string, FileSyncStatus>();
 		const isSyncing = this.plugin.syncEngine.getStatus() === "syncing";
 		const ledger = this.plugin.settings.syncedLedger ?? {};
@@ -89,13 +95,13 @@ export class ObSaveFileStatusDecorator {
 		for (const file of this.plugin.app.vault.getMarkdownFiles()) {
 			const entry = ledger[file.path];
 
-			if (!entry) {
+			if (!entry || !this.hasValidRemoteId(entry)) {
 				statuses.set(file.path, "new");
 				continue;
 			}
 
 			if (isSyncing) {
-				statuses.set(file.path, "synced");
+				statuses.set(file.path, "modified");
 				continue;
 			}
 
@@ -115,7 +121,62 @@ export class ObSaveFileStatusDecorator {
 		return statuses;
 	}
 
-	private applyDecorations(statuses: Map<string, FileSyncStatus>): void {
+	private computeFolderStatuses(
+		fileStatuses: Map<string, FileSyncStatus>,
+	): Map<string, FileSyncStatus> {
+		const folderStatuses = new Map<string, FileSyncStatus>();
+
+		if (!isProviderConfigured(this.plugin.settings)) {
+			for (const folder of this.plugin.app.vault.getAllFolders()) {
+				folderStatuses.set(folder.path, "new");
+			}
+			return folderStatuses;
+		}
+
+		for (const folder of this.plugin.app.vault.getAllFolders()) {
+			folderStatuses.set(folder.path, this.aggregateFolderStatus(folder.path, fileStatuses));
+		}
+
+		return folderStatuses;
+	}
+
+	private aggregateFolderStatus(
+		folderPath: string,
+		fileStatuses: Map<string, FileSyncStatus>,
+	): FileSyncStatus {
+		const prefix = folderPath ? `${folderPath}/` : "";
+		const descendants = [...fileStatuses.entries()].filter(
+			([filePath]) => filePath.startsWith(prefix) && filePath.length > prefix.length,
+		);
+
+		if (descendants.length === 0) {
+			return "synced";
+		}
+
+		let hasNew = false;
+		let hasModified = false;
+
+		for (const [, status] of descendants) {
+			if (status === "new") {
+				hasNew = true;
+			} else if (status === "modified") {
+				hasModified = true;
+			}
+		}
+
+		if (hasNew) {
+			return "new";
+		}
+		if (hasModified) {
+			return "modified";
+		}
+		return "synced";
+	}
+
+	private applyDecorations(
+		fileStatuses: Map<string, FileSyncStatus>,
+		folderStatuses: Map<string, FileSyncStatus>,
+	): void {
 		this.clearDecorations();
 
 		const explorerLeaves = this.plugin.app.workspace.getLeavesOfType(
@@ -126,25 +187,28 @@ export class ObSaveFileStatusDecorator {
 		}
 
 		for (const leaf of explorerLeaves) {
-			const entries = this.collectFileEntries(leaf.view.containerEl);
+			const entries = this.collectExplorerEntries(leaf.view.containerEl);
 
-			for (const { path, anchor } of entries) {
-				const status = statuses.get(path);
+			for (const { path, anchor, kind } of entries) {
+				const status =
+					kind === "folder"
+						? folderStatuses.get(path)
+						: fileStatuses.get(path);
 				if (!status) continue;
-				this.attachDot(anchor, status);
+				this.attachDot(anchor, status, kind);
 			}
 		}
 	}
 
-	private collectFileEntries(container: HTMLElement): FileExplorerEntry[] {
-		const entries = new Map<string, HTMLElement>();
+	private collectExplorerEntries(container: HTMLElement): FileExplorerEntry[] {
+		const entries = new Map<string, FileExplorerEntry>();
 
 		container
 			.querySelectorAll<HTMLElement>(".nav-file-title[data-path]")
 			.forEach((titleEl) => {
 				const path = titleEl.getAttribute("data-path");
 				if (path?.endsWith(".md")) {
-					entries.set(path, titleEl);
+					entries.set(path, { path, anchor: titleEl, kind: "file" });
 				}
 			});
 
@@ -157,27 +221,61 @@ export class ObSaveFileStatusDecorator {
 
 				const titleEl =
 					fileEl.querySelector<HTMLElement>(".nav-file-title") ?? fileEl;
-				entries.set(path, titleEl);
+				entries.set(path, { path, anchor: titleEl, kind: "file" });
 			},
 		);
 
-		return [...entries.entries()].map(([path, anchor]) => ({ path, anchor }));
+		container
+			.querySelectorAll<HTMLElement>(".nav-folder-title[data-path]")
+			.forEach((titleEl) => {
+				const path = titleEl.getAttribute("data-path");
+				if (path) {
+					entries.set(`folder:${path}`, {
+						path,
+						anchor: titleEl,
+						kind: "folder",
+					});
+				}
+			});
+
+		container.querySelectorAll<HTMLElement>(".nav-folder[data-path]").forEach(
+			(folderEl) => {
+				const path = folderEl.getAttribute("data-path");
+				if (!path || entries.has(`folder:${path}`)) {
+					return;
+				}
+				const titleEl =
+					folderEl.querySelector<HTMLElement>(".nav-folder-title") ?? folderEl;
+				entries.set(`folder:${path}`, { path, anchor: titleEl, kind: "folder" });
+			},
+		);
+
+		return [...entries.values()];
 	}
 
-	private attachDot(anchor: HTMLElement, status: FileSyncStatus): void {
+	private attachDot(
+		anchor: HTMLElement,
+		status: FileSyncStatus,
+		kind: "file" | "folder",
+	): void {
 		anchor.querySelector(`.${DOT_CLASS}`)?.remove();
 
 		const dot = document.createElement("span");
 		dot.className = `${DOT_CLASS} ${DOT_CLASS}-${status}`;
 		dot.setAttribute("aria-hidden", "true");
-		dot.setAttribute(
-			"title",
-			status === "new"
-				? "Nuevo — pendiente de subir"
-				: status === "modified"
-					? "Modificado — pendiente de sync"
-					: "Sincronizado",
-		);
+		const labels =
+			kind === "folder"
+				? {
+						new: "Carpeta — pendiente de sync",
+						modified: "Carpeta — cambios pendientes",
+						synced: "Carpeta — sincronizada",
+					}
+				: {
+						new: "Nuevo — pendiente de subir",
+						modified: "Modificado — pendiente de sync",
+						synced: "Sincronizado",
+					};
+		dot.setAttribute("title", labels[status]);
 		anchor.appendChild(dot);
 	}
 

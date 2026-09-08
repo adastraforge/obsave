@@ -33,6 +33,9 @@ export default class ObSavePlugin extends Plugin {
 	private fileDecorators!: ObSaveFileStatusDecorator;
 	private ribbonEl: HTMLElement | null = null;
 	private settingsTab!: ObSaveSettingTab;
+	private debouncedSyncTimer: number | null = null;
+
+	private static readonly DEBOUNCED_SYNC_MS = 3000;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -72,26 +75,7 @@ export default class ObSavePlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on("layout-change", () => this.refreshDecorators()),
 		);
-		this.registerEvent(
-			this.app.vault.on("create", (file) => {
-				if (file instanceof TFile && file.extension === "md") {
-					this.syncEngine.markPendingUpload(file.path);
-					if (this.syncEngine.getStatus() !== "syncing") {
-						void this.refreshDecoratorsImmediate();
-					}
-				}
-			}),
-		);
-		this.registerEvent(
-			this.app.vault.on("modify", (file) => {
-				if (
-					file.path.endsWith(".md") &&
-					this.syncEngine.getStatus() !== "syncing"
-				) {
-					void this.refreshDecoratorsImmediate();
-				}
-			}),
-		);
+		this.registerVaultSyncEvents();
 
 		this.syncEngine.on((event) => {
 			if (event.type === "status-changed" && event.status) {
@@ -158,6 +142,10 @@ export default class ObSavePlugin extends Plugin {
 
 	onunload(): void {
 		this.stopAutoSync();
+		if (this.debouncedSyncTimer !== null) {
+			window.clearTimeout(this.debouncedSyncTimer);
+			this.debouncedSyncTimer = null;
+		}
 		this.fileDecorators?.uninstall();
 		console.log("ObSave plugin unloaded");
 	}
@@ -272,6 +260,38 @@ export default class ObSavePlugin extends Plugin {
 		return this.syncEngine?.canAutoSync() ?? false;
 	}
 
+	scheduleDebouncedSync(): void {
+		if (this.debouncedSyncTimer !== null) {
+			window.clearTimeout(this.debouncedSyncTimer);
+		}
+		this.debouncedSyncTimer = window.setTimeout(() => {
+			this.debouncedSyncTimer = null;
+			if (!this.canAutoSync()) {
+				return;
+			}
+			void this.syncEngine.executeUnifiedSync("automatic");
+		}, ObSavePlugin.DEBOUNCED_SYNC_MS);
+	}
+
+	private registerVaultSyncEvents(): void {
+		const onVaultChange = (file?: { path?: string; extension?: string }): void => {
+			if (file instanceof TFile && file.extension === "md") {
+				this.syncEngine.markPendingUpload(file.path);
+			}
+			this.scheduleDebouncedSync();
+			if (this.syncEngine.getStatus() !== "syncing") {
+				void this.refreshDecoratorsImmediate();
+			}
+		};
+
+		this.registerEvent(this.app.vault.on("create", onVaultChange));
+		this.registerEvent(this.app.vault.on("modify", onVaultChange));
+		this.registerEvent(this.app.vault.on("delete", () => onVaultChange()));
+		this.registerEvent(
+			this.app.vault.on("rename", (file) => onVaultChange(file)),
+		);
+	}
+
 	openObSavePanel(): void {
 		this.app.setting.open();
 		const setting = this.app.setting as typeof this.app.setting & {
@@ -292,28 +312,24 @@ export default class ObSavePlugin extends Plugin {
 		this.addCommand({
 			id: "open-obsave-panel",
 			name: "Abrir panel principal de ObSave",
-			hotkeys: [{ modifiers: ["Mod", "Alt"], key: "o" }],
 			callback: () => this.openObSavePanel(),
 		});
 
 		this.addCommand({
 			id: "obsave-quick-note",
 			name: "Crear nota rápida ObSave",
-			hotkeys: [{ modifiers: ["Mod", "Alt"], key: "n" }],
 			callback: () => void createQuickDailyNote(this.app),
 		});
 
 		this.addCommand({
 			id: "obsave-capture-note",
 			name: "Abrir captura de nota ObSave",
-			hotkeys: [{ modifiers: ["Mod", "Alt"], key: "m" }],
 			callback: () => new CaptureNoteModal(this.app).open(),
 		});
 
 		this.addCommand({
 			id: "obsave-vault-report",
 			name: "Abrir informe operativo de bóveda",
-			hotkeys: [{ modifiers: ["Mod", "Alt"], key: "i" }],
 			callback: () => new VaultReportModal(this.app).open(),
 		});
 	}

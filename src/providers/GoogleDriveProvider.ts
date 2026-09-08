@@ -563,13 +563,20 @@ export class GoogleDriveProvider implements IStorageProvider {
 		}
 	}
 
-	/** `true` solo si la API confirma 404 (archivo eliminado en Drive). */
+	/** `true` si la API confirma 404 o archivo en papelera Drive (`trashed: true`). */
 	async confirmDriveFileDeleted(fileId: string): Promise<boolean> {
 		const response = await this.driveRequest({
-			url: `${GOOGLE_DRIVE_API}/files/${fileId}?fields=id`,
+			url: `${GOOGLE_DRIVE_API}/files/${fileId}?fields=id,trashed`,
 			method: "GET",
 		});
-		return response.status === 404;
+		if (response.status === 404) {
+			return true;
+		}
+		if (response.status === 200) {
+			const data = response.json as { trashed?: boolean };
+			return data.trashed === true;
+		}
+		return false;
 	}
 
 	private parseDriveModifiedTime(modifiedTime?: string): number {
