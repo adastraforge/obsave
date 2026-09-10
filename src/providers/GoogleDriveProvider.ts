@@ -740,6 +740,61 @@ export class GoogleDriveProvider implements IStorageProvider {
 		return match?.id ?? "";
 	}
 
+	/** Renombra o mueve una carpeta existente (PATCH) sin crear duplicados. */
+	async updateDriveFolder(
+		folderId: string,
+		options: { name?: string; parentFolderId?: string },
+	): Promise<string> {
+		let addParents: string | undefined;
+		let removeParents: string | undefined;
+
+		if (options.parentFolderId) {
+			const metaResponse = await this.driveRequest({
+				url: `${GOOGLE_DRIVE_API}/files/${folderId}?fields=parents`,
+				method: "GET",
+			});
+			if (metaResponse.status >= 400) {
+				throw new Error(
+					`Error al leer carpeta Drive (${metaResponse.status}): ${metaResponse.text}`,
+				);
+			}
+			const meta = metaResponse.json as { parents?: string[] };
+			removeParents = (meta.parents ?? []).join(",");
+			addParents = options.parentFolderId;
+		}
+
+		const query = new URLSearchParams();
+		if (addParents) {
+			query.set("addParents", addParents);
+		}
+		if (removeParents) {
+			query.set("removeParents", removeParents);
+		}
+		const querySuffix = query.toString() ? `?${query.toString()}` : "";
+
+		const body: Record<string, string> = {};
+		if (options.name) {
+			body.name = options.name;
+		}
+
+		const response = await this.driveRequest({
+			url: `${GOOGLE_DRIVE_API}/files/${folderId}${querySuffix}`,
+			method: "PATCH",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify(body),
+		});
+
+		if (response.status >= 400) {
+			throw new Error(
+				`Error al renombrar carpeta Drive (${response.status}): ${response.text}`,
+			);
+		}
+
+		return folderId;
+	}
+
 	private updateFolderConfig(info: GoogleDriveFolderInfo): void {
 		if (!this.config) return;
 

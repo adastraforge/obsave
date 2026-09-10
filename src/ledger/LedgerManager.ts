@@ -149,28 +149,68 @@ export class LedgerManager {
 			size: patch.size ?? existing?.size,
 			status: "S",
 		};
+		delete this.manifest.entries[path]!.previousPath;
 	}
 
 	removeEntry(path: string): void {
 		delete this.manifest.entries[path];
 	}
 
-	renameEntry(oldPath: string, newPath: string): void {
-		const entry = this.manifest.entries[oldPath];
-		if (!entry) {
+	/** Renombra carpeta/archivo y descendientes; marca U y conserva remoteId. */
+	renamePathCascade(oldPath: string, newPath: string): void {
+		if (oldPath === newPath) {
 			return;
 		}
-		delete this.manifest.entries[oldPath];
-		this.manifest.entries[newPath] = entry;
+
 		const prefix = `${oldPath}/`;
-		for (const key of Object.keys(this.manifest.entries)) {
-			if (key.startsWith(prefix)) {
-				const moved = key.slice(oldPath.length);
-				this.manifest.entries[`${newPath}${moved}`] =
-					this.manifest.entries[key]!;
-				delete this.manifest.entries[key];
-			}
+		const keysToMove = Object.keys(this.manifest.entries).filter(
+			(key) => key === oldPath || key.startsWith(prefix),
+		);
+
+		if (keysToMove.length === 0 && !oldPath.endsWith(".md")) {
+			this.manifest.entries[newPath] = {
+				type: "folder",
+				status: "U",
+			};
+			return;
 		}
+
+		const moves: { from: string; to: string }[] = keysToMove.map((from) => {
+			const suffix = from === oldPath ? "" : from.slice(oldPath.length);
+			return { from, to: `${newPath}${suffix}` };
+		});
+
+		for (const { from, to } of moves) {
+			const entry = this.manifest.entries[from];
+			if (!entry) {
+				continue;
+			}
+			delete this.manifest.entries[from];
+			this.manifest.entries[to] = {
+				...entry,
+				previousPath: from,
+				status: entry.status === "C" ? "C" : "U",
+			};
+		}
+	}
+
+	markUpdatedWithFingerprint(
+		path: string,
+		fingerprint: { hash: string; mtime: number; size: number },
+	): void {
+		const existing = this.manifest.entries[path];
+		if (!existing) {
+			this.manifest.entries[path] = {
+				type: path.endsWith(".md") ? "file" : "folder",
+				status: "U",
+				...fingerprint,
+			};
+			return;
+		}
+		existing.status = existing.status === "C" ? "C" : "U";
+		existing.hash = fingerprint.hash;
+		existing.mtime = fingerprint.mtime;
+		existing.size = fingerprint.size;
 	}
 
 	applyRemoteManifest(remote: LedgerManifest): void {

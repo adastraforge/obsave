@@ -10,6 +10,8 @@ export interface LedgerEntry {
 	mtime?: number;
 	size?: number;
 	status: LedgerStatus;
+	/** Ruta vault anterior tras rename local (se limpia al marcar S). */
+	previousPath?: string;
 }
 
 export interface LedgerManifest {

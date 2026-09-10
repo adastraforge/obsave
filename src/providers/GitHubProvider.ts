@@ -103,6 +103,17 @@ export class GitHubProvider implements IStorageProvider {
 		return this.getApiClient().deleteFile(path, sha);
 	}
 
+	async moveRemoteFile(
+		oldPath: string,
+		newPath: string,
+		existingSha: string,
+	): Promise<string> {
+		const content = await this.downloadRemoteFile(oldPath);
+		const newSha = await this.uploadRemoteFile(newPath, content);
+		await this.deleteRemoteFile(oldPath, existingSha);
+		return newSha;
+	}
+
 	/** `true` solo si la API confirma 404 en la ruta del repo. */
 	async confirmRemotePathDeleted(path: string): Promise<boolean> {
 		return this.getApiClient().confirmPathDeleted(path);

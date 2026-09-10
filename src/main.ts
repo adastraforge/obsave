@@ -367,12 +367,7 @@ export default class ObSavePlugin extends Plugin {
 		if (!this.shouldTrackPath(oldPath) && !this.shouldTrackPath(file.path)) {
 			return;
 		}
-		this.ledgerManager.renameEntry(oldPath, file.path);
-		if (file instanceof TFolder) {
-			this.ledgerManager.trackFolder(file.path);
-		} else if (file instanceof TFile && file.extension === "md") {
-			void this.ledgerManager.trackFileFromDisk(file);
-		}
+		this.ledgerManager.renamePathCascade(oldPath, file.path);
 		this.scheduleDebouncedSync();
 		if (this.syncEngine.getStatus() !== "syncing") {
 			void this.refreshDecoratorsImmediate();

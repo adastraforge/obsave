@@ -182,6 +182,14 @@ export class GoogleDriveLazyProvider implements IStorageProvider {
 		);
 	}
 
+	async updateDriveFolder(
+		folderId: string,
+		options: { name?: string; parentFolderId?: string },
+	): Promise<string> {
+		const delegate = await this.ensureDelegateSynced();
+		return delegate.updateDriveFolder(folderId, options);
+	}
+
 	async disconnect(): Promise<void> {
 		this.pendingConfig = null;
 		if (this.delegate) {
