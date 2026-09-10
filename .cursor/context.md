@@ -7,10 +7,16 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.1.3`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.1.3`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.1.4`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.1.4`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Descarga verificada y durabilidad del ledger v1.1.4
+- `reconcileRemoteEntry`: una entrada remota en `S` se descarga si falta en disco o su hash difiere; `S` local solo tras verificar el archivo.
+- `trackFolder`/`trackFileFromDisk` revierten un borrado pendiente cuando la entidad reaparece (`D` → `C`/`U`).
+- Carpetas plantilla quedan en `C` con `remoteId` (`attachRemoteId`); el `S` lo concede el ciclo que publica el manifiesto remoto.
+- `LedgerManager.save()` con cola de promesas y escritura atómica (temporal + `rename`) más respaldo `ledger.json.bak`; `load()` restaura en vez de degradar a vacío.
 
 ### Subida obligatoria en U/C y dedup de carpetas Drive v1.1.3
 - Eliminado el atajo que marcaba `S` sin PATCH en Drive; `S` solo tras `remoteId` confirmado.

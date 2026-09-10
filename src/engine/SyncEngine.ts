@@ -12,6 +12,7 @@ import type {
 	SyncRunResult,
 	SyncStatus,
 	SyncTrigger,
+	TemplateFolderSyncOutcome,
 } from "../types";
 import { hashContent } from "../utils/contentHash";
 import { LedgerManager } from "../ledger/LedgerManager";
@@ -68,45 +69,55 @@ export class SyncEngine {
 		this.settings.structureSyncNeeded = true;
 	}
 
-	async syncTemplateFoldersToCloud(): Promise<void> {
+	/**
+	 * Materializa la estructura plantilla en la nube. Las carpetas quedan en `C`
+	 * con su `remoteId` conocido: el estado `S` solo lo concede un ciclo completo,
+	 * que es el único que publica `.obsave/ledger.json` en el remoto.
+	 */
+	async syncTemplateFoldersToCloud(): Promise<TemplateFolderSyncOutcome> {
 		const providerId = this.settings.activeProvider;
 		if (!providerId) {
-			return;
+			return { pendingPublication: false };
 		}
 
 		if (providerId === "gdrive" && this.isGoogleDriveFolderReady()) {
 			const provider = this.providers.get("gdrive") as
 				| GoogleDriveLazyProvider
 				| undefined;
-			if (provider) {
-				await syncTemplateFoldersToGoogleDrive(provider, (path, remoteId) =>
-					this.registerRemoteFolder(path, remoteId),
-				);
-				await this.ledgerManager.save();
+			if (!provider) {
+				return { pendingPublication: false };
 			}
-			return;
+			await syncTemplateFoldersToGoogleDrive(provider, (path, remoteId) =>
+				this.registerRemoteFolder(path, remoteId),
+			);
+			await this.ledgerManager.save();
+			return { pendingPublication: this.ledgerManager.hasPendingChanges() };
 		}
 
 		if (providerId === "github") {
 			const gh = this.settings.providerConfig.github;
 			if (!gh?.token || !gh.remoteUrl) {
-				return;
+				return { pendingPublication: false };
 			}
 			const provider = this.providers.get("github") as GitHubProvider | undefined;
-			if (provider) {
-				await syncTemplateFoldersToGitHub(
-					this.app,
-					provider,
-					(gitkeepPath, sha) => this.registerRemoteGitkeep(gitkeepPath, sha),
-				);
-				await this.ledgerManager.save();
+			if (!provider) {
+				return { pendingPublication: false };
 			}
+			await syncTemplateFoldersToGitHub(
+				this.app,
+				provider,
+				(gitkeepPath, sha) => this.registerRemoteGitkeep(gitkeepPath, sha),
+			);
+			await this.ledgerManager.save();
+			return { pendingPublication: this.ledgerManager.hasPendingChanges() };
 		}
+
+		return { pendingPublication: this.ledgerManager.hasPendingChanges() };
 	}
 
 	/**
-	 * Consolida en el ledger la carpeta ya materializada en la nube para que el
-	 * ciclo de push no vuelva a resolverla ni cree un duplicado.
+	 * Guarda el id remoto de la carpeta pero la deja pendiente: `S` solo se
+	 * concede en un ciclo completo, que es el único que publica el manifiesto.
 	 */
 	private registerRemoteFolder(vaultPath: string, remoteId: string): void {
 		const localFolder = this.app.vault.getAbstractFileByPath(vaultPath);
@@ -117,23 +128,11 @@ export class SyncEngine {
 		if (entry?.previousPath) {
 			return;
 		}
-		this.ledgerManager.markSynchronized(vaultPath, {
-			type: "folder",
-			remoteId,
-		});
+		this.ledgerManager.attachRemoteId(vaultPath, remoteId, "folder");
 	}
 
 	private registerRemoteGitkeep(gitkeepPath: string, sha: string): void {
-		this.ledgerManager.markSynchronized(gitkeepPath, {
-			type: "file",
-			remoteId: sha,
-			hash: hashContent(GITKEEP),
-			size: GITKEEP.length,
-		});
-		const folderPath = this.parentPath(gitkeepPath);
-		if (folderPath) {
-			this.registerRemoteFolder(folderPath, sha);
-		}
+		this.ledgerManager.attachRemoteId(gitkeepPath, sha, "file");
 	}
 
 	updateSettings(settings: ObSaveSettings): void {
@@ -446,28 +445,70 @@ export class SyncEngine {
 				continue;
 			}
 
-			if (remoteEntry.status === "C" || remoteEntry.status === "U") {
-				if (remoteEntry.type === "folder") {
-					await this.ensureLocalFolder(path);
-					this.ledgerManager.markSynchronized(path, {
-						type: "folder",
-						remoteId: remoteEntry.remoteId,
-					});
-				} else {
-					const pulled = await this.pullRemoteFile(path, remoteEntry);
-					if (pulled) {
-						downloaded++;
-					}
-				}
-				continue;
-			}
-
-			if (remoteEntry.status === "S") {
-				this.ledgerManager.markSynchronized(path, remoteEntry);
+			const pulled = await this.reconcileRemoteEntry(path, remoteEntry);
+			if (pulled) {
+				downloaded++;
 			}
 		}
 
 		return downloaded;
+	}
+
+	/**
+	 * Materializa en disco la entrada remota antes de consolidarla como `S`.
+	 * Un manifiesto remoto en `S` describe el disco de otro dispositivo, así que
+	 * nunca implica presencia local: hay que verificarla o descargarla.
+	 */
+	private async reconcileRemoteEntry(
+		path: string,
+		remoteEntry: LedgerEntry,
+	): Promise<boolean> {
+		if (remoteEntry.type === "folder") {
+			await this.ensureLocalFolder(path);
+			this.ledgerManager.markSynchronized(path, {
+				type: "folder",
+				remoteId: remoteEntry.remoteId,
+			});
+			return false;
+		}
+
+		const localFile = this.app.vault.getAbstractFileByPath(path);
+		if (!(localFile instanceof TFile)) {
+			return this.pullRemoteFile(path, remoteEntry);
+		}
+
+		if (remoteEntry.status !== "S") {
+			return this.pullRemoteFile(path, remoteEntry);
+		}
+
+		const localEntry = this.ledgerManager.getEntry(path);
+		if (
+			localEntry?.status === "S" &&
+			localEntry.hash != null &&
+			localEntry.hash === remoteEntry.hash
+		) {
+			if (!localEntry.remoteId && remoteEntry.remoteId) {
+				this.ledgerManager.markSynchronized(path, {
+					type: "file",
+					remoteId: remoteEntry.remoteId,
+				});
+			}
+			return false;
+		}
+
+		const localHash = hashContent(await this.app.vault.read(localFile));
+		if (remoteEntry.hash != null && localHash !== remoteEntry.hash) {
+			return this.pullRemoteFile(path, remoteEntry);
+		}
+
+		this.ledgerManager.markSynchronized(path, {
+			type: "file",
+			remoteId: remoteEntry.remoteId,
+			hash: localHash,
+			mtime: localFile.stat.mtime,
+			size: localFile.stat.size,
+		});
+		return false;
 	}
 
 	private async pushLocalPendingChanges(): Promise<number> {
@@ -520,6 +561,9 @@ export class SyncEngine {
 			const provider = this.providers.get("gdrive") as GoogleDriveLazyProvider;
 			const remoteId = entry.remoteId;
 			if (!remoteId) {
+				console.warn(
+					`[ObSave] Entrada remota sin remoteId, imposible descargar: ${path}`,
+				);
 				return false;
 			}
 			const content = await provider.downloadFile(remoteId);

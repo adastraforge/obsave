@@ -255,10 +255,16 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			return;
 		}
 		try {
-			await this.plugin.syncEngine.syncTemplateFoldersToCloud();
+			const outcome = await this.plugin.syncEngine.syncTemplateFoldersToCloud();
 			this.plugin.settings.structureSyncNeeded = false;
 			await this.plugin.saveSettings();
-			new Notice("ObSave: Estructura de carpetas sincronizada con la nube.");
+			if (outcome.pendingPublication && !this.plugin.syncEngine.canAutoSync()) {
+				new Notice(
+					"ObSave: Carpetas creadas en la nube. Quedan pendientes hasta el próximo ciclo de sincronización.",
+				);
+			} else {
+				new Notice("ObSave: Estructura de carpetas sincronizada con la nube.");
+			}
 		} catch (error) {
 			const message =
 				error instanceof Error ? error.message : "Error al sincronizar carpetas";

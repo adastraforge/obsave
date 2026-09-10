@@ -740,3 +740,22 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.1.3`
 
 ---
+
+## DEC-052 | 2026-09-10 | Descarga verificada, revivir entradas `D` y durabilidad del ledger
+
+**Contexto:** Auditoría holística v1.1.3 (`docs/auditoria-holistica-obsave-v1.1.3.md`). Cuatro hallazgos P0: el manifiesto remoto en `S` se copiaba al ledger local sin comprobar el disco (H-01), `trackFolder` dejaba en `D` una carpeta recreada (H-04), el botón de plantillas otorgaba `S` sin publicar el manifiesto remoto (H-02) y `save()` escribía sin cola ni respaldo (H-10/H-21).
+
+**Decisión:**
+1. `reconcileRemoteEntry` materializa la entrada remota antes de consolidarla: carpetas vía `ensureLocalFolder`, archivos ausentes o con hash distinto vía `pullRemoteFile`. `S` solo se escribe con el archivo verificado en disco.
+2. `trackFolder` y `trackFileFromDisk` cancelan el borrado pendiente cuando la entidad reaparece: carpetas vuelven a `C`, archivos a `U` si tenían `remoteId` y a `C` si no.
+3. `syncTemplateFoldersToCloud` registra el `remoteId` con `attachRemoteId` y deja las carpetas en `C`; devuelve `TemplateFolderSyncOutcome` para que la UI informe que quedan pendientes cuando la auto-sincronización está desactivada.
+4. `LedgerManager.save()` serializa por cola de promesas y escribe con temporal + `rename`, conservando `ledger.json.bak`. `load()` restaura desde `.tmp`/`.bak` y avisa antes de reconstruir vacío.
+
+**Alternativas descartadas:**
+- Publicar el manifiesto remoto dentro de `syncTemplateFoldersToCloud` (duplicaría el ciclo y arriesga recursión con `structureSyncNeeded`).
+- Reordenar `runLedgerSync` para guardar el ledger local después de subir el manifiesto (perdería `remoteId` recién creados y duplicaría archivos en Drive).
+- Leer y hashear todos los archivos en cada ciclo (coste de I/O; basta comparar con el hash ya registrado en estado `S`).
+
+**Release:** `v1.1.4`
+
+---

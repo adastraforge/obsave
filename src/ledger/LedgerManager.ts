@@ -1,5 +1,5 @@
 import type { App, TAbstractFile, TFile } from "obsidian";
-import { normalizePath, TFolder } from "obsidian";
+import { Notice, normalizePath, TFolder } from "obsidian";
 import type { SyncLedgerEntry } from "../settings";
 import { hashContent } from "../utils/contentHash";
 import {
@@ -16,6 +16,7 @@ const LOCAL_LEDGER_REL = "plugins/obsave/ledger.json";
 export class LedgerManager {
 	private manifest: LedgerManifest;
 	private loaded = false;
+	private saveQueue: Promise<void> = Promise.resolve();
 
 	constructor(
 		private app: App,
@@ -50,32 +51,128 @@ export class LedgerManager {
 		return normalizePath(`${this.app.vault.configDir}/${LOCAL_LEDGER_REL}`);
 	}
 
+	private backupPath(): string {
+		return `${this.localPath()}.bak`;
+	}
+
+	private tempPath(): string {
+		return `${this.localPath()}.tmp`;
+	}
+
 	async load(): Promise<void> {
-		const path = this.localPath();
-		try {
-			const raw = await this.app.vault.adapter.read(path);
-			const parsed = JSON.parse(raw) as LedgerManifest;
-			if (parsed.version === LEDGER_MANIFEST_VERSION && parsed.entries) {
-				this.manifest = parsed;
-			}
-		} catch {
-			this.manifest = createEmptyManifest(this.getDeviceName());
+		const primary = await this.readManifestFile(this.localPath());
+		if (primary.outcome === "ok") {
+			this.manifest = primary.manifest;
+			this.loaded = true;
+			return;
 		}
+
+		// Un manifiesto ilegible nunca debe degradar a vacío en silencio: primero
+		// el temporal de una escritura interrumpida (el más reciente), luego el respaldo.
+		for (const candidate of [this.tempPath(), this.backupPath()]) {
+			const fallback = await this.readManifestFile(candidate);
+			if (fallback.outcome !== "ok") {
+				continue;
+			}
+
+			this.manifest = fallback.manifest;
+			this.loaded = true;
+			console.warn(
+				`[ObSave] ledger.json ilegible; restaurado desde ${candidate}`,
+			);
+			new Notice(
+				"ObSave: manifiesto dañado — restaurado desde copia de seguridad.",
+			);
+			await this.save();
+			return;
+		}
+
+		if (primary.outcome === "corrupt") {
+			console.warn(
+				"[ObSave] ledger.json corrupto y sin respaldo utilizable; se reconstruye vacío.",
+			);
+			new Notice(
+				"ObSave: manifiesto dañado y sin respaldo. Usa «Reparar / Reconstruir Bóveda Remota».",
+			);
+		}
+
+		this.manifest = createEmptyManifest(this.getDeviceName());
 		this.loaded = true;
 	}
 
-	async save(): Promise<void> {
+	private async readManifestFile(
+		path: string,
+	): Promise<
+		| { outcome: "ok"; manifest: LedgerManifest }
+		| { outcome: "missing" | "corrupt" }
+	> {
+		try {
+			if (!(await this.app.vault.adapter.exists(path))) {
+				return { outcome: "missing" };
+			}
+			const raw = await this.app.vault.adapter.read(path);
+			const parsed = JSON.parse(raw) as LedgerManifest;
+			if (parsed.version !== LEDGER_MANIFEST_VERSION || !parsed.entries) {
+				return { outcome: "corrupt" };
+			}
+			return { outcome: "ok", manifest: parsed };
+		} catch {
+			return { outcome: "corrupt" };
+		}
+	}
+
+	/** Encola la escritura: nunca hay dos `write` compitiendo por el mismo archivo. */
+	save(): Promise<void> {
+		this.saveQueue = this.saveQueue
+			.catch(() => undefined)
+			.then(() => this.writeManifest());
+		return this.saveQueue;
+	}
+
+	private async writeManifest(): Promise<void> {
 		this.manifest.lastUpdated = new Date().toISOString();
 		this.manifest.lastUpdatedByDevice = this.getDeviceName();
+
+		const adapter = this.app.vault.adapter;
 		const path = this.localPath();
 		const dir = path.substring(0, path.lastIndexOf("/"));
-		if (!(await this.app.vault.adapter.exists(dir))) {
-			await this.app.vault.adapter.mkdir(dir);
+		if (!(await adapter.exists(dir))) {
+			await adapter.mkdir(dir);
 		}
-		await this.app.vault.adapter.write(
-			path,
-			JSON.stringify(this.manifest, null, 2),
-		);
+
+		const payload = JSON.stringify(this.manifest, null, 2);
+		const temp = this.tempPath();
+
+		// Escritura atómica: temporal + rename, con la versión previa como respaldo.
+		try {
+			await adapter.write(temp, payload);
+
+			if (await adapter.exists(path)) {
+				try {
+					const previous = await adapter.read(path);
+					await adapter.write(this.backupPath(), previous);
+				} catch (error) {
+					console.warn("[ObSave] No se pudo respaldar ledger.json:", error);
+				}
+				await adapter.remove(path);
+			}
+
+			await adapter.rename(temp, path);
+		} catch (error) {
+			// El adaptador puede no soportar rename/remove: garantizar el manifiesto.
+			console.warn(
+				"[ObSave] Escritura atómica del ledger no disponible, se escribe directo:",
+				error,
+			);
+			await adapter.write(path, payload);
+			try {
+				if (await adapter.exists(temp)) {
+					await adapter.remove(temp);
+				}
+			} catch {
+				/* temporal residual sin impacto funcional */
+			}
+		}
 	}
 
 	async migrateFromLegacyLedger(
@@ -270,6 +367,17 @@ export class LedgerManager {
 			};
 			return;
 		}
+		// El archivo volvió a existir: cancelar el borrado pendiente antes de
+		// que el ciclo lo propague al remoto.
+		if (entry.status === "D") {
+			entry.type = "file";
+			entry.status = entry.remoteId ? "U" : "C";
+			entry.hash = hash;
+			entry.mtime = file.stat.mtime;
+			entry.size = file.stat.size;
+			delete entry.previousPath;
+			return;
+		}
 		if (entry.status === "S" && entry.hash === hash && entry.mtime === file.stat.mtime) {
 			return;
 		}
@@ -286,10 +394,35 @@ export class LedgerManager {
 	}
 
 	trackFolder(path: string): void {
-		if (this.manifest.entries[path]) {
+		const entry = this.manifest.entries[path];
+		if (!entry) {
+			this.manifest.entries[path] = { type: "folder", status: "C" };
 			return;
 		}
-		this.manifest.entries[path] = { type: "folder", status: "C" };
+		// Recreada tras un borrado sin propagar: revive como pendiente de subida.
+		if (entry.status === "D") {
+			entry.type = "folder";
+			entry.status = "C";
+			delete entry.previousPath;
+		}
+	}
+
+	/** Registra el id remoto conocido sin declarar la entrada sincronizada. */
+	attachRemoteId(
+		path: string,
+		remoteId: string,
+		type: LedgerEntryType,
+	): void {
+		const entry = this.manifest.entries[path];
+		if (!entry) {
+			this.manifest.entries[path] = { type, status: "C", remoteId };
+			return;
+		}
+		entry.remoteId = remoteId;
+		if (entry.status === "D") {
+			entry.status = "C";
+			delete entry.previousPath;
+		}
 	}
 
 	trackDelete(file: TAbstractFile): void {
