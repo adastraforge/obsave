@@ -300,7 +300,7 @@ export class SyncEngine {
 				downloadedCount: result.downloadedCount,
 				uploadedCount: result.uploadedCount,
 			});
-			this.notifyVisualRefresh();
+			this.notifyVisualRefresh(true);
 		} catch (error) {
 			if (generation !== this.syncGeneration) {
 				this.setStatus("idle");
@@ -317,7 +317,7 @@ export class SyncEngine {
 				timestamp: new Date().toISOString(),
 				trigger,
 			});
-			this.notifyVisualRefresh();
+			this.notifyVisualRefresh(true);
 		}
 	}
 
@@ -761,7 +761,14 @@ export class SyncEngine {
 		};
 	}
 
-	private notifyVisualRefresh(): void {
+	/**
+	 * Dispara refresco del explorador. Omitido durante `syncing` para evitar
+	 * trabajo redundante; los badges se evalúan O(1) por ruta visible al finalizar.
+	 */
+	private notifyVisualRefresh(force = false): void {
+		if (!force && this.getStatus() === "syncing") {
+			return;
+		}
 		this.app.workspace.trigger("layout-change");
 	}
 

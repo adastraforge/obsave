@@ -12,10 +12,11 @@ interface FileExplorerEntry {
 }
 
 /**
- * Badges de color en el Explorador — leen exclusivamente el ledger local en memoria.
+ * Badges en el Explorador — evaluación O(1) por ruta visible desde el ledger en memoria.
  */
 export class ObSaveFileStatusDecorator {
 	private refreshTimer: number | null = null;
+	private forceDisconnected = false;
 
 	constructor(private plugin: ObSavePlugin) {}
 
@@ -32,21 +33,16 @@ export class ObSaveFileStatusDecorator {
 	}
 
 	async refresh(): Promise<void> {
-		const fileStatuses = this.computeFileStatuses();
-		const folderStatuses = this.computeFolderStatuses(fileStatuses);
-		this.applyDecorations(fileStatuses, folderStatuses);
+		this.applyDecorationsToVisibleEntries();
 	}
 
 	async refreshDisconnected(): Promise<void> {
-		const fileStatuses = new Map<string, FileSyncStatus>();
-		for (const file of this.plugin.app.vault.getMarkdownFiles()) {
-			fileStatuses.set(file.path, "new");
+		this.forceDisconnected = true;
+		try {
+			this.applyDecorationsToVisibleEntries();
+		} finally {
+			this.forceDisconnected = false;
 		}
-		const folderStatuses = new Map<string, FileSyncStatus>();
-		for (const folder of this.plugin.app.vault.getAllFolders()) {
-			folderStatuses.set(folder.path, "new");
-		}
-		this.applyDecorations(fileStatuses, folderStatuses);
 	}
 
 	requestRefresh(): void {
@@ -59,36 +55,42 @@ export class ObSaveFileStatusDecorator {
 		}, 400);
 	}
 
-	private computeFileStatuses(): Map<string, FileSyncStatus> {
-		const statuses = new Map<string, FileSyncStatus>();
-
-		if (!isProviderConfigured(this.plugin.settings)) {
-			for (const file of this.plugin.app.vault.getMarkdownFiles()) {
-				statuses.set(file.path, "new");
-			}
-			return statuses;
-		}
-
-		const isSyncing = this.plugin.syncEngine.getStatus() === "syncing";
+	/** Índice: carpeta → tiene descendiente en ledger con C o U (un solo pase sobre entries). */
+	private buildFolderPendingIndex(): Map<string, boolean> {
+		const pendingUnder = new Map<string, boolean>();
 		const entries = this.plugin.ledgerManager.getEntries();
 
-		for (const file of this.plugin.app.vault.getMarkdownFiles()) {
-			statuses.set(
-				file.path,
-				this.mapLedgerStatus(entries[file.path], isSyncing),
-			);
+		for (const [key, entry] of Object.entries(entries)) {
+			if (entry.status !== "C" && entry.status !== "U") {
+				continue;
+			}
+			const segments = key.split("/");
+			for (let depth = 1; depth < segments.length; depth++) {
+				const ancestor = segments.slice(0, depth).join("/");
+				pendingUnder.set(ancestor, true);
+			}
 		}
 
-		return statuses;
+		return pendingUnder;
 	}
 
-	private mapLedgerStatus(
-		entry: LedgerEntry | undefined,
-		isSyncing: boolean,
-	): FileSyncStatus {
-		if (isSyncing) {
-			return "modified";
+	private isDisconnected(): boolean {
+		return (
+			this.forceDisconnected || !isProviderConfigured(this.plugin.settings)
+		);
+	}
+
+	/** Máquina de estados estricta para archivos `.md` — solo lectura O(1) del ledger. */
+	resolveFileStatus(path: string): FileSyncStatus {
+		if (this.isDisconnected()) {
+			return "new";
 		}
+
+		const entry = this.plugin.ledgerManager.getEntry(path);
+		return this.mapFileLedgerStatus(entry);
+	}
+
+	private mapFileLedgerStatus(entry: LedgerEntry | undefined): FileSyncStatus {
 		if (!entry) {
 			return "new";
 		}
@@ -104,105 +106,42 @@ export class ObSaveFileStatusDecorator {
 		return "new";
 	}
 
-	private computeFolderStatuses(
-		fileStatuses: Map<string, FileSyncStatus>,
-	): Map<string, FileSyncStatus> {
-		const folderStatuses = new Map<string, FileSyncStatus>();
-
-		if (!isProviderConfigured(this.plugin.settings)) {
-			for (const folder of this.plugin.app.vault.getAllFolders()) {
-				folderStatuses.set(folder.path, "new");
-			}
-			return folderStatuses;
-		}
-
-		const isSyncing = this.plugin.syncEngine.getStatus() === "syncing";
-		const entries = this.plugin.ledgerManager.getEntries();
-
-		for (const folder of this.plugin.app.vault.getAllFolders()) {
-			folderStatuses.set(
-				folder.path,
-				this.aggregateFolderStatus(
-					folder.path,
-					entries[folder.path],
-					fileStatuses,
-					isSyncing,
-				),
-			);
-		}
-
-		return folderStatuses;
-	}
-
-	private aggregateFolderStatus(
+	/** Máquina de estados para carpetas — O(1) por ruta + índice de pendientes. */
+	resolveFolderStatus(
 		folderPath: string,
-		folderEntry: LedgerEntry | undefined,
-		fileStatuses: Map<string, FileSyncStatus>,
-		isSyncing: boolean,
+		pendingUnder: Map<string, boolean>,
 	): FileSyncStatus {
-		if (isSyncing) {
-			return "modified";
-		}
-
-		const prefix = folderPath ? `${folderPath}/` : "";
-		const childFileStatuses = [...fileStatuses.entries()].filter(
-			([filePath]) =>
-				filePath.startsWith(prefix) && filePath.length > prefix.length,
-		);
-
-		let hasNew = false;
-		let hasModified = false;
-
-		for (const [, status] of childFileStatuses) {
-			if (status === "new") {
-				hasNew = true;
-			} else if (status === "modified") {
-				hasModified = true;
-			}
-		}
-
-		const childFolders = this.plugin.app.vault
-			.getAllFolders()
-			.filter(
-				(f) =>
-					f.path.startsWith(prefix) &&
-					f.path.length > prefix.length &&
-					f.path !== folderPath,
-			);
-
-		for (const child of childFolders) {
-			const childStatus = this.aggregateFolderStatus(
-				child.path,
-				this.plugin.ledgerManager.getEntry(child.path),
-				fileStatuses,
-				isSyncing,
-			);
-			if (childStatus === "new") {
-				hasNew = true;
-			} else if (childStatus === "modified") {
-				hasModified = true;
-			}
-		}
-
-		if (folderEntry?.status === "C" || hasNew) {
+		if (this.isDisconnected()) {
 			return "new";
 		}
-		if (folderEntry?.status === "U" || hasModified) {
+
+		const entry = this.plugin.ledgerManager.getEntry(folderPath);
+		const hasPendingChildren = pendingUnder.get(folderPath) === true;
+
+		if (entry?.status === "C") {
+			return "new";
+		}
+		if (entry?.status === "U") {
 			return "modified";
 		}
-		if (folderEntry?.status === "S" && folderEntry.remoteId) {
-			return "synced";
+		if (entry?.status === "S") {
+			if (hasPendingChildren) {
+				return "modified";
+			}
+			if (entry.remoteId) {
+				return "synced";
+			}
+			return "new";
 		}
-		if (!folderEntry && !hasNew && !hasModified && childFileStatuses.length === 0) {
-			return "synced";
+
+		if (hasPendingChildren) {
+			return "modified";
 		}
-		return hasModified ? "modified" : hasNew ? "new" : "synced";
+
+		return "synced";
 	}
 
-	private applyDecorations(
-		fileStatuses: Map<string, FileSyncStatus>,
-		folderStatuses: Map<string, FileSyncStatus>,
-	): void {
+	private applyDecorationsToVisibleEntries(): void {
 		this.clearDecorations();
 
 		const explorerLeaves = this.plugin.app.workspace.getLeavesOfType(
@@ -212,15 +151,18 @@ export class ObSaveFileStatusDecorator {
 			return;
 		}
 
-		for (const leaf of explorerLeaves) {
-			const entries = this.collectExplorerEntries(leaf.view.containerEl);
+		const pendingUnder = this.isDisconnected()
+			? new Map<string, boolean>()
+			: this.buildFolderPendingIndex();
 
-			for (const { path, anchor, kind } of entries) {
+		for (const leaf of explorerLeaves) {
+			const visible = this.collectExplorerEntries(leaf.view.containerEl);
+
+			for (const { path, anchor, kind } of visible) {
 				const status =
 					kind === "folder"
-						? folderStatuses.get(path)
-						: fileStatuses.get(path);
-				if (!status) continue;
+						? this.resolveFolderStatus(path, pendingUnder)
+						: this.resolveFileStatus(path);
 				this.attachDot(anchor, status, kind);
 			}
 		}
