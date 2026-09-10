@@ -79,7 +79,10 @@ export class SyncEngine {
 				| GoogleDriveLazyProvider
 				| undefined;
 			if (provider) {
-				await syncTemplateFoldersToGoogleDrive(provider);
+				await syncTemplateFoldersToGoogleDrive(provider, (path, remoteId) =>
+					this.registerRemoteFolder(path, remoteId),
+				);
+				await this.ledgerManager.save();
 			}
 			return;
 		}
@@ -91,8 +94,45 @@ export class SyncEngine {
 			}
 			const provider = this.providers.get("github") as GitHubProvider | undefined;
 			if (provider) {
-				await syncTemplateFoldersToGitHub(this.app, provider);
+				await syncTemplateFoldersToGitHub(
+					this.app,
+					provider,
+					(gitkeepPath, sha) => this.registerRemoteGitkeep(gitkeepPath, sha),
+				);
+				await this.ledgerManager.save();
 			}
+		}
+	}
+
+	/**
+	 * Consolida en el ledger la carpeta ya materializada en la nube para que el
+	 * ciclo de push no vuelva a resolverla ni cree un duplicado.
+	 */
+	private registerRemoteFolder(vaultPath: string, remoteId: string): void {
+		const localFolder = this.app.vault.getAbstractFileByPath(vaultPath);
+		if (!(localFolder instanceof TFolder)) {
+			return;
+		}
+		const entry = this.ledgerManager.getEntry(vaultPath);
+		if (entry?.previousPath) {
+			return;
+		}
+		this.ledgerManager.markSynchronized(vaultPath, {
+			type: "folder",
+			remoteId,
+		});
+	}
+
+	private registerRemoteGitkeep(gitkeepPath: string, sha: string): void {
+		this.ledgerManager.markSynchronized(gitkeepPath, {
+			type: "file",
+			remoteId: sha,
+			hash: hashContent(GITKEEP),
+			size: GITKEEP.length,
+		});
+		const folderPath = this.parentPath(gitkeepPath);
+		if (folderPath) {
+			this.registerRemoteFolder(folderPath, sha);
 		}
 	}
 
@@ -544,22 +584,6 @@ export class SyncEngine {
 		const hashAtUploadStart = hashContent(content);
 		const providerId = this.settings.activeProvider!;
 
-		if (
-			providerId === "gdrive" &&
-			entry.status === "U" &&
-			entry.remoteId &&
-			entry.hash === hashAtUploadStart
-		) {
-			this.ledgerManager.markSynchronized(path, {
-				type: "file",
-				remoteId: entry.remoteId,
-				hash: hashAtUploadStart,
-				mtime: file.stat.mtime,
-				size: file.stat.size,
-			});
-			return true;
-		}
-
 		if (providerId === "gdrive") {
 			const provider = this.providers.get("gdrive") as GoogleDriveLazyProvider;
 			const root = await provider.getOrCreateTargetFolder();
@@ -614,6 +638,7 @@ export class SyncEngine {
 
 	/**
 	 * Tras subir, re-lee hash/mtime en disco. Si cambió durante la transferencia, deja U y re-encola sync.
+	 * `S` solo se escribe con `remoteId` confirmado por el proveedor.
 	 */
 	private async finalizeFilePush(
 		path: string,
@@ -623,6 +648,17 @@ export class SyncEngine {
 	): Promise<boolean> {
 		const contentAfter = await this.app.vault.read(file);
 		const hashAfter = hashContent(contentAfter);
+
+		if (!remoteId) {
+			this.ledgerManager.markUpdatedWithFingerprint(path, {
+				hash: hashAfter,
+				mtime: file.stat.mtime,
+				size: file.stat.size,
+			});
+			this.pendingAutoSync = true;
+			console.warn(`[ObSave] Subida sin ID remoto confirmado: ${path}`);
+			return false;
+		}
 
 		if (hashAfter !== hashAtUploadStart) {
 			this.ledgerManager.markUpdatedWithFingerprint(path, {

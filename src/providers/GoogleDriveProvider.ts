@@ -130,6 +130,8 @@ export class GoogleDriveProvider implements IStorageProvider {
 	private config: GoogleDriveProviderConfig | null = null;
 	private refreshTimerId: number | null = null;
 	private folderPathCache = new Map<string, string>();
+	private folderResolutionLocks = new Map<string, Promise<string>>();
+	private targetFolderResolution: Promise<GoogleDriveFolderInfo> | null = null;
 	private onConfigChanged: ((config: GoogleDriveProviderConfig) => void) | null =
 		null;
 	private authContext: GoogleDriveAuthContext | null = null;
@@ -372,7 +374,21 @@ export class GoogleDriveProvider implements IStorageProvider {
 	 * - `new`: busca o crea carpeta por nombre.
 	 * - `existing`: usa folderId seleccionado en el modal.
 	 */
+	/** Serializa la resolución de la carpeta raíz para evitar creaciones paralelas. */
 	async getOrCreateTargetFolder(): Promise<GoogleDriveFolderInfo> {
+		if (this.targetFolderResolution) {
+			return this.targetFolderResolution;
+		}
+
+		this.targetFolderResolution = this.resolveTargetFolder();
+		try {
+			return await this.targetFolderResolution;
+		} finally {
+			this.targetFolderResolution = null;
+		}
+	}
+
+	private async resolveTargetFolder(): Promise<GoogleDriveFolderInfo> {
 		if (!this.config) {
 			throw new Error("Google Drive no está configurado.");
 		}
@@ -615,14 +631,46 @@ export class GoogleDriveProvider implements IStorageProvider {
 				continue;
 			}
 
-			currentParentId = await this.findOrCreateSubfolder(
+			currentParentId = await this.resolveSubfolderExclusive(
+				cacheKey,
 				currentParentId,
 				segment,
 			);
-			this.folderPathCache.set(cacheKey, currentParentId);
 		}
 
 		return currentParentId;
+	}
+
+	/**
+	 * Serializa la resolución por `rootFolderId:ruta`: si otra llamada ya está
+	 * creando la misma carpeta, reutiliza su promesa en vez de emitir otro POST.
+	 */
+	private async resolveSubfolderExclusive(
+		cacheKey: string,
+		parentId: string,
+		name: string,
+	): Promise<string> {
+		const inFlight = this.folderResolutionLocks.get(cacheKey);
+		if (inFlight) {
+			return inFlight;
+		}
+
+		const resolution = (async () => {
+			const cached = this.folderPathCache.get(cacheKey);
+			if (cached) {
+				return cached;
+			}
+			const folderId = await this.findOrCreateSubfolder(parentId, name);
+			this.folderPathCache.set(cacheKey, folderId);
+			return folderId;
+		})();
+
+		this.folderResolutionLocks.set(cacheKey, resolution);
+		try {
+			return await resolution;
+		} finally {
+			this.folderResolutionLocks.delete(cacheKey);
+		}
 	}
 
 	private async findOrCreateSubfolder(

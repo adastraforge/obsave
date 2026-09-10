@@ -29,13 +29,26 @@ async function ensureLocalGitkeep(app: App, folderPath: string): Promise<string>
 	return gitkeepPath;
 }
 
+/** Notifica la entidad remota resuelta para registrarla en el ledger. */
+export type RemoteEntityResolved = (
+	vaultPath: string,
+	remoteId: string,
+) => void;
+
 /** Asegura la jerarquía de carpetas plantilla en Google Drive (incluso vacías). */
 export async function syncTemplateFoldersToGoogleDrive(
 	provider: GoogleDriveLazyProvider,
+	onFolderResolved?: RemoteEntityResolved,
 ): Promise<void> {
 	const root = await provider.getOrCreateTargetFolder();
 	for (const templateFolder of VAULT_TEMPLATE_FOLDERS) {
-		await provider.resolveOrCreateFolderPath(root.folderId, templateFolder);
+		const folderId = await provider.resolveOrCreateFolderPath(
+			root.folderId,
+			templateFolder,
+		);
+		if (folderId) {
+			onFolderResolved?.(templateFolder, folderId);
+		}
 	}
 }
 
@@ -43,6 +56,7 @@ export async function syncTemplateFoldersToGoogleDrive(
 export async function syncTemplateFoldersToGitHub(
 	app: App,
 	provider: GitHubProvider,
+	onGitkeepUploaded?: RemoteEntityResolved,
 ): Promise<void> {
 	for (const templateFolder of VAULT_TEMPLATE_FOLDERS) {
 		if (!folderExists(app, templateFolder)) {
@@ -58,6 +72,9 @@ export async function syncTemplateFoldersToGitHub(
 			continue;
 		}
 
-		await provider.uploadRemoteFile(gitkeepPath, GITKEEP_BODY);
+		const sha = await provider.uploadRemoteFile(gitkeepPath, GITKEEP_BODY);
+		if (sha) {
+			onGitkeepUploaded?.(gitkeepPath, sha);
+		}
 	}
 }

@@ -7,10 +7,19 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.1.0`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.1.0`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.1.3`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.1.3`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Subida obligatoria en U/C y dedup de carpetas Drive v1.1.3
+- Eliminado el atajo que marcaba `S` sin PATCH en Drive; `S` solo tras `remoteId` confirmado.
+- Carpetas plantilla registran `remoteId` en el ledger al resolverse; mutex por ruta en `resolveOrCreateFolderPath` y en la carpeta raíz.
+- Fix `instanceof` sobre `import type` (TFolder/TFile) que rompía cascada de borrado y listener de `tipo`.
+
+### Badges O(1) y estados estrictos v1.1.1 / rename cascada v1.1.2
+- Badges evaluados solo en rutas visibles; `C` siempre rojo, `U` amarillo, `S` verde.
+- `renamePathCascade` con `previousPath`; rename remoto por `remoteId`; trailing hash en `finalizeFilePush`.
 
 ### Manifiesto centralizado ledger v1.1.0
 - Motor sync basado en `.obsave/ledger.json` (local: `.obsidian/plugins/obsave/ledger.json`).

@@ -722,3 +722,21 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.1.0`
 
 ---
+
+## DEC-051 | 2026-09-10 | Subida incondicional en U/C y serialización de carpetas Drive
+
+**Contexto:** Auditoría v1.1.2 (`doc/auditoria-obsave-v1.1.3.md`): notas en `U` se marcaban `S` sin PATCH en Drive; `05_Archivadas` se duplicaba por creación concurrente desde template sync y push de carpeta.
+
+**Decisión:**
+1. `pushRemoteFile` siempre ejecuta la subida cuando el estado es `C` o `U`; `S` se escribe solo con `remoteId` confirmado.
+2. `syncTemplateFoldersToGoogleDrive` reporta el `remoteId` resuelto y el motor lo consolida como `S` en el ledger.
+3. Mutex por `rootFolderId:ruta` en `resolveOrCreateFolderPath` y promesa única en `getOrCreateTargetFolder`.
+4. `TFolder`/`TFile` importados como valor donde se usa `instanceof` (esbuild eliminaba el import type).
+
+**Alternativas descartadas:**
+- Comparar hash remoto por HEAD antes de subir (coste de red por archivo).
+- Deduplicar carpetas post-hoc en Drive (destructivo y sujeto a carreras).
+
+**Release:** `v1.1.3`
+
+---

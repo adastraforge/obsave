@@ -1,5 +1,5 @@
-import type { App, TAbstractFile, TFile, TFolder } from "obsidian";
-import { normalizePath } from "obsidian";
+import type { App, TAbstractFile, TFile } from "obsidian";
+import { normalizePath, TFolder } from "obsidian";
 import type { SyncLedgerEntry } from "../settings";
 import { hashContent } from "../utils/contentHash";
 import {

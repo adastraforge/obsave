@@ -1,4 +1,5 @@
-import type { App, TAbstractFile, TFile } from "obsidian";
+import type { App, TAbstractFile } from "obsidian";
+import { TFile } from "obsidian";
 import { cleanFolderTypeName } from "./vaultStructure";
 import { updateNoteTipo } from "../utils/frontmatter";
 
