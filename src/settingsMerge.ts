@@ -71,10 +71,6 @@ export function mergeStoredSettings(
 			typeof migrated.deviceName === "string" && migrated.deviceName.trim()
 				? migrated.deviceName.trim()
 				: DEFAULT_SETTINGS.deviceName,
-		structureSyncNeeded:
-			typeof migrated.structureSyncNeeded === "boolean"
-				? migrated.structureSyncNeeded
-				: false,
 	};
 }
 

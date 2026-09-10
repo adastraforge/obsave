@@ -17,12 +17,6 @@ export interface SyncRunResult {
 		| "cancelled";
 }
 
-/** Resultado de materializar las carpetas plantilla en la nube */
-export interface TemplateFolderSyncOutcome {
-	/** Quedan entradas en el ledger local sin publicar en el manifiesto remoto. */
-	pendingPublication: boolean;
-}
-
 /** Evento emitido por SyncEngine hacia la UI */
 export interface SyncEngineEvent {
 	type: "status-changed" | "sync-complete" | "sync-error" | "sync-skipped";

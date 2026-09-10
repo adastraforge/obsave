@@ -112,8 +112,6 @@ export interface ObSaveSettings {
 	syncedLedger: Record<string, SyncLedgerEntry>;
 	/** Nombre del dispositivo en el manifiesto remoto */
 	deviceName?: string;
-	/** Sincronizar estructura de carpetas plantilla en el próximo ciclo o vía UI */
-	structureSyncNeeded?: boolean;
 }
 
 export const DEFAULT_SETTINGS: ObSaveSettings = {

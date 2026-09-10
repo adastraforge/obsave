@@ -7,10 +7,15 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.1.4`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.1.4`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.1.5`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.1.5`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Generación de carpetas estrictamente local v1.1.5
+- «Generar carpetas de la bóveda» solo crea directorios en disco y los marca `C` en el ledger; cero peticiones al proveedor.
+- La subida es responsabilidad exclusiva del ciclo del motor (`pushLocalPendingChanges`), sea auto-sync o «Sincronizar ahora».
+- Eliminados `syncTemplateFoldersToCloud`, `requestStructureSync`, el ajuste `structureSyncNeeded` y `productivity/vaultFolderSync.ts`: desaparece la segunda vía de creación remota que duplicaba carpetas en Drive.
 
 ### Descarga verificada y durabilidad del ledger v1.1.4
 - `reconcileRemoteEntry`: una entrada remota en `S` se descarga si falta en disco o su hash difiere; `S` local solo tras verificar el archivo.

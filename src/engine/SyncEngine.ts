@@ -12,17 +12,12 @@ import type {
 	SyncRunResult,
 	SyncStatus,
 	SyncTrigger,
-	TemplateFolderSyncOutcome,
 } from "../types";
 import { hashContent } from "../utils/contentHash";
 import { LedgerManager } from "../ledger/LedgerManager";
 import { hashManifest } from "../ledger/manifestHash";
 import { RemoteManifestStore } from "../ledger/RemoteManifestStore";
 import type { LedgerEntry, LedgerManifest } from "../ledger/types";
-import {
-	syncTemplateFoldersToGitHub,
-	syncTemplateFoldersToGoogleDrive,
-} from "../productivity/vaultFolderSync";
 
 type SyncEngineListener = (event: SyncEngineEvent) => void;
 
@@ -63,76 +58,6 @@ export class SyncEngine {
 
 	getLedgerManager(): LedgerManager {
 		return this.ledgerManager;
-	}
-
-	requestStructureSync(): void {
-		this.settings.structureSyncNeeded = true;
-	}
-
-	/**
-	 * Materializa la estructura plantilla en la nube. Las carpetas quedan en `C`
-	 * con su `remoteId` conocido: el estado `S` solo lo concede un ciclo completo,
-	 * que es el único que publica `.obsave/ledger.json` en el remoto.
-	 */
-	async syncTemplateFoldersToCloud(): Promise<TemplateFolderSyncOutcome> {
-		const providerId = this.settings.activeProvider;
-		if (!providerId) {
-			return { pendingPublication: false };
-		}
-
-		if (providerId === "gdrive" && this.isGoogleDriveFolderReady()) {
-			const provider = this.providers.get("gdrive") as
-				| GoogleDriveLazyProvider
-				| undefined;
-			if (!provider) {
-				return { pendingPublication: false };
-			}
-			await syncTemplateFoldersToGoogleDrive(provider, (path, remoteId) =>
-				this.registerRemoteFolder(path, remoteId),
-			);
-			await this.ledgerManager.save();
-			return { pendingPublication: this.ledgerManager.hasPendingChanges() };
-		}
-
-		if (providerId === "github") {
-			const gh = this.settings.providerConfig.github;
-			if (!gh?.token || !gh.remoteUrl) {
-				return { pendingPublication: false };
-			}
-			const provider = this.providers.get("github") as GitHubProvider | undefined;
-			if (!provider) {
-				return { pendingPublication: false };
-			}
-			await syncTemplateFoldersToGitHub(
-				this.app,
-				provider,
-				(gitkeepPath, sha) => this.registerRemoteGitkeep(gitkeepPath, sha),
-			);
-			await this.ledgerManager.save();
-			return { pendingPublication: this.ledgerManager.hasPendingChanges() };
-		}
-
-		return { pendingPublication: this.ledgerManager.hasPendingChanges() };
-	}
-
-	/**
-	 * Guarda el id remoto de la carpeta pero la deja pendiente: `S` solo se
-	 * concede en un ciclo completo, que es el único que publica el manifiesto.
-	 */
-	private registerRemoteFolder(vaultPath: string, remoteId: string): void {
-		const localFolder = this.app.vault.getAbstractFileByPath(vaultPath);
-		if (!(localFolder instanceof TFolder)) {
-			return;
-		}
-		const entry = this.ledgerManager.getEntry(vaultPath);
-		if (entry?.previousPath) {
-			return;
-		}
-		this.ledgerManager.attachRemoteId(vaultPath, remoteId, "folder");
-	}
-
-	private registerRemoteGitkeep(gitkeepPath: string, sha: string): void {
-		this.ledgerManager.attachRemoteId(gitkeepPath, sha, "file");
 	}
 
 	updateSettings(settings: ObSaveSettings): void {
@@ -361,11 +286,6 @@ export class SyncEngine {
 	}
 
 	private async runLedgerSync(): Promise<SyncResult> {
-		if (this.settings.structureSyncNeeded) {
-			await this.syncTemplateFoldersToCloud();
-			this.settings.structureSyncNeeded = false;
-		}
-
 		if (!this.ledgerManager.isLoaded()) {
 			await this.ledgerManager.load();
 		}

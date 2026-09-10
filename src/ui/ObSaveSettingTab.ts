@@ -186,7 +186,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					section,
 					"Generar carpetas de la bóveda",
 					null,
-					() => void this.generateAndSyncVaultFolders(),
+					() => void this.generateVaultFolders(),
 				);
 			},
 		);
@@ -249,28 +249,13 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		this.display();
 	}
 
-	private async generateAndSyncVaultFolders(): Promise<void> {
-		await generateVaultTemplateFolders(this.app);
-		if (!isProviderConfigured(this.plugin.settings)) {
-			return;
-		}
-		try {
-			const outcome = await this.plugin.syncEngine.syncTemplateFoldersToCloud();
-			this.plugin.settings.structureSyncNeeded = false;
-			await this.plugin.saveSettings();
-			if (outcome.pendingPublication && !this.plugin.syncEngine.canAutoSync()) {
-				new Notice(
-					"ObSave: Carpetas creadas en la nube. Quedan pendientes hasta el próximo ciclo de sincronización.",
-				);
-			} else {
-				new Notice("ObSave: Estructura de carpetas sincronizada con la nube.");
-			}
-		} catch (error) {
-			const message =
-				error instanceof Error ? error.message : "Error al sincronizar carpetas";
-			new Notice(`ObSave: ${message}`);
-			console.warn("[ObSave] sync carpetas plantilla:", error);
-		}
+	/**
+	 * Solo crea carpetas y las marca `C` en el ledger: quedan en rojo hasta que
+	 * un ciclo del motor las suba. Sin peticiones al proveedor desde este botón.
+	 */
+	private async generateVaultFolders(): Promise<void> {
+		await generateVaultTemplateFolders(this.app, this.plugin.ledgerManager);
+		await this.plugin.refreshDecoratorsImmediate();
 	}
 
 	private renderProviderGrid(containerEl: HTMLElement): void {

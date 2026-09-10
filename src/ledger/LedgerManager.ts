@@ -407,24 +407,6 @@ export class LedgerManager {
 		}
 	}
 
-	/** Registra el id remoto conocido sin declarar la entrada sincronizada. */
-	attachRemoteId(
-		path: string,
-		remoteId: string,
-		type: LedgerEntryType,
-	): void {
-		const entry = this.manifest.entries[path];
-		if (!entry) {
-			this.manifest.entries[path] = { type, status: "C", remoteId };
-			return;
-		}
-		entry.remoteId = remoteId;
-		if (entry.status === "D") {
-			entry.status = "C";
-			delete entry.previousPath;
-		}
-	}
-
 	trackDelete(file: TAbstractFile): void {
 		const path = file.path;
 		this.markDeleted(path);

@@ -759,3 +759,21 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.1.4`
 
 ---
+
+## DEC-053 | 2026-09-10 | Generación de carpetas plantilla aislada del proveedor
+
+**Contexto:** El botón «Generar carpetas de la bóveda» llamaba a `syncTemplateFoldersToCloud`, creando una segunda vía de escritura remota en paralelo al push del ledger. Esa duplicidad es la raíz documentada de las carpetas repetidas en Drive (vías A/B/C de `docs/auditoria-obsave-v1.1.3.md`) y de los estados `S` sin manifiesto publicado (H-02).
+
+**Decisión:**
+1. `generateVaultTemplateFolders(app, ledger)` es estrictamente local: `vault.createFolder()` + `trackFolder()` (estado `C`) + `ledger.save()`. También registra carpetas plantilla preexistentes ausentes del manifiesto.
+2. El botón repinta badges con `refreshDecoratorsImmediate()`; las carpetas nuevas salen en rojo hasta que el motor las suba.
+3. Un único camino de subida de carpetas: `pushLocalPendingChanges` → `pushRemoteFolder`, que ya cubre `.gitkeep` en carpetas vacías de GitHub.
+4. Eliminados `syncTemplateFoldersToCloud`, `registerRemoteFolder`, `registerRemoteGitkeep`, `LedgerManager.attachRemoteId`, `requestStructureSync` (código muerto, H-12), `TemplateFolderSyncOutcome`, el ajuste `structureSyncNeeded` y el módulo `productivity/vaultFolderSync.ts`.
+
+**Alternativas descartadas:**
+- Mantener `syncTemplateFoldersToCloud` solo dentro de `runLedgerSync` (conserva la carrera de doble creación sin aportar nada que no haga ya `pushRemoteFolder`).
+- Disparar un ciclo de sincronización desde el botón (rompe el aislamiento pedido y sorprende con tráfico de red en una acción de estructura local).
+
+**Release:** `v1.1.5`
+
+---
