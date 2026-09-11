@@ -545,11 +545,53 @@
 	text-decoration: underline;
 }
 
+/* CAJA DE HERRAMIENTAS MARKDOWN */
+
+.obsave-toolbar-modal {
+	width: min(520px, 94vw);
+	max-height: 84vh;
+	overflow-y: auto;
+}
+
+.obsave-toolbar-status {
+	margin-bottom: 1em;
+}
+
+.obsave-toolbar-group-title {
+	font-size: 0.68em;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.07em;
+	color: var(--text-muted);
+	margin: 1.1em 0 0.5em;
+}
+
+.obsave-toolbar-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+	gap: 6px;
+}
+
+.obsave-toolbar-button {
+	padding: 9px 6px;
+	border-radius: 8px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary-alt);
+	color: var(--text-normal);
+	font-size: 0.85em;
+	cursor: pointer;
+	transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.obsave-toolbar-button:hover {
+	background: var(--background-modifier-hover);
+	border-color: var(--text-accent);
+}
+
 /* INFORME OPERATIVO — dashboard */
 
-.obsave-vault-report-modal {
-	width: min(760px, 95vw);
-	max-height: 86vh;
+.obsave-vault-report-view {
+	padding: 14px 16px;
 	overflow-y: auto;
 }
 

@@ -800,3 +800,22 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.2.0`
 
 ---
+
+## DEC-055 | 2026-09-10 | Caja de herramientas Markdown e informe como vista del workspace
+
+**Contexto:** Faltaba una vía rápida para insertar sintaxis Markdown sobre la nota activa, y el informe operativo era un `Modal`: bloqueaba el editor y obligaba a cerrarlo para trabajar.
+
+**Decisión:**
+1. `MarkdownToolbarModal` agrupa el catálogo completo en seis bloques más el generador de tablas. Tres primitivas cubren todos los casos: `applyWrap` (envuelve la selección o inserta un marcador de posición ya seleccionado), `applyLinePrefix` (sustituye el marcador de línea existente y actúa como conmutador al repetirlo) e `insertBlock` (inserta en líneas propias, con salto previo si la línea actual tiene contenido).
+2. El modal captura el `MarkdownView` en `onOpen`, antes de robar el foco, y lo devuelve al editor tras cada acción. Permanece abierto para encadenar formatos.
+3. El informe pasa a `VaultReportView extends ItemView` registrada como `obsave-vault-report`, abierta en la barra lateral derecha con botón para moverla a ventana flotante mediante `openPopoutLeaf`.
+
+**Alternativas descartadas:**
+- Cerrar la caja de herramientas tras cada acción: impide encadenar formatos, que es el uso habitual de una barra.
+- Iconos Lucide en los botones de la caja: la disponibilidad de cada nombre depende del subconjunto que empaqueta Obsidian y un icono ausente deja el botón vacío; se usan etiquetas de texto con tooltip.
+- Abrir el informe como pestaña del área principal: no permite verlo y editar a la vez sin dividir la vista manualmente.
+- Desacoplar las hojas en `onunload`: desaconsejado por las directrices de plugins de Obsidian.
+
+**Release:** `v1.2.1`
+
+---

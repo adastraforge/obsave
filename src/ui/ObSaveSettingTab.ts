@@ -22,7 +22,8 @@ import { openExternalUrl } from "../oauth/runtimeBridge";
 import { GoogleFolderPickerModal } from "./GoogleFolderPickerModal";
 import { GitHubRepoPickerModal } from "./GitHubRepoPickerModal";
 import { CaptureNoteModal } from "./CaptureNoteModal";
-import { VaultReportModal } from "./VaultReportModal";
+import { MarkdownToolbarModal } from "./MarkdownToolbarModal";
+import { openVaultReportView } from "./VaultReportModal";
 import {
 	generateVaultTemplateFolders,
 	VAULT_TEMPLATE_FOLDERS,
@@ -227,10 +228,23 @@ export class ObSaveSettingTab extends PluginSettingTab {
 				);
 				this.renderActionButton(
 					section,
+					"Herramientas Markdown",
+					"pencil-ruler",
+					"Caja flotante con toda la sintaxis aplicable sobre la nota activa.",
+					() => {
+						this.closeSettingsWindow();
+						new MarkdownToolbarModal(this.app).open();
+					},
+				);
+				this.renderActionButton(
+					section,
 					"Informe de bóveda",
 					"bar-chart-3",
-					"Panel con vencidas, pendientes y distribución por carpeta.",
-					() => new VaultReportModal(this.app).open(),
+					"Panel lateral independiente: sigue abierto mientras editas notas.",
+					() => {
+						this.closeSettingsWindow();
+						void openVaultReportView(this.app);
+					},
 				);
 			},
 		);
@@ -288,6 +302,12 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	openMainPanel(): void {
 		this.currentView = "home";
 		this.display();
+	}
+
+	/** Cierra la ventana de ajustes para dejar visible la herramienta lanzada. */
+	private closeSettingsWindow(): void {
+		const app = this.app as App & { setting?: { close?: () => void } };
+		app.setting?.close?.();
 	}
 
 	/**

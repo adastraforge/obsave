@@ -11,7 +11,12 @@ import type { CloudProviderId } from "./settings";
 import { ObSaveFileStatusDecorator } from "./ui/FileStatusDecorator";
 import { ObSaveSettingTab } from "./ui/ObSaveSettingTab";
 import { CaptureNoteModal } from "./ui/CaptureNoteModal";
-import { VaultReportModal } from "./ui/VaultReportModal";
+import { MarkdownToolbarModal } from "./ui/MarkdownToolbarModal";
+import {
+	openVaultReportView,
+	VAULT_REPORT_VIEW_TYPE,
+	VaultReportView,
+} from "./ui/VaultReportModal";
 import { createQuickDailyNote } from "./productivity/noteCapture";
 import { installNoteTypeRenameListener } from "./productivity/noteTypeRename";
 import { mergeStoredSettings } from "./settingsMerge";
@@ -85,6 +90,11 @@ export default class ObSavePlugin extends Plugin {
 
 		installNoteTypeRenameListener(this.app, (event) => this.registerEvent(event));
 
+		this.registerView(
+			VAULT_REPORT_VIEW_TYPE,
+			(leaf) => new VaultReportView(leaf),
+		);
+
 		this.registerCommands();
 
 		this.registerEvent(
@@ -149,6 +159,10 @@ export default class ObSavePlugin extends Plugin {
 			},
 		);
 		this.updateRibbonIcon(this.settings.syncStatus);
+
+		this.addRibbonIcon("pencil-ruler", "ObSave — Herramientas Markdown", () =>
+			new MarkdownToolbarModal(this.app).open(),
+		);
 
 		this.startAutoSync();
 
@@ -412,7 +426,13 @@ export default class ObSavePlugin extends Plugin {
 		this.addCommand({
 			id: "obsave-vault-report",
 			name: "Abrir informe operativo de bóveda",
-			callback: () => new VaultReportModal(this.app).open(),
+			callback: () => void openVaultReportView(this.app),
+		});
+
+		this.addCommand({
+			id: "obsave-markdown-toolbar",
+			name: "Abrir caja de herramientas Markdown",
+			callback: () => new MarkdownToolbarModal(this.app).open(),
 		});
 	}
 

@@ -7,10 +7,16 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.2.0`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.2.0`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.2.1`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.2.1`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Caja de herramientas Markdown e informe desacoplado v1.2.1
+- `MarkdownToolbarModal`: 30 herramientas sobre el editor activo (formato, estructura, listas, elementos, callouts, LaTeX, comentarios y generador de tablas).
+- Accesible desde el ribbon (`pencil-ruler`), el comando «Abrir caja de herramientas Markdown» y Ajustes; captura el `MarkdownView` antes de tomar el foco y lo devuelve tras cada acción.
+- El informe pasa de `Modal` a `VaultReportView extends ItemView` (`obsave-vault-report`): vive en la barra lateral derecha o en ventana flotante (`openPopoutLeaf`) y permanece abierto mientras se editan notas.
+- Abrir una nota desde el informe usa `getMostRecentLeaf`, nunca la hoja del propio informe.
 
 ### Refinamiento UI/UX y plantillas v1.2.0
 - Plantilla única minimalista: YAML + `# título` + cuerpo vacío; sin callout `[!info]` ni comentarios `%%…%%`.
