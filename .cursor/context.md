@@ -7,10 +7,19 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.1.5`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.1.5`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.2.0`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.2.0`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Refinamiento UI/UX y plantillas v1.2.0
+- Plantilla única minimalista: YAML + `# título` + cuerpo vacío; sin callout `[!info]` ni comentarios `%%…%%`.
+- Tags YAML sin almohadilla (`- pendiente`): antes `- #pendiente` era un comentario YAML y Obsidian no los indexaba.
+- Cursor y foco automáticos en el cuerpo al crear una nota (`MarkdownView.editor.setCursor`).
+- Sanitizador que conserva espacios y capitalización; limpia caracteres del SO y los que rompen wikilinks (`#^[]`).
+- Nombres automáticos `Diaria YYYY-MM-DD HHmm.md` y sufijo de colisión `(2)`; el modal de captura ya no se cierra ante error.
+- Informe de bóveda como dashboard: `metadataCache` en lugar de `vault.read()`, tarjetas KPI filtrantes, dona SVG, barras por volumen y pestañas con badges.
+- Ajustes: textos redundantes a tooltips, iconos Lucide por sección y modal nativo en lugar de `confirm()`.
 
 ### Generación de carpetas estrictamente local v1.1.5
 - «Generar carpetas de la bóveda» solo crea directorios en disco y los marca `C` en el ledger; cero peticiones al proveedor.

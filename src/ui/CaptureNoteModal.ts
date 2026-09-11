@@ -1,4 +1,5 @@
-import { App, Modal, Setting } from "obsidian";
+import type { App, TextComponent } from "obsidian";
+import { Modal, Setting } from "obsidian";
 import { createCaptureNote, listDestinationFolders } from "../productivity/noteCapture";
 import { formatTodayDate } from "../utils/frontmatter";
 
@@ -7,6 +8,8 @@ export class CaptureNoteModal extends Modal {
 	private folder = "00_Diarias";
 	private fechaAtencion = formatTodayDate();
 	private tags = "";
+	private titleInput: TextComponent | undefined;
+	private alertEl: HTMLElement | undefined;
 
 	constructor(
 		app: App,
@@ -20,14 +23,18 @@ export class CaptureNoteModal extends Modal {
 		contentEl.empty();
 		titleEl.setText("Captura de nota enriquecida");
 
+		this.alertEl = contentEl.createDiv({ cls: "obsave-alert hidden" });
+
 		new Setting(contentEl)
 			.setName("Título")
-			.setDesc("Opcional. Si queda vacío se generará un nombre automático.")
-			.addText((text) =>
+			.setTooltip("Si lo dejas vacío se genera un nombre con la fecha y la hora.")
+			.addText((text) => {
+				this.titleInput = text;
 				text.setPlaceholder("Mi nota").onChange((v) => {
 					this.title = v;
-				}),
-			);
+					this.clearError();
+				});
+			});
 
 		const folders = listDestinationFolders(this.app);
 		new Setting(contentEl)
@@ -54,9 +61,9 @@ export class CaptureNoteModal extends Modal {
 
 		new Setting(contentEl)
 			.setName("Tags adicionales")
-			.setDesc("Separados por coma (ej. #urgente, #cliente)")
+			.setTooltip("Separados por coma. La almohadilla es opcional.")
 			.addText((text) =>
-				text.setPlaceholder("#urgente").onChange((v) => {
+				text.setPlaceholder("urgente, cliente").onChange((v) => {
 					this.tags = v;
 				}),
 			);
@@ -67,6 +74,7 @@ export class CaptureNoteModal extends Modal {
 				.setCta()
 				.onClick(async () => {
 					btn.setDisabled(true);
+					btn.setButtonText("Creando…");
 					try {
 						const extraTags = this.tags
 							.split(",")
@@ -80,11 +88,34 @@ export class CaptureNoteModal extends Modal {
 						});
 						this.onCreated?.();
 						this.close();
+					} catch (error) {
+						// El modal permanece abierto: el usuario no pierde lo escrito.
+						this.showError(
+							error instanceof Error
+								? error.message
+								: "No se pudo crear la nota.",
+						);
 					} finally {
 						btn.setDisabled(false);
+						btn.setButtonText("Crear nota");
 					}
 				}),
 		);
+	}
+
+	private showError(message: string): void {
+		if (!this.alertEl) return;
+		this.alertEl.empty();
+		this.alertEl.removeClass("hidden");
+		this.alertEl.createSpan({ text: message });
+		this.titleInput?.inputEl.addClass("obsave-input-error");
+		this.titleInput?.inputEl.focus();
+	}
+
+	private clearError(): void {
+		this.alertEl?.empty();
+		this.alertEl?.addClass("hidden");
+		this.titleInput?.inputEl.removeClass("obsave-input-error");
 	}
 
 	onClose(): void {

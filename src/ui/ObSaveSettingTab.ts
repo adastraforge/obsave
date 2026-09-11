@@ -1,4 +1,13 @@
-import { App, Modal, Notice, PluginSettingTab, Setting, TextComponent } from "obsidian";
+import {
+	App,
+	Modal,
+	Notice,
+	PluginSettingTab,
+	Setting,
+	setIcon,
+	setTooltip,
+	TextComponent,
+} from "obsidian";
 import { extractGitHubOwner } from "../adapters/githubApi";
 import { GitHubProvider } from "../providers/GitHubProvider";
 import { getVaultFolderName } from "../adapters/vaultPaths";
@@ -9,13 +18,15 @@ import {
 } from "../settings";
 import { isProviderConfigured, hasProviderCredentials } from "../types";
 import { formatLocalDateTime } from "../utils/dateFormat";
-import { formatShortcutLabel } from "../utils/shortcutLabel";
 import { openExternalUrl } from "../oauth/runtimeBridge";
 import { GoogleFolderPickerModal } from "./GoogleFolderPickerModal";
 import { GitHubRepoPickerModal } from "./GitHubRepoPickerModal";
 import { CaptureNoteModal } from "./CaptureNoteModal";
 import { VaultReportModal } from "./VaultReportModal";
-import { generateVaultTemplateFolders } from "../productivity/vaultStructure";
+import {
+	generateVaultTemplateFolders,
+	VAULT_TEMPLATE_FOLDERS,
+} from "../productivity/vaultStructure";
 import { createQuickDailyNote } from "../productivity/noteCapture";
 import type ObSavePlugin from "../main";
 
@@ -59,13 +70,13 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
 	{
 		id: "onedrive",
 		name: "OneDrive",
-		description: "Microsoft OneDrive — próximamente.",
+		description: "Respaldo en la nube de Microsoft.",
 		comingSoon: true,
 	},
 	{
 		id: "icloud",
 		name: "iCloud",
-		description: "Apple iCloud — próximamente.",
+		description: "Respaldo en la nube de Apple.",
 		comingSoon: true,
 	},
 ];
@@ -126,16 +137,17 @@ export class ObSaveSettingTab extends PluginSettingTab {
 	}
 
 	private renderHeader(containerEl: HTMLElement): void {
-		containerEl.createEl("h2", { text: "ObSave" });
-		containerEl.createEl("p", {
-			text: "Asistente de sincronización en la nube",
-			cls: "setting-item-description",
+		const header = containerEl.createDiv({ cls: "obsave-header" });
+		header.createEl("h2", { text: "ObSave", cls: "obsave-header-title" });
+		header.createSpan({
+			cls: "obsave-version-chip",
+			text: `v${this.plugin.manifest.version}`,
 		});
 	}
 
 	private renderFooter(containerEl: HTMLElement): void {
 		containerEl.createEl("p", {
-			text: `ObSave v${this.plugin.manifest.version} by Ad Astra Forge`,
+			text: "Ad Astra Forge — libre y de código abierto",
 			cls: "obsave-footer",
 		});
 	}
@@ -164,11 +176,9 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			containerEl,
 			"Respaldo y nube",
 			"obsave-home-section-cloud",
+			"cloud",
+			null,
 			(section) => {
-				section.createEl("p", {
-					text: "Elige dónde quieres respaldar tu bóveda.",
-					cls: "setting-item-description",
-				});
 				this.renderProviderGrid(section);
 			},
 		);
@@ -177,15 +187,18 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			containerEl,
 			"Estructura de bóveda",
 			"obsave-home-section-structure",
+			"folder-tree",
+			null,
 			(section) => {
-				section.createEl("p", {
-					text: "Organiza tu bóveda con carpetas de productividad predefinidas.",
-					cls: "setting-item-description",
-				});
+				const chips = section.createDiv({ cls: "obsave-chip-row" });
+				for (const folder of VAULT_TEMPLATE_FOLDERS) {
+					chips.createSpan({ cls: "obsave-chip", text: folder });
+				}
 				this.renderActionButton(
 					section,
-					"Generar carpetas de la bóveda",
-					null,
+					"Generar carpetas",
+					"folder-plus",
+					"Crea en disco las carpetas que falten. La subida a la nube la hace el siguiente ciclo de sincronización.",
 					() => void this.generateVaultFolders(),
 				);
 			},
@@ -193,23 +206,30 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 		this.renderHomeSection(
 			containerEl,
-			"Herramientas y productividad",
+			"Herramientas",
 			"obsave-home-section-tools",
+			"zap",
+			"Puedes asignar atajos de teclado a estas acciones desde Ajustes → Atajos.",
 			(section) => {
-				section.createEl("p", {
-					text: "Puedes personalizar los atajos de teclado para ObSave desde Ajustes → Atajos.",
-					cls: "setting-item-description",
-				});
-				this.renderActionButton(section, "Nota rápida (1 clic)", null, () =>
-					void createQuickDailyNote(this.app),
-				);
-				this.renderActionButton(section, "Captura de nota enriquecida", null, () =>
-					new CaptureNoteModal(this.app).open(),
+				this.renderActionButton(
+					section,
+					"Nota rápida",
+					"pencil-line",
+					"Crea una nota en 00_Diarias y abre el editor listo para escribir.",
+					() => void createQuickDailyNote(this.app),
 				);
 				this.renderActionButton(
 					section,
-					"Informe operativo de bóveda",
-					null,
+					"Captura enriquecida",
+					"file-plus-2",
+					"Elige carpeta, fecha de atención y etiquetas antes de crear la nota.",
+					() => new CaptureNoteModal(this.app).open(),
+				);
+				this.renderActionButton(
+					section,
+					"Informe de bóveda",
+					"bar-chart-3",
+					"Panel con vencidas, pendientes y distribución por carpeta.",
 					() => new VaultReportModal(this.app).open(),
 				);
 			},
@@ -220,27 +240,48 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		containerEl: HTMLElement,
 		title: string,
 		cls: string,
+		icon: string,
+		help: string | null,
 		renderBody: (section: HTMLElement) => void,
 	): void {
 		const card = containerEl.createDiv({ cls: `obsave-home-section ${cls}` });
-		card.createEl("h3", { text: title, cls: "obsave-home-section-title" });
+		const header = card.createDiv({ cls: "obsave-home-section-header" });
+
+		const iconEl = header.createSpan({ cls: "obsave-home-section-icon" });
+		setIcon(iconEl, icon);
+		header.createEl("h3", { text: title, cls: "obsave-home-section-title" });
+
+		if (help) {
+			const hint = header.createSpan({ cls: "obsave-help-icon" });
+			setIcon(hint, "help-circle");
+			setTooltip(hint, help);
+			hint.setAttribute("aria-label", help);
+		}
+
 		renderBody(card);
 	}
 
 	private renderActionButton(
 		containerEl: HTMLElement,
 		label: string,
-		shortcut: string | null,
+		icon: string | null,
+		tooltip: string | null,
 		onClick: () => void,
 	): void {
 		const row = containerEl.createDiv({ cls: "obsave-tool-row" });
-		const btn = row.createEl("button", { text: label, cls: "mod-cta" });
-		if (shortcut) {
-			row.createEl("kbd", {
-				text: formatShortcutLabel(shortcut),
-				cls: "obsave-kbd",
-			});
+		const btn = row.createEl("button", { cls: "mod-cta obsave-tool-button" });
+
+		if (icon) {
+			const iconEl = btn.createSpan({ cls: "obsave-tool-button-icon" });
+			setIcon(iconEl, icon);
 		}
+		btn.createSpan({ text: label });
+
+		if (tooltip) {
+			setTooltip(btn, tooltip);
+			btn.setAttribute("aria-label", tooltip);
+		}
+
 		btn.addEventListener("click", onClick);
 	}
 
@@ -364,10 +405,10 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			return;
 		}
 
-		containerEl.createEl("p", {
-			text: `Configura ${PROVIDER_LABELS[providerId]}`,
-			cls: "setting-item-description",
-		});
+		this.renderSectionHeading(
+			containerEl,
+			`Configura ${PROVIDER_LABELS[providerId]}`,
+		);
 
 		if (providerId === "github") {
 			this.renderGitHubAssistant(containerEl);
@@ -380,18 +421,12 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		const defaultFolderName = this.getDefaultFolderName();
 		let folderName = defaultFolderName;
 
-		containerEl.createEl("p", {
-			text: "Configura la carpeta de respaldo y vincula tu cuenta de Google Drive.",
-			cls: "setting-item-description",
-		});
-
 		const alertEl = containerEl.createDiv({ cls: "obsave-alert hidden" });
 
 		const folderFields = containerEl.createDiv({ cls: "obsave-gdrive-folder-fields" });
 
 		new Setting(folderFields)
 			.setName("Tipo de carpeta")
-			.setDesc("Elige si ObSave crea una carpeta nueva o usa una existente.")
 			.addDropdown((dropdown) => {
 				dropdown
 					.addOption("new", "Crear carpeta nueva")
@@ -406,9 +441,10 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		if (this.gdriveFolderMode === "new") {
 			new Setting(folderFields)
 				.setName("Nombre de la carpeta")
-				.setDesc(`Se creará en Drive al sincronizar. Sugerido: "${defaultFolderName}"`)
+				.setDesc("Se creará en la primera sincronización.")
 				.addText((text) => {
 					text
+						.setPlaceholder(defaultFolderName)
 						.setValue(defaultFolderName)
 						.onChange((v) => {
 							folderName = v;
@@ -498,7 +534,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Usuario de GitHub")
-			.setDesc("Opcional si tu token ya identifica la cuenta.")
+			.setTooltip("Opcional: si el token ya identifica la cuenta, se rellena solo.")
 			.addText((text) => {
 				usernameText = text;
 				text.setPlaceholder("usuario").onChange((v) => {
@@ -506,19 +542,27 @@ export class ObSaveSettingTab extends PluginSettingTab {
 				});
 			});
 
-		new Setting(containerEl)
+		const tokenSetting = new Setting(containerEl)
 			.setName("Token de acceso")
-			.setDesc("Personal Access Token con permiso de repositorio.")
-			.addText((text) => {
-				text.inputEl.type = "password";
-				text.setPlaceholder("ghp_…").onChange((v) => {
-					token = v;
-				});
-			});
+			.setDesc("Personal Access Token con permiso sobre repositorios.");
 
-		const modeSetting = new Setting(containerEl)
-			.setName("Tipo de repositorio")
-			.setDesc("Elige cómo respaldar tu bóveda en GitHub.");
+		tokenSetting.addExtraButton((btn) =>
+			btn
+				.setIcon("external-link")
+				.setTooltip("Abrir la página de tokens de GitHub")
+				.onClick(() =>
+					void openExternalUrl("https://github.com/settings/tokens/new"),
+				),
+		);
+
+		tokenSetting.addText((text) => {
+			text.inputEl.type = "password";
+			text.setPlaceholder("ghp_…").onChange((v) => {
+				token = v;
+			});
+		});
+
+		const modeSetting = new Setting(containerEl).setName("Tipo de repositorio");
 
 		modeSetting.addDropdown((dropdown) => {
 			dropdown
@@ -536,10 +580,10 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		if (this.githubRepoMode === "new") {
 			new Setting(repoFields)
 				.setName("Nombre del repositorio")
-				.setDesc(`Nombre sugerido: "${defaultRepoName}"`)
 				.addText((text) => {
 					repoNameText = text;
 					text
+						.setPlaceholder(defaultRepoName)
 						.setValue(defaultRepoName)
 						.onChange((v) => {
 							repoName = v;
@@ -548,7 +592,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 			new Setting(repoFields)
 				.setName("Repositorio privado")
-				.setDesc("Desactiva para crear un repositorio público.")
+				.setTooltip("Desactívalo para crear un repositorio público.")
 				.addToggle((toggle) =>
 					toggle
 						.setValue(this.githubRepoPrivate)
@@ -566,7 +610,6 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 			new Setting(repoFields)
 				.setName("Seleccionar repositorio")
-				.setDesc("Abre el selector de repositorios de tu cuenta GitHub.")
 				.addButton((btn) =>
 					btn.setButtonText("Elegir repositorio…").onClick(() => {
 						if (!token.trim()) {
@@ -588,8 +631,10 @@ export class ObSaveSettingTab extends PluginSettingTab {
 				);
 
 			new Setting(repoFields)
-				.setName("URL / Nombre del repositorio (alternativo)")
-				.setDesc("Ejemplo: usuario/mi-repo o https://github.com/usuario/mi-repo")
+				.setName("URL o nombre del repositorio")
+				.setTooltip(
+					"Alternativa al selector. Acepta «usuario/mi-repo» o la URL completa de GitHub.",
+				)
 				.addText((text) => {
 					remoteUrlText = text;
 					text
@@ -965,10 +1010,10 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Sincronizar ahora")
-			.setDesc("Sincroniza cambios entre tu bóveda y la nube (subida y descarga).")
+			.setTooltip("Sube los cambios locales y descarga los remotos.")
 			.addButton((btn) =>
 				btn
-					.setButtonText("Sincronizar ahora")
+					.setButtonText("Sincronizar")
 					.setCta()
 					.onClick(async () => {
 						btn.setDisabled(true);
@@ -977,7 +1022,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 							await this.plugin.runSync();
 						} finally {
 							btn.setDisabled(false);
-							btn.setButtonText("Sincronizar ahora");
+							btn.setButtonText("Sincronizar");
 							this.display();
 						}
 					}),
@@ -1031,38 +1076,34 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		}
 
 		new Setting(containerEl)
-			.setName("Reparar / Reconstruir Bóveda Remota")
-			.setDesc(
-				"Escanea la bóveda local, regenera el manifiesto ledger desde cero, limpia el almacenamiento remoto y vuelve a subir toda la estructura.",
+			.setName("Reparar bóveda remota")
+			.setTooltip(
+				"Regenera el manifiesto local y vuelve a subir toda la bóveda desde cero.",
 			)
 			.addButton((btn) =>
 				btn
-					.setButtonText("Reparar / Reconstruir Bóveda Remota")
+					.setButtonText("Reparar…")
 					.setWarning()
-					.onClick(async () => {
-						const confirmed = confirm(
-							"¿Reconstruir la bóveda remota desde cero? Se eliminará el contenido remoto actual y se subirá la copia local completa.",
-						);
-						if (!confirmed) {
-							return;
-						}
-						btn.setDisabled(true);
-						btn.setButtonText("Reconstruyendo…");
-						try {
-							new Notice("ObSave: Reconstruyendo bóveda remota…");
-							await this.plugin.repairRemoteVault();
-							new Notice("ObSave: Bóveda remota reconstruida.");
-						} catch (error) {
-							const message =
-								error instanceof Error
-									? error.message
-									: "Error al reconstruir bóveda remota";
-							new Notice(`ObSave: ${message}`);
-						} finally {
-							btn.setDisabled(false);
-							btn.setButtonText("Reparar / Reconstruir Bóveda Remota");
-							this.display();
-						}
+					.onClick(() => {
+						new ConfirmRebuildModal(this.app, async () => {
+							btn.setDisabled(true);
+							btn.setButtonText("Reconstruyendo…");
+							try {
+								new Notice("ObSave: Reconstruyendo bóveda remota…");
+								await this.plugin.repairRemoteVault();
+								new Notice("ObSave: Bóveda remota reconstruida.");
+							} catch (error) {
+								const message =
+									error instanceof Error
+										? error.message
+										: "Error al reconstruir bóveda remota";
+								new Notice(`ObSave: ${message}`);
+							} finally {
+								btn.setDisabled(false);
+								btn.setButtonText("Reparar…");
+								this.display();
+							}
+						}).open();
 					}),
 			);
 	}
@@ -1089,5 +1130,51 @@ export class ObSaveSettingTab extends PluginSettingTab {
 		this.selectedProvider = "github";
 		this.currentView = "dashboard";
 		this.display();
+	}
+}
+
+/** Confirmación nativa de Obsidian para la acción destructiva de reconstrucción. */
+class ConfirmRebuildModal extends Modal {
+	constructor(
+		app: App,
+		private onConfirm: () => void | Promise<void>,
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		const { contentEl, titleEl } = this;
+		contentEl.empty();
+		titleEl.setText("Reparar bóveda remota");
+
+		const warning = contentEl.createDiv({ cls: "obsave-alert is-danger" });
+		const icon = warning.createSpan({ cls: "obsave-alert-icon" });
+		setIcon(icon, "alert-triangle");
+		warning.createSpan({
+			text: "Esta acción elimina el contenido remoto actual antes de volver a subirlo.",
+		});
+
+		const list = contentEl.createEl("ul", { cls: "obsave-confirm-list" });
+		list.createEl("li", { text: "Se regenera el manifiesto local desde la bóveda." });
+		list.createEl("li", { text: "Se borra el almacenamiento remoto del proveedor activo." });
+		list.createEl("li", { text: "Se vuelve a subir toda la estructura local." });
+
+		new Setting(contentEl)
+			.addButton((btn) =>
+				btn.setButtonText("Cancelar").onClick(() => this.close()),
+			)
+			.addButton((btn) =>
+				btn
+					.setButtonText("Reconstruir")
+					.setWarning()
+					.onClick(() => {
+						this.close();
+						void this.onConfirm();
+					}),
+			);
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
 	}
 }

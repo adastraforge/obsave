@@ -777,3 +777,26 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.1.5`
 
 ---
+
+## DEC-054 | 2026-09-10 | Refinamiento UI/UX y plantilla única de notas
+
+**Contexto:** `docs/propuesta-diseno-uiux-obsave.md`. La plantilla generaba 26 líneas con cinco capas de duplicación del mismo dato, el sanitizador sustituía espacios sin necesidad técnica mientras dejaba pasar caracteres que rompen wikilinks, el informe leía cada `.md` de disco para extraer cuatro campos y Ajustes mantenía 19 textos descriptivos permanentes.
+
+**Decisión:**
+1. Plantilla única para nota rápida y captura enriquecida: propiedades YAML, `# título` y cuerpo vacío. Fuera el callout `[!info]`, los comentarios `%%…%%`, el encabezado `## Contenido` y los textos de relleno.
+2. Tags YAML sin almohadilla. `parseFrontmatter` detecta el bloque `tags:` por estructura, no por la presencia de `#`, de modo que lee tanto el formato nuevo como el antiguo y lo normaliza al reescribir.
+3. El cursor se sitúa en el cuerpo con `MarkdownView.editor.setCursor` al abrir la nota; `MarkdownView` se importa como valor por el `instanceof`.
+4. Sanitizador que conserva espacios y capitalización; limpia caracteres de control, prohibidos del SO, `#^[]`, punto inicial/final y nombres reservados de Windows. Verificado que `encodePath` de GitHub codifica cada segmento y que Drive opera por `fileId`, así que los espacios no afectan a la sincronización.
+5. Colisiones resueltas con sufijo `(2)`; `createCaptureNote` lanza en caso de fallo real y el modal permanece abierto conservando el formulario.
+6. `computeVaultMetrics` usa `metadataCache.getFileCache` (frontmatter y `listItems[].task`) en lugar de `vault.read()`. El informe pasa a dashboard: KPI filtrantes, dona SVG con radio 15.9155, barras por volumen y pestañas que abren en el primer bucket no vacío.
+7. Ajustes: descripciones redundantes a `setTooltip`/placeholder, iconos Lucide por sección y acción, y `ConfirmRebuildModal` nativo en lugar de `confirm()`.
+
+**Alternativas descartadas:**
+- Dos plantillas diferenciadas para nota rápida y captura enriquecida (el encargo pide una sola; menos superficie que mantener).
+- Eliminar el `# H1` del cuerpo (se conserva por petición explícita y por compatibilidad con quien desactive el título en línea).
+- Conservar la heurística `✅` del informe: requería leer el cuerpo del archivo y anulaba la ganancia de `metadataCache`; el estado se determina por `estado: atendido` o casilla marcada.
+- Renombrado retroactivo de notas con guiones bajos: el cambio solo afecta a notas nuevas.
+
+**Release:** `v1.2.0`
+
+---

@@ -207,6 +207,37 @@
 	display: none;
 }
 
+.obsave-alert.is-danger {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+}
+
+.obsave-alert-icon {
+	display: inline-flex;
+	flex-shrink: 0;
+}
+
+.obsave-alert-icon .svg-icon {
+	width: 18px;
+	height: 18px;
+}
+
+.obsave-confirm-list {
+	margin: 0 0 1em;
+	padding-left: 1.35em;
+	font-size: 0.88em;
+	color: var(--text-muted);
+}
+
+.obsave-confirm-list li {
+	margin: 0.2em 0;
+}
+
+.obsave-input-error {
+	border-color: var(--text-error) !important;
+}
+
 .obsave-github-repo-fields {
 	margin-top: 0.25em;
 }
@@ -370,6 +401,27 @@
 	cursor: not-allowed;
 }
 
+/* Cabecera de ajustes */
+
+.obsave-header {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+}
+
+.obsave-header-title {
+	margin: 0;
+}
+
+.obsave-version-chip {
+	font-size: 0.72em;
+	font-family: var(--font-monospace);
+	padding: 2px 8px;
+	border-radius: 10px;
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
 /* VISTA 1 — secciones home */
 
 .obsave-home-section {
@@ -380,12 +432,58 @@
 	background: var(--background-primary-alt);
 }
 
+.obsave-home-section-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 0.75em;
+}
+
+.obsave-home-section-icon {
+	display: inline-flex;
+	color: var(--text-muted);
+}
+
+.obsave-home-section-icon .svg-icon {
+	width: 16px;
+	height: 16px;
+}
+
 .obsave-home-section-title {
-	margin: 0 0 0.75em;
+	margin: 0;
 	font-size: 0.95em;
 	font-weight: 700;
 	text-transform: uppercase;
 	letter-spacing: 0.05em;
+	color: var(--text-muted);
+}
+
+.obsave-help-icon {
+	display: inline-flex;
+	margin-left: auto;
+	color: var(--text-faint);
+	cursor: help;
+}
+
+.obsave-help-icon .svg-icon {
+	width: 15px;
+	height: 15px;
+}
+
+.obsave-chip-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 0.9em;
+}
+
+.obsave-chip {
+	font-size: 0.75em;
+	font-family: var(--font-monospace);
+	padding: 3px 9px;
+	border-radius: 10px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
 	color: var(--text-muted);
 }
 
@@ -402,38 +500,363 @@
 	padding: 8px 14px;
 }
 
-.obsave-kbd {
-	display: inline-block;
-	font-size: 0.72em;
-	font-family: var(--font-monospace);
-	padding: 2px 8px;
+.obsave-tool-button {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.obsave-tool-button-icon {
+	display: inline-flex;
+}
+
+.obsave-tool-button-icon .svg-icon {
+	width: 16px;
+	height: 16px;
+}
+
+.obsave-icon-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 5px;
 	border-radius: 6px;
-	border: 1px solid var(--background-modifier-border);
-	background: var(--background-secondary);
+	background: transparent;
+	box-shadow: none;
 	color: var(--text-muted);
+	cursor: pointer;
 }
 
-.obsave-vault-report-modal {
-	width: min(680px, 94vw);
-	max-height: 85vh;
-	overflow-y: auto;
+.obsave-icon-button:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
 }
 
-.obsave-report-list {
-	margin: 0.5em 0 1em;
-	padding-left: 1.25em;
-}
-
-.obsave-report-list li {
-	margin: 0.25em 0;
-}
-
-.obsave-report-list a {
-	text-decoration: none;
+.obsave-link-button {
+	background: transparent;
+	box-shadow: none;
+	padding: 4px 0;
+	font-size: 0.83em;
 	color: var(--text-accent);
 	cursor: pointer;
 }
 
-.obsave-report-list a:hover {
+.obsave-link-button:hover {
 	text-decoration: underline;
+}
+
+/* INFORME OPERATIVO — dashboard */
+
+.obsave-vault-report-modal {
+	width: min(760px, 95vw);
+	max-height: 86vh;
+	overflow-y: auto;
+}
+
+.obsave-report-summary {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 1em;
+}
+
+.obsave-report-summary-text {
+	font-size: 0.82em;
+	color: var(--text-muted);
+}
+
+.obsave-report-summary .obsave-icon-button {
+	margin-left: auto;
+}
+
+.obsave-kpi-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+	gap: 10px;
+	margin-bottom: 1.25em;
+}
+
+.obsave-kpi-card {
+	position: relative;
+	border: 1px solid var(--background-modifier-border);
+	border-left: 3px solid var(--obsave-accent, var(--text-muted));
+	border-radius: 10px;
+	padding: 12px 14px;
+	background: var(--background-primary-alt);
+	cursor: pointer;
+	transition: background 0.12s ease, transform 0.12s ease;
+}
+
+.obsave-kpi-card:hover {
+	background: var(--background-modifier-hover);
+	transform: translateY(-1px);
+}
+
+.obsave-kpi-card.is-active {
+	box-shadow: inset 0 0 0 1px var(--obsave-accent, var(--text-muted));
+}
+
+.obsave-kpi-icon {
+	position: absolute;
+	top: 10px;
+	right: 10px;
+	display: inline-flex;
+	color: var(--obsave-accent, var(--text-muted));
+	opacity: 0.65;
+}
+
+.obsave-kpi-icon .svg-icon {
+	width: 15px;
+	height: 15px;
+}
+
+.obsave-kpi-value {
+	font-size: 2.1em;
+	font-weight: 700;
+	line-height: 1.1;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-normal);
+}
+
+.obsave-kpi-label {
+	font-size: 0.7em;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--text-muted);
+}
+
+.is-overdue { --obsave-accent: var(--color-red); }
+.is-today { --obsave-accent: var(--color-orange); }
+.is-week { --obsave-accent: var(--color-blue); }
+.is-attended { --obsave-accent: var(--color-green); }
+.is-pending { --obsave-accent: var(--color-orange); }
+
+/* Gráficos */
+
+.obsave-report-charts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 14px;
+	margin-bottom: 1.25em;
+}
+
+.obsave-chart-panel {
+	flex: 1 1 200px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
+	padding: 14px;
+	background: var(--background-primary-alt);
+}
+
+.obsave-chart-panel.is-wide {
+	flex: 2 1 320px;
+}
+
+.obsave-chart-title {
+	font-size: 0.7em;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--text-muted);
+	margin-bottom: 0.85em;
+}
+
+.obsave-donut {
+	display: block;
+	width: 118px;
+	height: 118px;
+	margin: 0 auto;
+}
+
+.obsave-donut circle {
+	fill: none;
+	stroke-width: 4;
+}
+
+.obsave-donut-track {
+	stroke: var(--background-modifier-border);
+}
+
+.obsave-donut-value {
+	stroke: var(--color-green);
+	transform: rotate(-90deg);
+	transform-origin: center;
+	transition: stroke-dasharray 0.4s ease;
+}
+
+.obsave-donut-text {
+	fill: var(--text-normal);
+	font-size: 7px;
+	font-weight: 700;
+	text-anchor: middle;
+}
+
+.obsave-donut-legend {
+	margin-top: 0.9em;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 0.8em;
+	color: var(--text-muted);
+}
+
+.obsave-legend-item {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+}
+
+.obsave-legend-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--obsave-accent, var(--text-muted));
+}
+
+/* Barras por carpeta */
+
+.obsave-bar-row {
+	display: grid;
+	grid-template-columns: minmax(90px, 1fr) 2fr auto;
+	align-items: center;
+	gap: 10px;
+	margin: 0.35em 0;
+	font-size: 0.82em;
+}
+
+.obsave-bar-label {
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.obsave-bar {
+	height: 8px;
+	border-radius: 4px;
+	background: var(--background-modifier-border);
+	overflow: hidden;
+}
+
+.obsave-bar::after {
+	content: "";
+	display: block;
+	height: 100%;
+	border-radius: 4px;
+	width: var(--obsave-bar-width, 0%);
+	background: var(--text-accent);
+}
+
+.obsave-bar-value {
+	font-variant-numeric: tabular-nums;
+	color: var(--text-normal);
+	min-width: 2.5em;
+	text-align: right;
+}
+
+/* Pestañas y listado */
+
+.obsave-report-tabbar {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+	border-bottom: 1px solid var(--background-modifier-border);
+	padding-bottom: 6px;
+}
+
+.obsave-report-tabs {
+	display: flex;
+	gap: 4px;
+	flex-wrap: wrap;
+}
+
+.obsave-report-tab {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	background: transparent;
+	box-shadow: none;
+	padding: 6px 10px;
+	border-radius: 8px 8px 0 0;
+	font-size: 0.85em;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.obsave-report-tab:hover {
+	background: var(--background-modifier-hover);
+}
+
+.obsave-report-tab.is-active {
+	color: var(--text-normal);
+	font-weight: 600;
+	box-shadow: inset 0 -2px 0 var(--text-accent);
+}
+
+.obsave-tab-badge {
+	font-size: 0.78em;
+	font-variant-numeric: tabular-nums;
+	padding: 1px 7px;
+	border-radius: 9px;
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
+.obsave-report-tab.is-active .obsave-tab-badge {
+	background: var(--obsave-accent, var(--background-modifier-border));
+	color: var(--text-on-accent);
+}
+
+.obsave-report-filter {
+	margin-left: auto;
+	font-size: 0.82em;
+	max-width: 170px;
+}
+
+.obsave-report-panel {
+	margin-top: 0.75em;
+}
+
+.obsave-note-row {
+	display: grid;
+	grid-template-columns: auto 1fr auto auto;
+	align-items: center;
+	gap: 10px;
+	padding: 7px 9px;
+	border-radius: 8px;
+	cursor: pointer;
+}
+
+.obsave-note-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.obsave-note-icon {
+	display: inline-flex;
+	color: var(--obsave-accent, var(--text-muted));
+}
+
+.obsave-note-icon .svg-icon {
+	width: 15px;
+	height: 15px;
+}
+
+.obsave-note-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-normal);
+}
+
+.obsave-note-due {
+	font-size: 0.78em;
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+
+.obsave-note-folder {
+	font-size: 0.75em;
+	color: var(--text-faint);
+	white-space: nowrap;
 }

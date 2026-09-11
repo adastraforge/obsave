@@ -1,8 +1,9 @@
 import type { App } from "obsidian";
-import { Notice, TFile } from "obsidian";
+import { MarkdownView, Notice, TFile } from "obsidian";
 import { cleanFolderTypeName } from "../productivity/vaultStructure";
 import {
 	buildFrontmatterYaml,
+	DEFAULT_NOTE_TAGS,
 	formatNowDateTime,
 	formatTimestampForFilename,
 	formatTodayDate,
@@ -15,119 +16,158 @@ export interface CaptureNoteOptions {
 	extraTags?: string[];
 }
 
-function sanitizeFileName(name: string): string {
-	return name
+const CONTROL_CHARS = /[\u0000-\u001F\u007F]/g;
+/** Prohibidos por Windows y macOS. */
+const OS_FORBIDDEN = /[\\/:*?"<>|]/g;
+/** Legales en el sistema de archivos pero rompen `[[wikilinks]]`. */
+const OBSIDIAN_UNSAFE = /[#^[\]]/g;
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+const MAX_NAME_LENGTH = 120;
+
+/**
+ * Conserva espacios y capitalización del usuario: solo elimina lo que el
+ * sistema operativo o los enlaces internos de Obsidian no admiten.
+ */
+export function sanitizeFileName(raw: string): string {
+	let name = raw
+		.replace(CONTROL_CHARS, "")
+		.replace(OS_FORBIDDEN, "-")
+		.replace(OBSIDIAN_UNSAFE, "")
+		.replace(/\s+/g, " ")
 		.trim()
-		.replace(/[\\/:*?"<>|]/g, "-")
-		.replace(/\s+/g, "_")
-		.slice(0, 120);
+		.replace(/^\.+/, "")
+		.replace(/[.\s]+$/, "");
+
+	if (WINDOWS_RESERVED.test(name)) {
+		name = `${name} nota`;
+	}
+	if (name.length > MAX_NAME_LENGTH) {
+		name = name.slice(0, MAX_NAME_LENGTH).trim();
+	}
+
+	return name || "Nota sin título";
 }
 
-function buildNoteBody(tipo: string, title: string, created: string, atender: string): string {
-	return `${buildFrontmatterYaml({
-		tipo,
-		fecha_creacion: created,
-		fecha_atencion: atender,
+/** Añade `(2)`, `(3)`… hasta encontrar un nombre libre en la carpeta. */
+function resolveAvailablePath(
+	app: App,
+	folder: string,
+	baseName: string,
+): { path: string; name: string; collided: boolean } {
+	let candidate = baseName;
+	let suffix = 1;
+
+	while (app.vault.getAbstractFileByPath(`${folder}/${candidate}.md`)) {
+		suffix++;
+		candidate = `${baseName} (${suffix})`;
+	}
+
+	return {
+		path: `${folder}/${candidate}.md`,
+		name: candidate,
+		collided: suffix > 1,
+	};
+}
+
+/**
+ * Plantilla única para nota rápida y captura enriquecida: propiedades YAML,
+ * encabezado y cuerpo vacío. Devuelve la línea donde debe caer el cursor.
+ */
+function buildNote(fields: {
+	tipo: string;
+	heading: string;
+	created: string;
+	atender: string;
+	tags: string[];
+}): { content: string; cursorLine: number } {
+	const yaml = buildFrontmatterYaml({
+		tipo: fields.tipo,
+		fecha_creacion: fields.created,
+		fecha_atencion: fields.atender,
 		estado: "pendiente",
-		tags: ["#obsidian", "#nota", "#pendiente"],
-	})}
+		tags: fields.tags,
+	});
 
-# ${title}
+	const content = `${yaml}\n\n# ${fields.heading}\n\n`;
+	return { content, cursorLine: content.split("\n").length - 1 };
+}
 
-%% Sección General %%
-> [!info] Información General
-> **Tipo:** ${tipo}
-> **Fecha de creación:** ${created}
-> **Atender el:** ${atender}
-> **Estado:** Pendiente
+/** Abre la nota con el cursor ya situado en el cuerpo y el editor enfocado. */
+async function openNoteAtBody(
+	app: App,
+	file: TFile,
+	cursorLine: number,
+): Promise<void> {
+	const leaf = app.workspace.getLeaf(false);
+	await leaf.openFile(file, { state: { mode: "source" } });
 
-%% Sección de Contenido %%
-## Contenido
-- Escribe aquí el detalle de la nota...
+	const view = leaf.view;
+	if (view instanceof MarkdownView) {
+		view.editor.setCursor({ line: cursorLine, ch: 0 });
+		view.editor.focus();
+	}
+}
 
-%% Notas / Tareas de seguimiento %%
-- [ ] Tarea pendiente inicial
-`;
+async function ensureFolder(app: App, folder: string): Promise<void> {
+	if (!app.vault.getAbstractFileByPath(folder)) {
+		await app.vault.createFolder(folder);
+	}
+}
+
+function capitalize(value: string): string {
+	return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 export async function createQuickDailyNote(app: App): Promise<TFile | null> {
 	const folder = "00_Diarias";
-	if (!app.vault.getAbstractFileByPath(folder)) {
-		await app.vault.createFolder(folder);
-	}
+	await ensureFolder(app, folder);
 
-	const created = formatNowDateTime();
-	const atender = formatTodayDate();
-	const fileName = `Nota_diarias(${formatTimestampForFilename()}).md`;
-	const path = `${folder}/${fileName}`;
-	const content = buildNoteBody("diarias", "Nota diarias", created, atender);
+	const baseName = sanitizeFileName(`Diaria ${formatTimestampForFilename()}`);
+	const target = resolveAvailablePath(app, folder, baseName);
 
-	const file = await app.vault.create(path, content);
-	new Notice(`ObSave: Nota creada — ${path}`);
-	await app.workspace.getLeaf(false).openFile(file);
+	const { content, cursorLine } = buildNote({
+		tipo: "diarias",
+		heading: target.name,
+		created: formatNowDateTime(),
+		atender: formatTodayDate(),
+		tags: [...DEFAULT_NOTE_TAGS],
+	});
+
+	const file = await app.vault.create(target.path, content);
+	new Notice(`ObSave: Nota creada — ${target.name}`);
+	await openNoteAtBody(app, file, cursorLine);
 	return file;
 }
 
 export async function createCaptureNote(
 	app: App,
 	options: CaptureNoteOptions,
-): Promise<TFile | null> {
+): Promise<TFile> {
 	const folder = options.folder.replace(/\/+$/, "");
-	if (!app.vault.getAbstractFileByPath(folder)) {
-		await app.vault.createFolder(folder);
-	}
+	await ensureFolder(app, folder);
 
 	const tipo = cleanFolderTypeName(folder);
-	const created = formatNowDateTime();
-	const atender = options.fechaAtencion ?? formatTodayDate();
 	const title = options.title?.trim();
-	const baseTags = ["#obsidian", "#nota", "#pendiente"];
-	const tags = [...baseTags, ...(options.extraTags ?? [])];
+	const baseName = sanitizeFileName(
+		title || `${capitalize(tipo)} ${formatTimestampForFilename()}`,
+	);
+	const target = resolveAvailablePath(app, folder, baseName);
 
-	let fileName: string;
-	let heading: string;
-	if (title) {
-		fileName = `${sanitizeFileName(title)}.md`;
-		heading = title;
-	} else {
-		fileName = `Nota_${tipo}(${formatTimestampForFilename()}).md`;
-		heading = `Nota ${tipo}`;
-	}
-
-	const path = `${folder}/${fileName}`;
-	if (app.vault.getAbstractFileByPath(path)) {
-		new Notice(`ObSave: Ya existe ${path}`);
-		return null;
-	}
-
-	const content = `${buildFrontmatterYaml({
+	const { content, cursorLine } = buildNote({
 		tipo,
-		fecha_creacion: created,
-		fecha_atencion: atender,
-		estado: "pendiente",
-		tags,
-	})}
+		heading: target.name,
+		created: formatNowDateTime(),
+		atender: options.fechaAtencion ?? formatTodayDate(),
+		tags: [...DEFAULT_NOTE_TAGS, ...(options.extraTags ?? [])],
+	});
 
-# ${heading}
-
-%% Sección General %%
-> [!info] Información General
-> **Tipo:** ${tipo}
-> **Fecha de creación:** ${created}
-> **Atender el:** ${atender}
-> **Estado:** Pendiente
-
-%% Sección de Contenido %%
-## Contenido
-- Escribe aquí el detalle de la nota...
-
-%% Notas / Tareas de seguimiento %%
-- [ ] Tarea pendiente inicial
-`;
-
-	const file = await app.vault.create(path, content);
-	new Notice(`ObSave: Nota creada — ${path}`);
-	await app.workspace.getLeaf(false).openFile(file);
+	const file = await app.vault.create(target.path, content);
+	new Notice(
+		target.collided
+			? `ObSave: Ya existía «${baseName}». Nota creada como «${target.name}».`
+			: `ObSave: Nota creada — ${target.name}`,
+	);
+	await openNoteAtBody(app, file, cursorLine);
 	return file;
 }
 
