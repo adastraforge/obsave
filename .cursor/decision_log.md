@@ -839,3 +839,23 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.2.2`
 
 ---
+
+## DEC-057 | 2026-09-10 | Hub de propósito único: fuera la caja de herramientas Markdown
+
+**Contexto:** El hub introducido en v1.2.2 mezclaba dos propósitos bajo pestañas: insertar sintaxis y consultar métricas. La caja de herramientas duplicaba lo que ya ofrecen el teclado, los atajos nativos y los plugins de barra de formato, y comprimía el informe —el contenido con densidad real— a media pantalla.
+
+**Decisión:**
+1. `ObSaveSidebarView` pierde el control de pestañas y queda como panel de propósito único: cabecera de acciones sobre el dashboard operativo completo (KPI, dona SVG, desglose por carpetas y listado por prioridad).
+2. Se eliminan `markdownEditorTools.ts`, el catálogo de 31 herramientas y el comando «Abrir caja de herramientas Markdown». `MarkdownToolbarModal.ts` ya se había retirado en v1.2.2.
+3. «Captura enriquecida» pasa a llamarse «Nueva nota» en cabecera, Ajustes, comandos y tooltips: describe la acción, no el mecanismo.
+4. Iconografía alineada entre hub y Ajustes: `zap` (nota rápida, creación instantánea), `file-plus` (nueva nota) y `settings` (ajustes). La sección «Herramientas» de Ajustes cede `zap` y adopta `wrench` para no repetir icono dentro del mismo panel.
+5. `openObSaveHub(app)` pierde el parámetro de pestaña; el comando del informe y el botón de Ajustes abren el mismo panel.
+
+**Alternativas descartadas:**
+- Conservar la caja como modal flotante independiente: reintroduce la superficie que v1.2.2 unificó y vuelve a dispersar el flujo.
+- Mantener las pestañas con una sola activa: control de navegación sin destino alternativo.
+- Renombrar el comando `obsave-capture-note`: cambiar el id rompería los atajos de teclado ya asignados por el usuario; solo cambia el nombre visible.
+
+**Release:** `v1.2.3`
+
+---

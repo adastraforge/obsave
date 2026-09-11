@@ -7,17 +7,17 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.2.2`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.2.2`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.2.3`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.2.3`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
 
-### ObSave Hub lateral v1.2.2
-- `ObSaveSidebarView` (`ItemView`, tipo `obsave-hub`) en la hoja derecha: cabecera con título, captura rápida (`pencil-line`), captura enriquecida (`file-plus-2`) y Ajustes; debajo, pestañas 📝 Editor y 📊 Informe.
-- Las 31 herramientas Markdown se muestran como iconos Lucide (`setIcon`) con tooltip que incluye la sintaxis insertada; `applyIconWithFallback` escribe una etiqueta corta si el icono no existe en esa versión de Obsidian.
-- Grid `auto-fill minmax(38px, 1fr)` con botones cuadrados: se adapta al ancho del panel lateral.
-- Módulos: `markdownEditorTools.ts` (primitivas de editor y generador de tablas), `VaultReportDashboard.ts` (dashboard montable sobre cualquier contenedor), `ObSaveSidebarView.ts` (composición). `MarkdownToolbarModal.ts` eliminado.
-- Ribbon `layout-dashboard` y comandos de herramientas/informe abren el hub en su pestaña con `openObSaveHub(app, tab)`.
+### ObSave Hub lateral v1.2.3
+- `ObSaveSidebarView` (`ItemView`, tipo `obsave-hub`) en la hoja derecha, de propósito único: cabecera «ObSave Hub» con nota rápida (`zap`), nueva nota (`file-plus`) y Ajustes (`settings`); el cuerpo lo ocupa el informe operativo completo.
+- Sin pestañas ni caja de herramientas Markdown: `markdownEditorTools.ts`, el catálogo de sintaxis y sus comandos quedaron eliminados en v1.2.3 (`MarkdownToolbarModal.ts` ya lo estaba en v1.2.2).
+- «Captura enriquecida» se llama ahora «Nueva nota» en toda la interfaz; el id del comando (`obsave-capture-note`) se conserva para no romper atajos asignados.
+- Módulos: `VaultReportDashboard.ts` (dashboard montable sobre cualquier contenedor) y `ObSaveSidebarView.ts` (composición y cabecera).
+- Ribbon `layout-dashboard` y los comandos de hub e informe abren el mismo panel con `openObSaveHub(app)`.
 - Abrir una nota desde el informe usa `getMostRecentLeaf`, nunca la hoja del propio hub.
 
 ### Refinamiento UI/UX y plantillas v1.2.0

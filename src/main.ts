@@ -418,7 +418,7 @@ export default class ObSavePlugin extends Plugin {
 
 		this.addCommand({
 			id: "obsave-capture-note",
-			name: "Abrir captura de nota ObSave",
+			name: "Crear nueva nota ObSave",
 			callback: () => new CaptureNoteModal(this.app).open(),
 		});
 
@@ -429,15 +429,9 @@ export default class ObSavePlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: "obsave-markdown-toolbar",
-			name: "Abrir caja de herramientas Markdown",
-			callback: () => void openObSaveHub(this.app, "editor"),
-		});
-
-		this.addCommand({
 			id: "obsave-vault-report",
 			name: "Abrir informe operativo de bóveda",
-			callback: () => void openObSaveHub(this.app, "report"),
+			callback: () => void openObSaveHub(this.app),
 		});
 	}
 

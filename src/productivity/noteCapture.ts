@@ -70,7 +70,7 @@ function resolveAvailablePath(
 }
 
 /**
- * Plantilla única para nota rápida y captura enriquecida: propiedades YAML,
+ * Plantilla única para nota rápida y nueva nota: propiedades YAML,
  * encabezado y cuerpo vacío. Devuelve la línea donde debe caer el cursor.
  */
 function buildNote(fields: {

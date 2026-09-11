@@ -208,41 +208,31 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			containerEl,
 			"Herramientas",
 			"obsave-home-section-tools",
-			"zap",
+			"wrench",
 			"Puedes asignar atajos de teclado a estas acciones desde Ajustes → Atajos.",
 			(section) => {
 				this.renderActionButton(
 					section,
 					"Nota rápida",
-					"pencil-line",
+					"zap",
 					"Crea una nota en 00_Diarias y abre el editor listo para escribir.",
 					() => void createQuickDailyNote(this.app),
 				);
 				this.renderActionButton(
 					section,
-					"Captura enriquecida",
-					"file-plus-2",
+					"Nueva nota",
+					"file-plus",
 					"Elige carpeta, fecha de atención y etiquetas antes de crear la nota.",
 					() => new CaptureNoteModal(this.app).open(),
 				);
 				this.renderActionButton(
 					section,
-					"Herramientas Markdown",
-					"pencil-ruler",
-					"Abre el hub lateral con toda la sintaxis aplicable sobre la nota activa.",
-					() => {
-						this.closeSettingsWindow();
-						void openObSaveHub(this.app, "editor");
-					},
-				);
-				this.renderActionButton(
-					section,
 					"Informe de bóveda",
 					"bar-chart-3",
-					"Abre el hub lateral en el panel de métricas; sigue visible mientras editas.",
+					"Abre el hub lateral con las métricas; sigue visible mientras editas.",
 					() => {
 						this.closeSettingsWindow();
-						void openObSaveHub(this.app, "report");
+						void openObSaveHub(this.app);
 					},
 				);
 			},
