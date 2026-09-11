@@ -7,16 +7,18 @@ El usuario mantiene control total de sus datos: el vault se sincroniza con **un 
 
 ## Fase Actual: Fase 1 — MVP Git Core Simplificado
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.2.1`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.2.1`  
+> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.2.2`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.2.2`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
 
-### Caja de herramientas Markdown e informe desacoplado v1.2.1
-- `MarkdownToolbarModal`: 30 herramientas sobre el editor activo (formato, estructura, listas, elementos, callouts, LaTeX, comentarios y generador de tablas).
-- Accesible desde el ribbon (`pencil-ruler`), el comando «Abrir caja de herramientas Markdown» y Ajustes; captura el `MarkdownView` antes de tomar el foco y lo devuelve tras cada acción.
-- El informe pasa de `Modal` a `VaultReportView extends ItemView` (`obsave-vault-report`): vive en la barra lateral derecha o en ventana flotante (`openPopoutLeaf`) y permanece abierto mientras se editan notas.
-- Abrir una nota desde el informe usa `getMostRecentLeaf`, nunca la hoja del propio informe.
+### ObSave Hub lateral v1.2.2
+- `ObSaveSidebarView` (`ItemView`, tipo `obsave-hub`) en la hoja derecha: cabecera con título, captura rápida (`pencil-line`), captura enriquecida (`file-plus-2`) y Ajustes; debajo, pestañas 📝 Editor y 📊 Informe.
+- Las 31 herramientas Markdown se muestran como iconos Lucide (`setIcon`) con tooltip que incluye la sintaxis insertada; `applyIconWithFallback` escribe una etiqueta corta si el icono no existe en esa versión de Obsidian.
+- Grid `auto-fill minmax(38px, 1fr)` con botones cuadrados: se adapta al ancho del panel lateral.
+- Módulos: `markdownEditorTools.ts` (primitivas de editor y generador de tablas), `VaultReportDashboard.ts` (dashboard montable sobre cualquier contenedor), `ObSaveSidebarView.ts` (composición). `MarkdownToolbarModal.ts` eliminado.
+- Ribbon `layout-dashboard` y comandos de herramientas/informe abren el hub en su pestaña con `openObSaveHub(app, tab)`.
+- Abrir una nota desde el informe usa `getMostRecentLeaf`, nunca la hoja del propio hub.
 
 ### Refinamiento UI/UX y plantillas v1.2.0
 - Plantilla única minimalista: YAML + `# título` + cuerpo vacío; sin callout `[!info]` ni comentarios `%%…%%`.

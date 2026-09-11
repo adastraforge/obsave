@@ -11,12 +11,11 @@ import type { CloudProviderId } from "./settings";
 import { ObSaveFileStatusDecorator } from "./ui/FileStatusDecorator";
 import { ObSaveSettingTab } from "./ui/ObSaveSettingTab";
 import { CaptureNoteModal } from "./ui/CaptureNoteModal";
-import { MarkdownToolbarModal } from "./ui/MarkdownToolbarModal";
 import {
-	openVaultReportView,
-	VAULT_REPORT_VIEW_TYPE,
-	VaultReportView,
-} from "./ui/VaultReportModal";
+	OBSAVE_HUB_VIEW_TYPE,
+	ObSaveSidebarView,
+	openObSaveHub,
+} from "./ui/ObSaveSidebarView";
 import { createQuickDailyNote } from "./productivity/noteCapture";
 import { installNoteTypeRenameListener } from "./productivity/noteTypeRename";
 import { mergeStoredSettings } from "./settingsMerge";
@@ -91,8 +90,8 @@ export default class ObSavePlugin extends Plugin {
 		installNoteTypeRenameListener(this.app, (event) => this.registerEvent(event));
 
 		this.registerView(
-			VAULT_REPORT_VIEW_TYPE,
-			(leaf) => new VaultReportView(leaf),
+			OBSAVE_HUB_VIEW_TYPE,
+			(leaf) => new ObSaveSidebarView(leaf, this),
 		);
 
 		this.registerCommands();
@@ -160,8 +159,8 @@ export default class ObSavePlugin extends Plugin {
 		);
 		this.updateRibbonIcon(this.settings.syncStatus);
 
-		this.addRibbonIcon("pencil-ruler", "ObSave — Herramientas Markdown", () =>
-			new MarkdownToolbarModal(this.app).open(),
+		this.addRibbonIcon("layout-dashboard", "ObSave Hub", () =>
+			void openObSaveHub(this.app),
 		);
 
 		this.startAutoSync();
@@ -424,15 +423,21 @@ export default class ObSavePlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: "obsave-vault-report",
-			name: "Abrir informe operativo de bóveda",
-			callback: () => void openVaultReportView(this.app),
+			id: "obsave-hub",
+			name: "Abrir ObSave Hub lateral",
+			callback: () => void openObSaveHub(this.app),
 		});
 
 		this.addCommand({
 			id: "obsave-markdown-toolbar",
 			name: "Abrir caja de herramientas Markdown",
-			callback: () => new MarkdownToolbarModal(this.app).open(),
+			callback: () => void openObSaveHub(this.app, "editor"),
+		});
+
+		this.addCommand({
+			id: "obsave-vault-report",
+			name: "Abrir informe operativo de bóveda",
+			callback: () => void openObSaveHub(this.app, "report"),
 		});
 	}
 

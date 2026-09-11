@@ -1,7 +1,5 @@
-import type { App, WorkspaceLeaf } from "obsidian";
-import { ItemView, Notice, setIcon, setTooltip, TFile } from "obsidian";
-
-export const VAULT_REPORT_VIEW_TYPE = "obsave-vault-report";
+import type { App } from "obsidian";
+import { Notice, setIcon, setTooltip, TFile } from "obsidian";
 
 type BucketId = "overdue" | "today" | "week" | "attended";
 
@@ -150,10 +148,10 @@ function computeVaultMetrics(app: App): VaultMetrics {
 }
 
 /**
- * Vista desacoplada: vive en su propia hoja del workspace, así que permanece
- * abierta y consultable mientras el usuario edita notas.
+ * Dashboard de métricas reutilizable: se monta sobre cualquier contenedor, de
+ * modo que la pestaña «Informe» del hub lo compone sin acoplarse a una vista.
  */
-export class VaultReportView extends ItemView {
+export class VaultReportDashboard {
 	private metrics: VaultMetrics | null = null;
 	private initialized = false;
 	private activeTab: BucketId = "overdue";
@@ -164,33 +162,13 @@ export class VaultReportView extends ItemView {
 	private tabEls = new Map<BucketId, HTMLElement>();
 	private kpiEls = new Map<BucketId, HTMLElement>();
 
-	constructor(leaf: WorkspaceLeaf) {
-		super(leaf);
-	}
+	constructor(
+		private app: App,
+		private containerEl: HTMLElement,
+	) {}
 
-	getViewType(): string {
-		return VAULT_REPORT_VIEW_TYPE;
-	}
-
-	getDisplayText(): string {
-		return "Informe operativo de bóveda";
-	}
-
-	getIcon(): string {
-		return "bar-chart-3";
-	}
-
-	async onOpen(): Promise<void> {
-		this.contentEl.addClass("obsave-vault-report-view");
-		this.render();
-	}
-
-	async onClose(): Promise<void> {
-		this.contentEl.empty();
-	}
-
-	private render(): void {
-		const { contentEl } = this;
+	render(): void {
+		const contentEl = this.containerEl;
 		contentEl.empty();
 		this.tabEls.clear();
 		this.kpiEls.clear();
@@ -246,14 +224,6 @@ export class VaultReportView extends ItemView {
 		setTooltip(refresh, "Recalcular métricas");
 		refresh.setAttribute("aria-label", "Recalcular métricas");
 		refresh.addEventListener("click", () => this.render());
-
-		const popout = bar.createEl("button", { cls: "obsave-icon-button" });
-		setIcon(popout, "picture-in-picture-2");
-		setTooltip(popout, "Abrir en ventana flotante");
-		popout.setAttribute("aria-label", "Abrir en ventana flotante");
-		popout.addEventListener("click", () => {
-			void openVaultReportView(this.app, true);
-		});
 	}
 
 	private renderKpiGrid(containerEl: HTMLElement, metrics: VaultMetrics): void {
@@ -531,31 +501,4 @@ export class VaultReportView extends ItemView {
 			this.app.workspace.getLeaf("tab");
 		await leaf.openFile(file);
 	}
-}
-
-/** Abre o revela el informe: en la barra lateral derecha o en ventana flotante. */
-export async function openVaultReportView(
-	app: App,
-	popout = false,
-): Promise<void> {
-	if (popout) {
-		const leaf = app.workspace.openPopoutLeaf();
-		await leaf.setViewState({ type: VAULT_REPORT_VIEW_TYPE, active: true });
-		return;
-	}
-
-	const existing = app.workspace.getLeavesOfType(VAULT_REPORT_VIEW_TYPE);
-	if (existing.length > 0) {
-		await app.workspace.revealLeaf(existing[0]);
-		return;
-	}
-
-	const leaf = app.workspace.getRightLeaf(false);
-	if (!leaf) {
-		new Notice("ObSave: no se pudo abrir el panel del informe.");
-		return;
-	}
-
-	await leaf.setViewState({ type: VAULT_REPORT_VIEW_TYPE, active: true });
-	await app.workspace.revealLeaf(leaf);
 }

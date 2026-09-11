@@ -22,8 +22,7 @@ import { openExternalUrl } from "../oauth/runtimeBridge";
 import { GoogleFolderPickerModal } from "./GoogleFolderPickerModal";
 import { GitHubRepoPickerModal } from "./GitHubRepoPickerModal";
 import { CaptureNoteModal } from "./CaptureNoteModal";
-import { MarkdownToolbarModal } from "./MarkdownToolbarModal";
-import { openVaultReportView } from "./VaultReportModal";
+import { openObSaveHub } from "./ObSaveSidebarView";
 import {
 	generateVaultTemplateFolders,
 	VAULT_TEMPLATE_FOLDERS,
@@ -230,20 +229,20 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					section,
 					"Herramientas Markdown",
 					"pencil-ruler",
-					"Caja flotante con toda la sintaxis aplicable sobre la nota activa.",
+					"Abre el hub lateral con toda la sintaxis aplicable sobre la nota activa.",
 					() => {
 						this.closeSettingsWindow();
-						new MarkdownToolbarModal(this.app).open();
+						void openObSaveHub(this.app, "editor");
 					},
 				);
 				this.renderActionButton(
 					section,
 					"Informe de bóveda",
 					"bar-chart-3",
-					"Panel lateral independiente: sigue abierto mientras editas notas.",
+					"Abre el hub lateral en el panel de métricas; sigue visible mientras editas.",
 					() => {
 						this.closeSettingsWindow();
-						void openVaultReportView(this.app);
+						void openObSaveHub(this.app, "report");
 					},
 				);
 			},

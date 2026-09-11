@@ -545,55 +545,126 @@
 	text-decoration: underline;
 }
 
-/* CAJA DE HERRAMIENTAS MARKDOWN */
+/* OBSAVE HUB LATERAL */
 
-.obsave-toolbar-modal {
-	width: min(520px, 94vw);
-	max-height: 84vh;
+.obsave-hub {
+	padding: 12px 14px;
 	overflow-y: auto;
 }
 
-.obsave-toolbar-status {
-	margin-bottom: 1em;
+.obsave-hub-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding-bottom: 10px;
+	border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.obsave-toolbar-group-title {
-	font-size: 0.68em;
+.obsave-hub-title {
+	font-size: 0.82em;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--text-muted);
+}
+
+.obsave-hub-header-actions {
+	display: flex;
+	gap: 2px;
+	margin-left: auto;
+}
+
+.obsave-hub-tabs {
+	display: flex;
+	gap: 4px;
+	margin: 10px 0 4px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.obsave-hub-tab {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex: 1 1 0;
+	justify-content: center;
+	background: transparent;
+	box-shadow: none;
+	padding: 7px 8px;
+	border-radius: 8px 8px 0 0;
+	font-size: 0.85em;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.obsave-hub-tab:hover {
+	background: var(--background-modifier-hover);
+}
+
+.obsave-hub-tab.is-active {
+	color: var(--text-normal);
+	font-weight: 600;
+	box-shadow: inset 0 -2px 0 var(--text-accent);
+}
+
+.obsave-hub-tab-icon {
+	display: inline-flex;
+}
+
+.obsave-hub-tab-icon .svg-icon {
+	width: 15px;
+	height: 15px;
+}
+
+.obsave-hub-body {
+	padding-top: 12px;
+}
+
+.obsave-hub-group-title {
+	font-size: 0.66em;
 	font-weight: 700;
 	text-transform: uppercase;
 	letter-spacing: 0.07em;
-	color: var(--text-muted);
-	margin: 1.1em 0 0.5em;
+	color: var(--text-faint);
+	margin: 1em 0 0.45em;
 }
 
-.obsave-toolbar-grid {
+.obsave-hub-grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
-	gap: 6px;
+	grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+	gap: 4px;
 }
 
-.obsave-toolbar-button {
-	padding: 9px 6px;
-	border-radius: 8px;
+.obsave-hub-tool {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	aspect-ratio: 1;
+	padding: 0;
+	border-radius: 7px;
 	border: 1px solid var(--background-modifier-border);
 	background: var(--background-primary-alt);
 	color: var(--text-normal);
-	font-size: 0.85em;
+	box-shadow: none;
 	cursor: pointer;
 	transition: background 0.12s ease, border-color 0.12s ease;
 }
 
-.obsave-toolbar-button:hover {
+.obsave-hub-tool:hover {
 	background: var(--background-modifier-hover);
 	border-color: var(--text-accent);
 }
 
-/* INFORME OPERATIVO — dashboard */
-
-.obsave-vault-report-view {
-	padding: 14px 16px;
-	overflow-y: auto;
+.obsave-hub-tool .svg-icon {
+	width: 17px;
+	height: 17px;
 }
+
+.obsave-hub-tool.is-text-fallback {
+	font-size: 0.72em;
+	font-weight: 600;
+}
+
+/* INFORME OPERATIVO — dashboard */
 
 .obsave-report-summary {
 	display: flex;

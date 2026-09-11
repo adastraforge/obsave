@@ -819,3 +819,23 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.2.1`
 
 ---
+
+## DEC-056 | 2026-09-10 | ObSave Hub lateral: una sola vista con pestañas e iconografía Lucide
+
+**Contexto:** La caja de herramientas era un `Modal` y el informe una vista independiente. Dos superficies distintas para el mismo flujo de trabajo, y los botones de la caja usaban etiquetas de texto que obligaban a leer cada celda.
+
+**Decisión:**
+1. `ObSaveSidebarView` (`ItemView`, tipo `obsave-hub`) unifica en la hoja derecha una cabecera con el título, los accesos a captura (`pencil-line` → `createQuickDailyNote`, `file-plus-2` → `CaptureNoteModal`), el botón de Ajustes (`plugin.openObSavePanel()`) y un control de pestañas Editor / Informe.
+2. Todos los botones de la caja de herramientas pasan a iconos Lucide con `setIcon` y `setTooltip` descriptivo que incluye la sintaxis insertada. `applyIconWithFallback` comprueba si `setIcon` insertó el `<svg>` y, si el nombre no existe en esa versión de Obsidian, escribe la etiqueta corta: revierte DEC-055 sin reintroducir el riesgo de botones vacíos.
+3. El grid usa `repeat(auto-fill, minmax(38px, 1fr))` con botones cuadrados, de modo que se reordena solo según el ancho del panel lateral.
+4. Reparto de módulos: `markdownEditorTools.ts` concentra las primitivas de editor y el generador de tablas; `VaultReportDashboard.ts` deja de ser vista y se convierte en un renderizador que se monta sobre cualquier contenedor; `ObSaveSidebarView.ts` compone ambos. `MarkdownToolbarModal.ts` queda eliminado.
+5. El ribbon `layout-dashboard` y los comandos de herramientas e informe abren el hub en su pestaña correspondiente vía `openObSaveHub(app, tab)`.
+
+**Alternativas descartadas:**
+- Mantener el informe también como vista propia: duplicaba estado y métricas sobre la misma bóveda.
+- Botón de ventana flotante en la cabecera: el usuario puede arrastrar la hoja a una ventana desde el menú nativo, y el botón competía por espacio con los accesos de captura.
+- Grid de ancho fijo: en paneles laterales estrechos provocaba desbordamiento horizontal.
+
+**Release:** `v1.2.2`
+
+---
