@@ -7,10 +7,16 @@ Todas las operaciones usan el sistema de archivos nativo de Obsidian.
 
 ## Fase Actual: Suite de productividad local
 
-> **Estado de release:** **publicada oficialmente** — `v2.0.0`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.0.0`  
+> **Estado de release:** **publicada oficialmente** — `v2.1.0`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.1.0`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Estados, tipos y colores dinámicos v2.1.0
+- Ajustes → **Configuración de propiedades**: gestor de estados (nombre, paleta de 10 colores + picker hex, impacto en salud, reordenar) y gestor de tipos (Diaria, Idea, Proyecto por defecto), desvinculados de las carpetas.
+- Estados por defecto: Pendientes (#EAB308, neutral), Pausadas (#6B7280, neutral), Canceladas (#EF4444, negativo), Atendidas (#22C55E, positivo).
+- Nota rápida y nueva nota usan el primer estado y el primer tipo; el cuerpo es `## Detalle` con el cursor en la línea siguiente.
+- Hub: KPI, pestañas de estado, badges y segmentos de la dona SVG usan el color configurado. Selector Tiempo / Estado. Salud: positivos suman, negativos restan, neutrales no cuentan; vencida + negativo penaliza ×2.
 
 ### Reestructuración radical v2.0.0
 - Eliminados el motor de sync (`SyncEngine`), proveedores (`GoogleDriveProvider`, `GitHubProvider`, OneDrive, iCloud), OAuth2 PKCE, `LedgerManager`, manifiesto `.obsave/ledger.json`, badges (`FileStatusDecorator`) y el auto-sync en segundo plano.

@@ -1,6 +1,10 @@
 import type { App } from "obsidian";
 import { MarkdownView, Notice, TFile } from "obsidian";
-import { cleanFolderTypeName } from "../productivity/vaultStructure";
+import {
+	firstStatus,
+	firstType,
+	type ObSaveSettings,
+} from "../settings";
 import {
 	buildFrontmatterYaml,
 	DEFAULT_NOTE_TAGS,
@@ -14,6 +18,8 @@ export interface CaptureNoteOptions {
 	folder: string;
 	fechaAtencion?: string;
 	extraTags?: string[];
+	tipoId?: string;
+	estadoId?: string;
 }
 
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/g;
@@ -75,7 +81,7 @@ function resolveAvailablePath(
  */
 function buildNote(fields: {
 	tipo: string;
-	heading: string;
+	estado: string;
 	created: string;
 	atender: string;
 	tags: string[];
@@ -84,11 +90,11 @@ function buildNote(fields: {
 		tipo: fields.tipo,
 		fecha_creacion: fields.created,
 		fecha_atencion: fields.atender,
-		estado: "pendiente",
+		estado: fields.estado,
 		tags: fields.tags,
 	});
 
-	const content = `${yaml}\n\n# ${fields.heading}\n\n`;
+	const content = `${yaml}\n\n## Detalle\n\n`;
 	return { content, cursorLine: content.split("\n").length - 1 };
 }
 
@@ -114,20 +120,21 @@ async function ensureFolder(app: App, folder: string): Promise<void> {
 	}
 }
 
-function capitalize(value: string): string {
-	return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-export async function createQuickDailyNote(app: App): Promise<TFile | null> {
+export async function createQuickDailyNote(
+	app: App,
+	settings: ObSaveSettings,
+): Promise<TFile | null> {
 	const folder = "00_Diarias";
 	await ensureFolder(app, folder);
 
-	const baseName = sanitizeFileName(`Diaria ${formatTimestampForFilename()}`);
+	const tipo = firstType(settings);
+	const estado = firstStatus(settings);
+	const baseName = sanitizeFileName(`${tipo.name} ${formatTimestampForFilename()}`);
 	const target = resolveAvailablePath(app, folder, baseName);
 
 	const { content, cursorLine } = buildNote({
-		tipo: "diarias",
-		heading: target.name,
+		tipo: tipo.id,
+		estado: estado.id,
 		created: formatNowDateTime(),
 		atender: formatTodayDate(),
 		tags: [...DEFAULT_NOTE_TAGS],
@@ -141,21 +148,26 @@ export async function createQuickDailyNote(app: App): Promise<TFile | null> {
 
 export async function createCaptureNote(
 	app: App,
+	settings: ObSaveSettings,
 	options: CaptureNoteOptions,
 ): Promise<TFile> {
 	const folder = options.folder.replace(/\/+$/, "");
 	await ensureFolder(app, folder);
 
-	const tipo = cleanFolderTypeName(folder);
+	const tipo =
+		settings.types.find((item) => item.id === options.tipoId) ?? firstType(settings);
+	const estado =
+		settings.statuses.find((item) => item.id === options.estadoId) ??
+		firstStatus(settings);
 	const title = options.title?.trim();
 	const baseName = sanitizeFileName(
-		title || `${capitalize(tipo)} ${formatTimestampForFilename()}`,
+		title || `${tipo.name} ${formatTimestampForFilename()}`,
 	);
 	const target = resolveAvailablePath(app, folder, baseName);
 
 	const { content, cursorLine } = buildNote({
-		tipo,
-		heading: target.name,
+		tipo: tipo.id,
+		estado: estado.id,
 		created: formatNowDateTime(),
 		atender: options.fechaAtencion ?? formatTodayDate(),
 		tags: [...DEFAULT_NOTE_TAGS, ...(options.extraTags ?? [])],

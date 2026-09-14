@@ -16,6 +16,7 @@ Desarrollado por [Ad Astra Forge](https://github.com/adastraforge). 100 % gratui
 - **ObSave Hub** — panel lateral con nota rápida, nueva nota y el informe operativo (KPI, dona de salud, volumen por carpeta y tareas pendientes/vencidas).
 - **Nota rápida y nueva nota** — plantilla YAML mínima, sanitizado de nombres y cursor en el cuerpo.
 - **Estructura de bóveda** — genera las carpetas plantilla (`00_Diarias` … `05_Archivadas`) en un clic.
+- **Estados y tipos configurables** — colores propios en el Hub; el primer estado y el primer tipo se aplican a cada nota nueva.
 
 ## Instalación
 

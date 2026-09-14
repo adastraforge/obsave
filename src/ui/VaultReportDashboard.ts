@@ -1,13 +1,23 @@
 import type { App } from "obsidian";
 import { Notice, setIcon, setTooltip, TFile } from "obsidian";
+import {
+	firstStatus,
+	resolveStatus,
+	statusIcon,
+	type NoteStatus,
+	type ObSaveSettings,
+} from "../settings";
 
-type BucketId = "overdue" | "today" | "week" | "attended";
+type TimeBucketId = "overdue" | "today" | "week";
+type CategoryMode = "time" | "status";
 
 interface NoteRef {
 	path: string;
 	title: string;
 	folder: string;
 	due: Date | null;
+	status: NoteStatus;
+	overdue: boolean;
 }
 
 interface FolderCount {
@@ -15,26 +25,28 @@ interface FolderCount {
 	count: number;
 }
 
+interface TimeBucketDefinition {
+	id: TimeBucketId;
+	label: string;
+	icon: string;
+	color: string;
+}
+
 interface VaultMetrics {
 	totalFolders: number;
 	totalNotes: number;
-	buckets: Record<BucketId, NoteRef[]>;
+	timeBuckets: Record<TimeBucketId, NoteRef[]>;
+	statusBuckets: Record<string, NoteRef[]>;
 	byFolder: FolderCount[];
 	unscheduled: number;
+	healthPercent: number;
+	unclassified: number;
 }
 
-interface BucketDefinition {
-	id: BucketId;
-	label: string;
-	icon: string;
-	modifier: string;
-}
-
-const BUCKETS: BucketDefinition[] = [
-	{ id: "overdue", label: "Vencidas", icon: "alert-triangle", modifier: "is-overdue" },
-	{ id: "today", label: "Para hoy", icon: "clock", modifier: "is-today" },
-	{ id: "week", label: "Esta semana", icon: "calendar-days", modifier: "is-week" },
-	{ id: "attended", label: "Atendidas", icon: "check-circle-2", modifier: "is-attended" },
+const TIME_BUCKETS: TimeBucketDefinition[] = [
+	{ id: "overdue", label: "Vencidas", icon: "alert-triangle", color: "#EF4444" },
+	{ id: "today", label: "Para hoy", icon: "clock", color: "#F97316" },
+	{ id: "week", label: "Esta semana", icon: "calendar-days", color: "#3B82F6" },
 ];
 
 const VISIBLE_NOTES_STEP = 15;
@@ -46,7 +58,6 @@ function startOfDay(date: Date): Date {
 	return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
-/** El frontmatter cacheado puede entregar la fecha como texto o como `Date`. */
 function toDateOnly(value: unknown): Date | null {
 	if (value instanceof Date) {
 		return startOfDay(value);
@@ -72,24 +83,54 @@ function formatRelativeDue(due: Date | null, today: Date): string {
 	return days < 0 ? `hace ${Math.abs(days)} días` : `en ${days} días`;
 }
 
+function applyAccent(el: HTMLElement, color: string): void {
+	el.style.setProperty("--obsave-accent", color);
+}
+
 /**
- * Métricas desde `metadataCache`: cero lecturas de disco. El frontmatter y el
- * estado de las casillas ya están indexados en memoria por Obsidian.
+ * Salud: positivos suman 1, negativos restan 1 (2 si además está vencida),
+ * neutrales no entran en el cociente.
  */
-function computeVaultMetrics(app: App): VaultMetrics {
+function computeHealth(notes: NoteRef[]): number {
+	let positive = 0;
+	let negative = 0;
+
+	for (const note of notes) {
+		if (note.status.healthImpact === "positive") {
+			positive += 1;
+		} else if (note.status.healthImpact === "negative") {
+			negative += note.overdue ? 2 : 1;
+		}
+	}
+
+	const weight = positive + negative;
+	if (weight === 0) {
+		return 100;
+	}
+	return Math.round((positive / weight) * 100);
+}
+
+function computeVaultMetrics(app: App, settings: ObSaveSettings): VaultMetrics {
 	const today = startOfDay(new Date());
 	const weekEnd = new Date(today);
 	weekEnd.setDate(weekEnd.getDate() + 7);
 
-	const buckets: Record<BucketId, NoteRef[]> = {
+	const fallback = firstStatus(settings);
+	const timeBuckets: Record<TimeBucketId, NoteRef[]> = {
 		overdue: [],
 		today: [],
 		week: [],
-		attended: [],
 	};
+	const statusBuckets: Record<string, NoteRef[]> = {};
+	for (const status of settings.statuses) {
+		statusBuckets[status.id] = [];
+	}
+
 	const folderCounts = new Map<string, number>();
 	const files = app.vault.getMarkdownFiles();
+	const classified: NoteRef[] = [];
 	let unscheduled = 0;
+	let unclassified = 0;
 
 	for (const file of files) {
 		const folder = file.parent?.path || "/";
@@ -97,74 +138,91 @@ function computeVaultMetrics(app: App): VaultMetrics {
 
 		const cache = app.metadataCache.getFileCache(file);
 		const frontmatter = cache?.frontmatter;
-		const estado = String(frontmatter?.estado ?? "").toLowerCase();
-		const hasCompletedTask =
-			cache?.listItems?.some((item) => item.task?.toLowerCase() === "x") === true;
+		const status =
+			resolveStatus(frontmatter?.estado, settings.statuses) ?? fallback;
+		const due = toDateOnly(frontmatter?.fecha_atencion);
+		const overdue = due !== null && due.getTime() < today.getTime();
+
+		if (resolveStatus(frontmatter?.estado, settings.statuses) === null) {
+			unclassified++;
+		}
 
 		const ref: NoteRef = {
 			path: file.path,
 			title: file.basename,
 			folder,
-			due: toDateOnly(frontmatter?.fecha_atencion),
+			due,
+			status,
+			overdue,
 		};
+		classified.push(ref);
+		statusBuckets[status.id]?.push(ref);
 
-		if (estado === "atendido" || hasCompletedTask) {
-			buckets.attended.push(ref);
+		if (status.healthImpact === "positive") {
 			continue;
 		}
-		if (!ref.due) {
+		if (!due) {
 			unscheduled++;
 			continue;
 		}
 
-		const time = ref.due.getTime();
+		const time = due.getTime();
 		if (time < today.getTime()) {
-			buckets.overdue.push(ref);
+			timeBuckets.overdue.push(ref);
 		} else if (time === today.getTime()) {
-			buckets.today.push(ref);
+			timeBuckets.today.push(ref);
 		} else if (time <= weekEnd.getTime()) {
-			buckets.week.push(ref);
+			timeBuckets.week.push(ref);
 		} else {
 			unscheduled++;
 		}
 	}
 
 	const byDueDate = (a: NoteRef, b: NoteRef): number =>
-		(a.due?.getTime() ?? 0) - (b.due?.getTime() ?? 0);
-	buckets.overdue.sort(byDueDate);
-	buckets.today.sort(byDueDate);
-	buckets.week.sort(byDueDate);
-	buckets.attended.sort((a, b) => a.title.localeCompare(b.title));
+		(a.due?.getTime() ?? Number.POSITIVE_INFINITY) -
+		(b.due?.getTime() ?? Number.POSITIVE_INFINITY);
+
+	timeBuckets.overdue.sort(byDueDate);
+	timeBuckets.today.sort(byDueDate);
+	timeBuckets.week.sort(byDueDate);
+	for (const status of settings.statuses) {
+		statusBuckets[status.id].sort(byDueDate);
+	}
 
 	return {
 		totalFolders: app.vault.getAllFolders().length,
 		totalNotes: files.length,
-		buckets,
+		timeBuckets,
+		statusBuckets,
 		byFolder: [...folderCounts.entries()]
 			.map(([folder, count]) => ({ folder, count }))
 			.sort((a, b) => b.count - a.count || a.folder.localeCompare(b.folder)),
 		unscheduled,
+		healthPercent: computeHealth(classified),
+		unclassified,
 	};
 }
 
 /**
- * Dashboard de métricas reutilizable: se monta sobre cualquier contenedor, de
- * modo que la pestaña «Informe» del hub lo compone sin acoplarse a una vista.
+ * Dashboard de métricas: colores de estado unificados en KPI, pestañas y dona.
  */
 export class VaultReportDashboard {
 	private metrics: VaultMetrics | null = null;
 	private initialized = false;
-	private activeTab: BucketId = "overdue";
+	private categoryMode: CategoryMode = "time";
+	private activeTimeTab: TimeBucketId = "overdue";
+	private activeStatusId = "";
 	private visibleNotes = VISIBLE_NOTES_STEP;
 	private showAllFolders = false;
 	private filter = "";
 	private listEl: HTMLElement | null = null;
-	private tabEls = new Map<BucketId, HTMLElement>();
-	private kpiEls = new Map<BucketId, HTMLElement>();
+	private tabEls = new Map<string, HTMLElement>();
+	private kpiEls = new Map<string, HTMLElement>();
 
 	constructor(
 		private app: App,
 		private containerEl: HTMLElement,
+		private settings: ObSaveSettings,
 	) {}
 
 	render(): void {
@@ -174,7 +232,7 @@ export class VaultReportDashboard {
 		this.kpiEls.clear();
 
 		try {
-			this.metrics = computeVaultMetrics(this.app);
+			this.metrics = computeVaultMetrics(this.app, this.settings);
 		} catch (error) {
 			contentEl.createEl("p", {
 				cls: "obsave-alert",
@@ -188,8 +246,12 @@ export class VaultReportDashboard {
 
 		const metrics = this.metrics;
 		if (!this.initialized) {
-			this.activeTab = this.defaultTab(metrics);
+			this.activeStatusId = this.settings.statuses[0]?.id ?? "";
+			this.activeTimeTab = this.defaultTimeTab(metrics);
 			this.initialized = true;
+		}
+		if (!this.settings.statuses.some((status) => status.id === this.activeStatusId)) {
+			this.activeStatusId = this.settings.statuses[0]?.id ?? "";
 		}
 		this.visibleNotes = VISIBLE_NOTES_STEP;
 
@@ -202,10 +264,9 @@ export class VaultReportDashboard {
 		this.renderList();
 	}
 
-	/** El informe abre en lo que exige acción, no en el primer bucket del array. */
-	private defaultTab(metrics: VaultMetrics): BucketId {
-		for (const bucket of BUCKETS) {
-			if (metrics.buckets[bucket.id].length > 0) {
+	private defaultTimeTab(metrics: VaultMetrics): TimeBucketId {
+		for (const bucket of TIME_BUCKETS) {
+			if (metrics.timeBuckets[bucket.id].length > 0) {
 				return bucket.id;
 			}
 		}
@@ -214,9 +275,13 @@ export class VaultReportDashboard {
 
 	private renderSummaryBar(containerEl: HTMLElement, metrics: VaultMetrics): void {
 		const bar = containerEl.createDiv({ cls: "obsave-report-summary" });
+		const extra =
+			metrics.unclassified > 0
+				? ` · ${metrics.unclassified} sin estado conocido`
+				: "";
 		bar.createSpan({
 			cls: "obsave-report-summary-text",
-			text: `${metrics.totalNotes} notas · ${metrics.totalFolders} carpetas · ${metrics.unscheduled} sin programar`,
+			text: `${metrics.totalNotes} notas · ${metrics.totalFolders} carpetas · ${metrics.unscheduled} sin programar${extra}`,
 		});
 
 		const refresh = bar.createEl("button", { cls: "obsave-icon-button" });
@@ -229,22 +294,24 @@ export class VaultReportDashboard {
 	private renderKpiGrid(containerEl: HTMLElement, metrics: VaultMetrics): void {
 		const grid = containerEl.createDiv({ cls: "obsave-kpi-grid" });
 
-		for (const bucket of BUCKETS) {
-			const count = metrics.buckets[bucket.id].length;
-			const card = grid.createDiv({
-				cls: `obsave-kpi-card ${bucket.modifier}`,
-			});
+		for (const status of this.settings.statuses) {
+			const count = metrics.statusBuckets[status.id]?.length ?? 0;
+			const card = grid.createDiv({ cls: "obsave-kpi-card" });
+			applyAccent(card, status.color);
 			card.setAttribute("role", "button");
 			card.setAttribute("tabindex", "0");
-			card.setAttribute("aria-label", `${bucket.label}: ${count} notas`);
-			setTooltip(card, `Ver ${bucket.label.toLowerCase()}`);
+			card.setAttribute("aria-label", `${status.name}: ${count} notas`);
+			setTooltip(card, `Filtrar por ${status.name}`);
 
 			const iconEl = card.createDiv({ cls: "obsave-kpi-icon" });
-			setIcon(iconEl, bucket.icon);
+			setIcon(iconEl, statusIcon(status.healthImpact));
 			card.createDiv({ cls: "obsave-kpi-value", text: String(count) });
-			card.createDiv({ cls: "obsave-kpi-label", text: bucket.label });
+			card.createDiv({ cls: "obsave-kpi-label", text: status.name });
 
-			const activate = (): void => this.setActiveTab(bucket.id);
+			const activate = (): void => {
+				this.categoryMode = "status";
+				this.setActiveStatus(status.id);
+			};
 			card.addEventListener("click", activate);
 			card.addEventListener("keydown", (event) => {
 				if (event.key === "Enter" || event.key === " ") {
@@ -253,7 +320,7 @@ export class VaultReportDashboard {
 				}
 			});
 
-			this.kpiEls.set(bucket.id, card);
+			this.kpiEls.set(status.id, card);
 		}
 
 		this.syncActiveStyles();
@@ -269,53 +336,60 @@ export class VaultReportDashboard {
 		const panel = containerEl.createDiv({ cls: "obsave-chart-panel" });
 		panel.createDiv({ cls: "obsave-chart-title", text: "Salud de la bóveda" });
 
-		const attended = metrics.buckets.attended.length;
-		const pending =
-			metrics.buckets.overdue.length +
-			metrics.buckets.today.length +
-			metrics.buckets.week.length;
-		const tracked = attended + pending;
-		const percent = tracked === 0 ? 100 : Math.round((attended / tracked) * 100);
-
 		const svg = panel.createSvg("svg", {
 			cls: "obsave-donut",
 			attr: { viewBox: "0 0 42 42", role: "img" },
 		});
-		svg.setAttribute("aria-label", `${percent} % de notas atendidas`);
+		svg.setAttribute(
+			"aria-label",
+			`Salud ${metrics.healthPercent} %`,
+		);
 
 		svg.createSvg("circle", {
 			cls: "obsave-donut-track",
 			attr: { cx: "21", cy: "21", r: String(DONUT_RADIUS) },
 		});
-		svg.createSvg("circle", {
-			cls: "obsave-donut-value",
-			attr: {
-				cx: "21",
-				cy: "21",
-				r: String(DONUT_RADIUS),
-				"stroke-dasharray": `${percent} ${100 - percent}`,
-				"stroke-dashoffset": "25",
-			},
-		});
+
+		const total = Math.max(metrics.totalNotes, 1);
+		let offset = 0;
+		for (const status of this.settings.statuses) {
+			const count = metrics.statusBuckets[status.id]?.length ?? 0;
+			if (count === 0) {
+				continue;
+			}
+			const pct = (count / total) * 100;
+			svg.createSvg("circle", {
+				cls: "obsave-donut-segment",
+				attr: {
+					cx: "21",
+					cy: "21",
+					r: String(DONUT_RADIUS),
+					stroke: status.color,
+					"stroke-dasharray": `${pct} ${100 - pct}`,
+					"stroke-dashoffset": String(-offset),
+				},
+			});
+			offset += pct;
+		}
+
 		const label = svg.createSvg("text", {
 			cls: "obsave-donut-text",
 			attr: { x: "21", y: "22.5" },
 		});
-		label.textContent = `${percent} %`;
+		label.textContent = `${metrics.healthPercent} %`;
 
 		const legend = panel.createDiv({ cls: "obsave-donut-legend" });
-		this.addLegendItem(legend, "is-attended", `${attended} atendidas`);
-		this.addLegendItem(legend, "is-pending", `${pending} pendientes`);
-	}
-
-	private addLegendItem(
-		containerEl: HTMLElement,
-		modifier: string,
-		text: string,
-	): void {
-		const item = containerEl.createDiv({ cls: "obsave-legend-item" });
-		item.createSpan({ cls: `obsave-legend-dot ${modifier}` });
-		item.createSpan({ text });
+		for (const status of this.settings.statuses) {
+			const count = metrics.statusBuckets[status.id]?.length ?? 0;
+			const item = legend.createDiv({ cls: "obsave-legend-item" });
+			const dot = item.createSpan({ cls: "obsave-legend-dot" });
+			applyAccent(dot, status.color);
+			item.createSpan({ text: `${status.name} · ${count}` });
+		}
+		legend.createDiv({
+			cls: "obsave-donut-hint",
+			text: "Positivos suman · negativos restan · vencidas negativas ×2",
+		});
 	}
 
 	private renderFolderBars(containerEl: HTMLElement, metrics: VaultMetrics): void {
@@ -368,18 +442,41 @@ export class VaultReportDashboard {
 
 	private renderTabs(containerEl: HTMLElement, metrics: VaultMetrics): void {
 		const bar = containerEl.createDiv({ cls: "obsave-report-tabbar" });
+
+		const modes = bar.createDiv({ cls: "obsave-cat-toggle" });
+		this.renderModeButton(modes, "time", "Tiempo");
+		this.renderModeButton(modes, "status", "Estado");
+
 		const tabs = bar.createDiv({ cls: "obsave-report-tabs" });
 
-		for (const bucket of BUCKETS) {
-			const count = metrics.buckets[bucket.id].length;
-			const tab = tabs.createEl("button", { cls: "obsave-report-tab" });
-			tab.createSpan({ text: bucket.label });
-			tab.createSpan({
-				cls: `obsave-tab-badge ${bucket.modifier}`,
-				text: String(count),
-			});
-			tab.addEventListener("click", () => this.setActiveTab(bucket.id));
-			this.tabEls.set(bucket.id, tab);
+		if (this.categoryMode === "time") {
+			for (const bucket of TIME_BUCKETS) {
+				const count = metrics.timeBuckets[bucket.id].length;
+				const tab = tabs.createEl("button", { cls: "obsave-report-tab" });
+				applyAccent(tab, bucket.color);
+				tab.createSpan({ text: bucket.label });
+				const badge = tab.createSpan({
+					cls: "obsave-tab-badge",
+					text: String(count),
+				});
+				applyAccent(badge, bucket.color);
+				tab.addEventListener("click", () => this.setActiveTime(bucket.id));
+				this.tabEls.set(`time:${bucket.id}`, tab);
+			}
+		} else {
+			for (const status of this.settings.statuses) {
+				const count = metrics.statusBuckets[status.id]?.length ?? 0;
+				const tab = tabs.createEl("button", { cls: "obsave-report-tab" });
+				applyAccent(tab, status.color);
+				tab.createSpan({ text: status.name });
+				const badge = tab.createSpan({
+					cls: "obsave-tab-badge",
+					text: String(count),
+				});
+				applyAccent(badge, status.color);
+				tab.addEventListener("click", () => this.setActiveStatus(status.id));
+				this.tabEls.set(`status:${status.id}`, tab);
+			}
 		}
 
 		const search = bar.createEl("input", {
@@ -396,23 +493,81 @@ export class VaultReportDashboard {
 		this.syncActiveStyles();
 	}
 
-	private setActiveTab(id: BucketId): void {
-		if (this.activeTab === id) {
+	private renderModeButton(
+		containerEl: HTMLElement,
+		mode: CategoryMode,
+		label: string,
+	): void {
+		const btn = containerEl.createEl("button", {
+			cls: "obsave-cat-toggle-btn",
+			text: label,
+		});
+		btn.toggleClass("is-active", this.categoryMode === mode);
+		btn.addEventListener("click", () => {
+			if (this.categoryMode === mode) {
+				return;
+			}
+			this.categoryMode = mode;
+			this.visibleNotes = VISIBLE_NOTES_STEP;
+			this.render();
+		});
+	}
+
+	private setActiveTime(id: TimeBucketId): void {
+		this.categoryMode = "time";
+		if (this.activeTimeTab === id) {
+			this.syncActiveStyles();
 			return;
 		}
-		this.activeTab = id;
+		this.activeTimeTab = id;
 		this.visibleNotes = VISIBLE_NOTES_STEP;
 		this.syncActiveStyles();
 		this.renderList();
 	}
 
+	private setActiveStatus(id: string): void {
+		this.categoryMode = "status";
+		if (this.activeStatusId === id && this.tabEls.size > 0) {
+			this.syncActiveStyles();
+			this.renderList();
+			return;
+		}
+		this.activeStatusId = id;
+		this.visibleNotes = VISIBLE_NOTES_STEP;
+		if (this.tabEls.size === 0 || ![...this.tabEls.keys()].some((key) => key.startsWith("status:"))) {
+			this.render();
+			return;
+		}
+		this.syncActiveStyles();
+		this.renderList();
+	}
+
 	private syncActiveStyles(): void {
+		const activeKey =
+			this.categoryMode === "time"
+				? `time:${this.activeTimeTab}`
+				: `status:${this.activeStatusId}`;
+
 		for (const [id, el] of this.tabEls) {
-			el.toggleClass("is-active", id === this.activeTab);
+			el.toggleClass("is-active", id === activeKey);
 		}
 		for (const [id, el] of this.kpiEls) {
-			el.toggleClass("is-active", id === this.activeTab);
+			el.toggleClass(
+				"is-active",
+				this.categoryMode === "status" && id === this.activeStatusId,
+			);
 		}
+	}
+
+	private activeNotes(): NoteRef[] {
+		const metrics = this.metrics;
+		if (!metrics) {
+			return [];
+		}
+		if (this.categoryMode === "time") {
+			return metrics.timeBuckets[this.activeTimeTab];
+		}
+		return metrics.statusBuckets[this.activeStatusId] ?? [];
 	}
 
 	private renderList(): void {
@@ -425,12 +580,13 @@ export class VaultReportDashboard {
 		container.empty();
 
 		const needle = this.filter.trim().toLowerCase();
-		const all = metrics.buckets[this.activeTab];
+		const all = this.activeNotes();
 		const notes = needle
 			? all.filter(
 					(note) =>
 						note.title.toLowerCase().includes(needle) ||
-						note.folder.toLowerCase().includes(needle),
+						note.folder.toLowerCase().includes(needle) ||
+						note.status.name.toLowerCase().includes(needle),
 				)
 			: all;
 
@@ -445,25 +601,39 @@ export class VaultReportDashboard {
 		}
 
 		const today = startOfDay(new Date());
-		const bucket = BUCKETS.find((b) => b.id === this.activeTab);
+		const timeBucket = TIME_BUCKETS.find((bucket) => bucket.id === this.activeTimeTab);
 
 		for (const note of notes.slice(0, this.visibleNotes)) {
-			const row = container.createDiv({
-				cls: `obsave-note-row ${bucket?.modifier ?? ""}`,
-			});
+			const color =
+				this.categoryMode === "status"
+					? note.status.color
+					: (timeBucket?.color ?? note.status.color);
+			const iconName =
+				this.categoryMode === "status"
+					? statusIcon(note.status.healthImpact)
+					: (timeBucket?.icon ?? "file-text");
+
+			const row = container.createDiv({ cls: "obsave-note-row" });
+			applyAccent(row, color);
 			row.setAttribute("role", "button");
 			row.setAttribute("tabindex", "0");
 			setTooltip(row, note.path);
 
 			const icon = row.createDiv({ cls: "obsave-note-icon" });
-			setIcon(icon, bucket?.icon ?? "file-text");
+			setIcon(icon, iconName);
 
 			row.createSpan({ cls: "obsave-note-title", text: note.title });
 			row.createSpan({
 				cls: "obsave-note-due",
 				text: formatRelativeDue(note.due, today),
 			});
-			row.createSpan({ cls: "obsave-note-folder", text: note.folder });
+			row.createSpan({
+				cls: "obsave-note-folder",
+				text:
+					this.categoryMode === "time"
+						? note.status.name
+						: note.folder,
+			});
 
 			const open = (): void => void this.openNote(note.path);
 			row.addEventListener("click", open);
@@ -488,7 +658,6 @@ export class VaultReportDashboard {
 		}
 	}
 
-	/** Abre en el área principal, nunca dentro de la hoja del informe. */
 	private async openNote(path: string): Promise<void> {
 		const file = this.app.vault.getAbstractFileByPath(path);
 		if (!(file instanceof TFile)) {

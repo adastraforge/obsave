@@ -89,7 +89,7 @@ export function updateNoteTipo(content: string, newTipo: string): string {
 	const { frontmatter, body } = parseFrontmatter(content);
 	const nowDisplay = frontmatter.fecha_creacion ?? formatNowDateTime();
 	const fechaAtencion = frontmatter.fecha_atencion ?? formatTodayDate();
-	const estado = frontmatter.estado ?? "pendiente";
+	const estado = frontmatter.estado ?? "pendientes";
 	const tags = frontmatter.tags?.length
 		? frontmatter.tags
 		: [...DEFAULT_NOTE_TAGS];
@@ -123,10 +123,10 @@ export function buildFrontmatterYaml(fields: NoteFrontmatterFields): string {
 
 	const lines = [
 		"---",
-		`tipo: ${fields.tipo ?? "diarias"}`,
+		`tipo: ${fields.tipo ?? "diaria"}`,
 		`fecha_creacion: ${fields.fecha_creacion ?? formatNowDateTime()}`,
 		`fecha_atencion: ${fields.fecha_atencion ?? formatTodayDate()}`,
-		`estado: ${fields.estado ?? "pendiente"}`,
+		`estado: ${fields.estado ?? "pendientes"}`,
 	];
 
 	if (tags.length > 0) {

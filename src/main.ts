@@ -7,15 +7,23 @@ import {
 	openObSaveHub,
 } from "./ui/ObSaveSidebarView";
 import { createQuickDailyNote } from "./productivity/noteCapture";
-import { installNoteTypeRenameListener } from "./productivity/noteTypeRename";
+import {
+	DEFAULT_SETTINGS,
+	hasLegacySyncPayload,
+	mergeStoredSettings,
+	type ObSaveSettings,
+} from "./settings";
 
 export default class ObSavePlugin extends Plugin {
+	settings: ObSaveSettings = {
+		statuses: DEFAULT_SETTINGS.statuses.map((status) => ({ ...status })),
+		types: DEFAULT_SETTINGS.types.map((type) => ({ ...type })),
+	};
 	private settingsTab!: ObSaveSettingTab;
 
 	async onload(): Promise<void> {
-		await this.wipeLegacyRemoteState();
-
-		installNoteTypeRenameListener(this.app, (event) => this.registerEvent(event));
+		await this.loadSettings();
+		await this.removeLegacyLedgerFiles();
 
 		this.registerView(
 			OBSAVE_HUB_VIEW_TYPE,
@@ -38,16 +46,30 @@ export default class ObSavePlugin extends Plugin {
 		console.log("ObSave plugin unloaded");
 	}
 
-	/**
-	 * v2.0.0 elimina la capa remota: borra tokens, ledger y ajustes de sync
-	 * que pudieran quedar en data.json o junto al plugin.
-	 */
-	private async wipeLegacyRemoteState(): Promise<void> {
+	async loadSettings(): Promise<void> {
 		const stored = await this.loadData();
-		if (stored && typeof stored === "object") {
-			await this.saveData({});
+		this.settings = mergeStoredSettings(stored);
+		const record = stored && typeof stored === "object" ? (stored as Record<string, unknown>) : null;
+		if (hasLegacySyncPayload(stored) || !Array.isArray(record?.statuses) || !Array.isArray(record?.types)) {
+			await this.saveSettings();
 		}
+	}
 
+	async saveSettings(): Promise<void> {
+		await this.saveData(this.settings);
+		this.refreshHub();
+	}
+
+	refreshHub(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType(OBSAVE_HUB_VIEW_TYPE)) {
+			const view = leaf.view;
+			if (view instanceof ObSaveSidebarView) {
+				view.refresh();
+			}
+		}
+	}
+
+	private async removeLegacyLedgerFiles(): Promise<void> {
 		const adapter = this.app.vault.adapter;
 		const pluginDir = this.manifest.dir;
 		if (!pluginDir) {
@@ -98,13 +120,13 @@ export default class ObSavePlugin extends Plugin {
 		this.addCommand({
 			id: "obsave-quick-note",
 			name: "Crear nota rápida ObSave",
-			callback: () => void createQuickDailyNote(this.app),
+			callback: () => void createQuickDailyNote(this.app, this.settings),
 		});
 
 		this.addCommand({
 			id: "obsave-capture-note",
 			name: "Crear nueva nota ObSave",
-			callback: () => new CaptureNoteModal(this.app).open(),
+			callback: () => new CaptureNoteModal(this.app, this).open(),
 		});
 	}
 }

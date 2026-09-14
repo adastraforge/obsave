@@ -1,21 +1,28 @@
 import type { App, TextComponent } from "obsidian";
 import { Modal, Setting } from "obsidian";
 import { createCaptureNote, listDestinationFolders } from "../productivity/noteCapture";
+import { firstStatus, firstType } from "../settings";
 import { formatTodayDate } from "../utils/frontmatter";
+import type ObSavePlugin from "../main";
 
 export class CaptureNoteModal extends Modal {
 	private title = "";
 	private folder = "00_Diarias";
 	private fechaAtencion = formatTodayDate();
 	private tags = "";
+	private tipoId = "";
+	private estadoId = "";
 	private titleInput: TextComponent | undefined;
 	private alertEl: HTMLElement | undefined;
 
 	constructor(
 		app: App,
+		private plugin: ObSavePlugin,
 		private onCreated?: () => void,
 	) {
 		super(app);
+		this.tipoId = firstType(plugin.settings).id;
+		this.estadoId = firstStatus(plugin.settings).id;
 	}
 
 	onOpen(): void {
@@ -45,6 +52,28 @@ export class CaptureNoteModal extends Modal {
 				}
 				dropdown.setValue(this.folder).onChange((v) => {
 					this.folder = v;
+				});
+			});
+
+		new Setting(contentEl)
+			.setName("Tipo")
+			.addDropdown((dropdown) => {
+				for (const type of this.plugin.settings.types) {
+					dropdown.addOption(type.id, type.name);
+				}
+				dropdown.setValue(this.tipoId).onChange((v) => {
+					this.tipoId = v;
+				});
+			});
+
+		new Setting(contentEl)
+			.setName("Estado")
+			.addDropdown((dropdown) => {
+				for (const status of this.plugin.settings.statuses) {
+					dropdown.addOption(status.id, status.name);
+				}
+				dropdown.setValue(this.estadoId).onChange((v) => {
+					this.estadoId = v;
 				});
 			});
 
@@ -80,16 +109,17 @@ export class CaptureNoteModal extends Modal {
 							.split(",")
 							.map((tag) => tag.trim())
 							.filter(Boolean);
-						await createCaptureNote(this.app, {
+						await createCaptureNote(this.app, this.plugin.settings, {
 							title: this.title,
 							folder: this.folder,
 							fechaAtencion: this.fechaAtencion,
 							extraTags,
+							tipoId: this.tipoId,
+							estadoId: this.estadoId,
 						});
 						this.onCreated?.();
 						this.close();
 					} catch (error) {
-						// El modal permanece abierto: el usuario no pierde lo escrito.
 						this.showError(
 							error instanceof Error
 								? error.message

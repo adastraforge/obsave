@@ -241,7 +241,7 @@
 	right: 10px;
 	display: inline-flex;
 	color: var(--obsave-accent, var(--text-muted));
-	opacity: 0.65;
+	opacity: 0.85;
 }
 
 .obsave-kpi-icon .svg-icon {
@@ -254,7 +254,7 @@
 	font-weight: 700;
 	line-height: 1.1;
 	font-variant-numeric: tabular-nums;
-	color: var(--text-normal);
+	color: var(--obsave-accent, var(--text-normal));
 }
 
 .obsave-kpi-label {
@@ -317,10 +317,22 @@
 }
 
 .obsave-donut-value {
-	stroke: var(--color-green);
+	stroke: var(--obsave-accent, var(--color-green));
 	transform: rotate(-90deg);
 	transform-origin: center;
 	transition: stroke-dasharray 0.4s ease;
+}
+
+.obsave-donut-segment {
+	transform: rotate(-90deg);
+	transform-origin: center;
+}
+
+.obsave-donut-hint {
+	margin-top: 8px;
+	font-size: 0.72em;
+	color: var(--text-faint);
+	line-height: 1.35;
 }
 
 .obsave-donut-text {
@@ -430,7 +442,7 @@
 .obsave-report-tab.is-active {
 	color: var(--text-normal);
 	font-weight: 600;
-	box-shadow: inset 0 -2px 0 var(--text-accent);
+	box-shadow: inset 0 -2px 0 var(--obsave-accent, var(--text-accent));
 }
 
 .obsave-tab-badge {
@@ -444,7 +456,7 @@
 
 .obsave-report-tab.is-active .obsave-tab-badge {
 	background: var(--obsave-accent, var(--background-modifier-border));
-	color: var(--text-on-accent);
+	color: var(--text-on-accent, #fff);
 }
 
 .obsave-report-filter {
@@ -498,4 +510,139 @@
 	font-size: 0.75em;
 	color: var(--text-faint);
 	white-space: nowrap;
+}
+
+.obsave-link-button {
+	background: transparent;
+	box-shadow: none;
+	padding: 4px 0;
+	font-size: 0.83em;
+	color: var(--text-accent);
+	cursor: pointer;
+}
+
+.obsave-link-button:hover {
+	text-decoration: underline;
+}
+
+.obsave-cat-toggle {
+	display: inline-flex;
+	gap: 2px;
+	padding: 2px;
+	border-radius: 8px;
+	background: var(--background-modifier-border);
+}
+
+.obsave-cat-toggle-btn {
+	background: transparent;
+	box-shadow: none;
+	padding: 4px 10px;
+	border-radius: 6px;
+	font-size: 0.78em;
+	font-weight: 600;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.obsave-cat-toggle-btn.is-active {
+	background: var(--background-primary);
+	color: var(--text-normal);
+}
+
+.obsave-icon-button.is-danger {
+	color: var(--text-error);
+}
+
+.obsave-icon-button:disabled {
+	opacity: 0.35;
+	cursor: not-allowed;
+}
+
+/* Gestor de propiedades */
+
+.obsave-property-subtitle {
+	margin: 0.35em 0 0.65em;
+	font-size: 0.82em;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--text-muted);
+}
+
+.obsave-property-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin-bottom: 0.75em;
+}
+
+.obsave-status-row,
+.obsave-type-row {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
+	background: var(--background-primary);
+}
+
+.obsave-status-order {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.obsave-status-fields {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-width: 0;
+}
+
+.obsave-status-name {
+	width: 100%;
+}
+
+.obsave-status-impact {
+	max-width: 160px;
+}
+
+.obsave-color-picker {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.obsave-color-palette {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.obsave-color-swatch {
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	border-radius: 999px;
+	border: 2px solid transparent;
+	background: var(--obsave-swatch, #888);
+	box-shadow: none;
+	cursor: pointer;
+}
+
+.obsave-color-swatch.is-selected {
+	border-color: var(--text-normal);
+	box-shadow: 0 0 0 1px var(--background-primary);
+}
+
+.obsave-color-native {
+	width: 28px;
+	height: 22px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	cursor: pointer;
 }

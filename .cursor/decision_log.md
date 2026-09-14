@@ -880,3 +880,23 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v2.0.0`
 
 ---
+
+## DEC-059 | 2026-09-14 | Estados configurables y mapeo estricto de color en el Hub
+
+**Contexto:** El informe pintaba buckets fijos (Vencidas / Hoy / Semana / Atendidas) con colores de tema, y el YAML usaba `estado: pendiente` / `tipo` derivado de la carpeta. El usuario necesita una taxonomía propia y que el color elegido se vea igual en KPI, pestañas y dona.
+
+**Decisión:**
+1. `ObSaveSettings` revive solo para propiedades locales: `statuses` (id, nombre, color, impactoSalud) y `types` (id, nombre). Paleta de 10 colores más picker hexadecimal.
+2. El Hub aplica `--obsave-accent` del estado en borde, cifras e iconos de KPI, badges/pestañas de «Categorías por Estado» y segmentos/leyenda de la dona.
+3. Doble categorización: Tiempo (Vencidas, Para hoy, Esta semana) frente a Estado (lista configurada). Las notas con impacto positivo no entran en buckets de tiempo.
+4. Salud = positivos / (positivos + negativos), neutrales fuera; una nota vencida y negativa cuenta dos veces en el denominador.
+5. Plantilla: `## Detalle` en lugar de `# título`; cursor en la línea vacía siguiente. Primer estado y primer tipo por defecto. Tipos ya no se reescriben al mover de carpeta.
+
+**Alternativas descartadas:**
+- Colorear los KPI de tiempo con estados: mezcla dos ejes y hace ilegible el acento.
+- Guardar el nombre (no el id) en YAML: un rename de estado huérfana las notas existentes.
+- Dona solo de salud (un segmento): el usuario pidió segmentos por estado con su color.
+
+**Release:** `v2.1.0`
+
+---

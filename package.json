@@ -1,6 +1,6 @@
 {
 	"name": "obsave",
-	"version": "2.0.0",
+	"version": "2.1.0",
 	"description": "Suite de productividad local para Obsidian — Ad Astra Forge",
 	"main": "main.js",
 	"scripts": {

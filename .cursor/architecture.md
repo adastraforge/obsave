@@ -15,7 +15,7 @@ flowchart TB
         NC[noteCapture]
         VS[vaultStructure]
         RD[VaultReportDashboard]
-        NR[noteTypeRename]
+        STG[settings estados/tipos]
     end
 
     subgraph Vault["Obsidian Vault API"]
@@ -32,11 +32,13 @@ flowchart TB
     HV --> RD
     CM --> NC
     RI --> HV
+    ST --> STG
+    RD --> STG
+    NC --> STG
     NC --> VA
     VS --> VA
     RD --> MC
     RD --> WS
-    NR --> VA
 ```
 
 ## Definición de Capas
@@ -48,10 +50,13 @@ flowchart TB
 
 ### 2. Productividad local (Dominio)
 - **Responsabilidad:** Crear estructura de carpetas, notas rápidas/nuevas y métricas de la bóveda.
-- **Contratos:** `generateVaultTemplateFolders(app)`, `createQuickDailyNote(app)`, `createCaptureNote(app, options)`, `computeVaultMetrics` vía `metadataCache`.
-- **Regla:** Solo el sistema de archivos nativo de Obsidian. Cero HTTP, OAuth o manifiestos remotos.
+- **Contratos:** `generateVaultTemplateFolders(app)`, `createQuickDailyNote(app, settings)`, `createCaptureNote(app, settings, options)`, métricas vía `metadataCache` con colores de estado.
+- **Regla:** Solo el sistema de archivos nativo de Obsidian. Cero HTTP, OAuth o manifiestos remotos. Tipos desvinculados de las carpetas.
 
-### 3. Capa retirada (v2.0.0)
+### 3. Persistencia local
+`ObSaveSettings` guarda `statuses` (id, nombre, color, impactoSalud) y `types` (id, nombre). Al cargar se descartan claves de sync v1.x si aparecen, y se borran restos de `ledger.json`.
+
+### 4. Capa retirada (v2.0.0)
 Hasta v1.2.3 existían `SyncEngine`, `StorageAdapters`, `OAuthHandler` y `LedgerManager`. Se eliminaron por completo: no hay proveedores, tokens ni temporizadores de auto-sync.
 
 ## Comandos activos
@@ -63,4 +68,4 @@ Hasta v1.2.3 existían `SyncEngine`, `StorageAdapters`, `OAuthHandler` y `Ledger
 
 ## Persistencia
 
-v2.0.0 no guarda ajustes de sync. Al cargar, se vacía `data.json` legado (tokens, `providerConfig`, ledger embebido) y se intentan borrar `ledger.json` / `.bak` / `.tmp` del directorio del plugin.
+v2.1.0 persiste estados y tipos en `data.json`. Las claves de sync v1.x se ignoran; los archivos `ledger.json` / `.bak` / `.tmp` se intentan borrar al cargar.

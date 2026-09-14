@@ -39,6 +39,10 @@ export class ObSaveSidebarView extends ItemView {
 		this.contentEl.empty();
 	}
 
+	refresh(): void {
+		this.render();
+	}
+
 	private render(): void {
 		const { contentEl } = this;
 		contentEl.empty();
@@ -46,7 +50,11 @@ export class ObSaveSidebarView extends ItemView {
 		this.renderHeader(contentEl);
 
 		const body = contentEl.createDiv({ cls: "obsave-hub-body" });
-		this.dashboard = new VaultReportDashboard(this.app, body);
+		this.dashboard = new VaultReportDashboard(
+			this.app,
+			body,
+			this.plugin.settings,
+		);
 		this.dashboard.render();
 	}
 
@@ -60,13 +68,13 @@ export class ObSaveSidebarView extends ItemView {
 			actions,
 			"zap",
 			"Nota rápida — crea y abre una nota diaria al instante",
-			() => void createQuickDailyNote(this.app),
+			() => void createQuickDailyNote(this.app, this.plugin.settings),
 		);
 		this.addHeaderButton(
 			actions,
 			"file-plus",
 			"Nueva nota — elige carpeta, fecha y etiquetas",
-			() => new CaptureNoteModal(this.app).open(),
+			() => new CaptureNoteModal(this.app, this.plugin).open(),
 		);
 		this.addHeaderButton(actions, "settings", "Ajustes de ObSave", () =>
 			this.plugin.openObSavePanel(),
