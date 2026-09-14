@@ -122,7 +122,22 @@ export function firstType(settings: ObSaveSettings): NoteType {
 }
 
 function normalizeKey(raw: string): string {
-	return slugify(raw) || raw.trim().toLowerCase();
+	return slugify(stripPropertyQuotes(raw)) || raw.trim().toLowerCase();
+}
+
+/** Quita comillas YAML y espacios: `"Pausadas"` y `pausadas` colapsan al mismo id. */
+export function stripPropertyQuotes(raw: string): string {
+	return raw.trim().replace(/^["']|["']$/g, "").trim();
+}
+
+export function coercePropertyValue(raw: unknown): string {
+	if (typeof raw === "string") {
+		return stripPropertyQuotes(raw);
+	}
+	if (raw == null) {
+		return "";
+	}
+	return stripPropertyQuotes(String(raw));
 }
 
 const STATUS_ALIASES: Record<string, string> = {
@@ -144,31 +159,52 @@ export function resolveStatus(
 	raw: unknown,
 	statuses: NoteStatus[],
 ): NoteStatus | null {
-	if (typeof raw !== "string" || !raw.trim()) {
+	const value = coercePropertyValue(raw);
+	if (!value) {
 		return null;
 	}
-	const key = normalizeKey(raw);
+	const key = normalizeKey(value);
 	const aliased = STATUS_ALIASES[key] ?? key;
 	return (
 		statuses.find(
 			(status) =>
 				status.id === aliased ||
 				status.id === key ||
-				normalizeKey(status.name) === key,
+				normalizeKey(status.name) === key ||
+				status.name === value,
 		) ?? null
 	);
 }
 
 export function resolveType(raw: unknown, types: NoteType[]): NoteType | null {
-	if (typeof raw !== "string" || !raw.trim()) {
+	const value = coercePropertyValue(raw);
+	if (!value) {
 		return null;
 	}
-	const key = normalizeKey(raw);
+	const key = normalizeKey(value);
 	return (
 		types.find(
-			(type) => type.id === key || normalizeKey(type.name) === key,
+			(type) =>
+				type.id === key ||
+				normalizeKey(type.name) === key ||
+				type.name === value,
 		) ?? null
 	);
+}
+
+/** Nombre canónico para YAML: acepta id o etiqueta. */
+export function canonicalStatusName(
+	raw: unknown,
+	statuses: NoteStatus[],
+): string | null {
+	return resolveStatus(raw, statuses)?.name ?? null;
+}
+
+export function canonicalTypeName(
+	raw: unknown,
+	types: NoteType[],
+): string | null {
+	return resolveType(raw, types)?.name ?? null;
 }
 
 /** Tinta legible sobre un fondo dado: evita el check blanco sobre amarillo. */

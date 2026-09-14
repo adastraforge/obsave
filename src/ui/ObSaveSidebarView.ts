@@ -40,6 +40,10 @@ export class ObSaveSidebarView extends ItemView {
 	}
 
 	refresh(): void {
+		if (this.dashboard) {
+			this.dashboard.render();
+			return;
+		}
 		this.render();
 	}
 

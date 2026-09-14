@@ -918,3 +918,20 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v2.1.1`
 
 ---
+
+## DEC-061 | 2026-09-14 | Persistencia inmediata de estado/tipo en YAML
+
+**Contexto:** Cambiar `estado` o `tipo` en Propiedades no llegaba al Markdown: el selector resolvía el archivo con `getActiveViewOfType` (falla si el Hub tiene el foco) y mezclaba ids (`pausadas`) con nombres (`Pausadas`), así que el `<select>` no coincidía y el widget nativo oculto revertía el valor.
+
+**Decisión:**
+1. `writeFrontmatterProperty` normaliza id o nombre a la etiqueta configurada y escribe con `processFrontMatter`.
+2. El selector guarda `data-file-path` del leaf Markdown que lo contiene y sincroniza el input oculto para que Obsidian no restaure el valor viejo.
+3. `metadataCache.on("changed")` dispara `notePropertiesChanged`: badge del explorador al instante y Hub con debounce de 80 ms, sin destruir el modo Tiempo/Estado.
+
+**Alternativas descartadas:**
+- Confiar solo en eventos `input` del widget nativo: el input está oculto y Obsidian no siempre emite el cambio.
+- Re-renderizar todo el Hub (cabecera incluida): perdía el switch y el tab activos.
+
+**Release:** `v2.1.2`
+
+---

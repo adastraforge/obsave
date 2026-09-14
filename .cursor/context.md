@@ -7,10 +7,14 @@ Todas las operaciones usan el sistema de archivos nativo de Obsidian.
 
 ## Fase Actual: Suite de productividad local
 
-> **Estado de release:** **publicada oficialmente** — `v2.1.1`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.1.1`  
+> **Estado de release:** **publicada oficialmente** — `v2.1.2`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.1.2`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Persistencia de propiedades v2.1.2
+- El selector nativo de `estado`/`tipo` escribe al instante con `processFrontMatter`; acepta id (`pausadas`) o nombre (`Pausadas`) y persiste la etiqueta canónica.
+- `metadataCache.on("changed")` refresca el badge del explorador y recalcula el Hub (KPI e informe) sin recarga manual.
 
 ### Pulido visual v2.1.1
 - Badge/dot de estado a la izquierda del nombre en el explorador (`FileStatusDecorator`), color exacto desde `metadataCache` + ajustes.

@@ -1,3 +1,11 @@
+import type { App, TFile } from "obsidian";
+import {
+	canonicalStatusName,
+	canonicalTypeName,
+	stripPropertyQuotes,
+	type ObSaveSettings,
+} from "../settings";
+
 export interface NoteFrontmatterFields {
 	tipo?: string;
 	fecha_creacion?: string;
@@ -63,7 +71,7 @@ export function parseFrontmatter(content: string): {
 		}
 		const tipoMatch = line.match(/^tipo:\s*(.+)$/);
 		if (tipoMatch) {
-			frontmatter.tipo = tipoMatch[1].trim();
+			frontmatter.tipo = stripPropertyQuotes(tipoMatch[1]);
 			continue;
 		}
 		const fechaCreacion = line.match(/^fecha_creacion:\s*(.+)$/);
@@ -78,7 +86,7 @@ export function parseFrontmatter(content: string): {
 		}
 		const estadoMatch = line.match(/^estado:\s*(.+)$/);
 		if (estadoMatch) {
-			frontmatter.estado = estadoMatch[1].trim();
+			frontmatter.estado = stripPropertyQuotes(estadoMatch[1]);
 		}
 	}
 
@@ -135,6 +143,29 @@ export function buildFrontmatterYaml(fields: NoteFrontmatterFields): string {
 
 	lines.push("---");
 	return lines.join("\n");
+}
+
+/**
+ * Escribe `estado` o `tipo` al instante. Acepta id (`pausadas`) o nombre
+ * (`Pausadas`) y persiste siempre la etiqueta configurada.
+ */
+export async function writeFrontmatterProperty(
+	app: App,
+	file: TFile,
+	key: "estado" | "tipo",
+	raw: string,
+	settings: ObSaveSettings,
+): Promise<string> {
+	const canonical =
+		key === "estado"
+			? (canonicalStatusName(raw, settings.statuses) ?? raw.trim())
+			: (canonicalTypeName(raw, settings.types) ?? raw.trim());
+
+	await app.fileManager.processFrontMatter(file, (frontmatter) => {
+		frontmatter[key] = canonical;
+	});
+
+	return canonical;
 }
 
 export function formatNowDateTime(): string {

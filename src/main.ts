@@ -1,4 +1,4 @@
-import { Plugin } from "obsidian";
+import { Plugin, TFile } from "obsidian";
 import { ObSaveSettingTab } from "./ui/ObSaveSettingTab";
 import { CaptureNoteModal } from "./ui/CaptureNoteModal";
 import {
@@ -27,6 +27,7 @@ export default class ObSavePlugin extends Plugin {
 	private settingsTab!: ObSaveSettingTab;
 	private fileDecorator!: ObSaveFileStatusDecorator;
 	private propertySelects!: PropertySelectEnhancer;
+	private hubRefreshTimer: number | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -38,6 +39,14 @@ export default class ObSavePlugin extends Plugin {
 
 		this.propertySelects = new PropertySelectEnhancer(this);
 		this.propertySelects.install();
+
+		this.registerEvent(
+			this.app.metadataCache.on("changed", (file) => {
+				if (file instanceof TFile && file.extension === "md") {
+					this.notePropertiesChanged();
+				}
+			}),
+		);
 
 		this.registerView(
 			OBSAVE_HUB_VIEW_TYPE,
@@ -57,6 +66,10 @@ export default class ObSavePlugin extends Plugin {
 	}
 
 	onunload(): void {
+		if (this.hubRefreshTimer !== null) {
+			window.clearTimeout(this.hubRefreshTimer);
+			this.hubRefreshTimer = null;
+		}
 		this.fileDecorator?.uninstall();
 		console.log("ObSave plugin unloaded");
 	}
@@ -76,6 +89,21 @@ export default class ObSavePlugin extends Plugin {
 		this.refreshHub();
 		this.fileDecorator?.refresh();
 		this.propertySelects?.refresh();
+	}
+
+	notePropertiesChanged(): void {
+		this.fileDecorator?.refresh();
+		this.scheduleHubRefresh();
+	}
+
+	private scheduleHubRefresh(): void {
+		if (this.hubRefreshTimer !== null) {
+			window.clearTimeout(this.hubRefreshTimer);
+		}
+		this.hubRefreshTimer = window.setTimeout(() => {
+			this.hubRefreshTimer = null;
+			this.refreshHub();
+		}, 80);
 	}
 
 	refreshHub(): void {

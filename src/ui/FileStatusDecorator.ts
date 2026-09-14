@@ -4,7 +4,7 @@ import { resolveStatus } from "../settings";
 
 const DOT_CLASS = "obsave-status-dot";
 const FILE_EXPLORER_VIEW = "file-explorer";
-const REFRESH_DELAY_MS = 80;
+	const REFRESH_DELAY_MS = 30;
 const TITLE_SELECTOR = ".nav-file-title[data-path], .tree-item-self.nav-file-title[data-path]";
 
 interface ExplorerItem {

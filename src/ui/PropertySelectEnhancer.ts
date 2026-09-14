@@ -1,14 +1,22 @@
 import { MarkdownView, TFile } from "obsidian";
 import type ObSavePlugin from "../main";
+import {
+	canonicalStatusName,
+	canonicalTypeName,
+	coercePropertyValue,
+} from "../settings";
+import { writeFrontmatterProperty } from "../utils/frontmatter";
 
 const SELECT_CLASS = "obsave-prop-select";
 
 /**
- * Sustituye el input de texto de las propiedades nativas `estado` y `tipo` por
- * un `<select>` con las opciones configuradas, y escribe el cambio vía
- * `processFrontMatter` para que el YAML y el caché se mantengan alineados.
+ * Sustituye el input nativo de `estado`/`tipo` por un `<select>` y persiste
+ * de inmediato con `processFrontMatter`. El archivo se resuelve desde el leaf
+ * que contiene el widget, no desde la vista activa (el Hub puede tener el foco).
  */
 export class PropertySelectEnhancer {
+	private writing = false;
+
 	constructor(private plugin: ObSavePlugin) {}
 
 	install(): void {
@@ -22,7 +30,11 @@ export class PropertySelectEnhancer {
 			}),
 		);
 		this.plugin.registerEvent(
-			this.plugin.app.metadataCache.on("changed", () => this.scan()),
+			this.plugin.app.metadataCache.on("changed", () => {
+				if (!this.writing) {
+					this.scan();
+				}
+			}),
 		);
 		window.setTimeout(() => this.scan(), 120);
 	}
@@ -32,13 +44,11 @@ export class PropertySelectEnhancer {
 	}
 
 	private scan(): void {
-		document
-			.querySelectorAll(".metadata-property")
-			.forEach((node) => {
-				if (node instanceof HTMLElement) {
-					this.enhance(node);
-				}
-			});
+		document.querySelectorAll(".metadata-property").forEach((node) => {
+			if (node instanceof HTMLElement) {
+				this.enhance(node);
+			}
+		});
 	}
 
 	private enhance(prop: HTMLElement): void {
@@ -57,17 +67,27 @@ export class PropertySelectEnhancer {
 			return;
 		}
 
+		const file = this.fileForElement(prop);
 		let select = valueEl.querySelector(
 			`select.${SELECT_CLASS}`,
 		) as HTMLSelectElement | null;
 		if (!select) {
 			select = valueEl.createEl("select", { cls: SELECT_CLASS });
 			select.addEventListener("change", () => {
-				void this.commit(key, select!.value);
+				void this.commit(select!);
 			});
 		}
 
-		this.fill(select, options, this.currentValue(valueEl, key));
+		select.dataset.propertyKey = key;
+		if (file) {
+			select.dataset.filePath = file.path;
+		}
+
+		if (document.activeElement === select) {
+			return;
+		}
+
+		this.fill(select, options, this.currentValue(valueEl, key, file));
 		this.hideNativeInput(valueEl);
 	}
 
@@ -78,20 +98,31 @@ export class PropertySelectEnhancer {
 		return this.plugin.settings.types.map((type) => type.name);
 	}
 
-	private currentValue(valueEl: HTMLElement, key: "estado" | "tipo"): string {
-		const file = this.activeFile();
+	private currentValue(
+		valueEl: HTMLElement,
+		key: "estado" | "tipo",
+		file: TFile | null,
+	): string {
 		if (file) {
 			const raw =
 				this.plugin.app.metadataCache.getFileCache(file)?.frontmatter?.[key];
-			if (typeof raw === "string" && raw.trim()) {
-				return raw.trim();
+			const canonical = this.canonicalize(key, raw);
+			if (canonical) {
+				return canonical;
 			}
 		}
 		const input = valueEl.querySelector("input");
 		if (input instanceof HTMLInputElement && input.value.trim()) {
-			return input.value.trim();
+			return this.canonicalize(key, input.value) || coercePropertyValue(input.value);
 		}
 		return this.optionsFor(key)[0] ?? "";
+	}
+
+	private canonicalize(key: "estado" | "tipo", raw: unknown): string {
+		if (key === "estado") {
+			return canonicalStatusName(raw, this.plugin.settings.statuses) ?? "";
+		}
+		return canonicalTypeName(raw, this.plugin.settings.types) ?? "";
 	}
 
 	private fill(
@@ -109,34 +140,106 @@ export class PropertySelectEnhancer {
 				select.createEl("option", { text: name, attr: { value: name } });
 			}
 		}
-		if (current && !Array.from(select.options).some((option) => option.value === current)) {
-			select.createEl("option", { text: current, attr: { value: current } });
+		const display = this.canonicalize(
+			(select.dataset.propertyKey as "estado" | "tipo") ?? "estado",
+			current,
+		) || current;
+		if (display && !Array.from(select.options).some((option) => option.value === display)) {
+			select.createEl("option", { text: display, attr: { value: display } });
 		}
-		if (current) {
-			select.value = current;
+		if (display) {
+			select.value = display;
 		}
 	}
 
 	private hideNativeInput(valueEl: HTMLElement): void {
-		for (const input of Array.from(valueEl.querySelectorAll("input, textarea"))) {
-			if (input instanceof HTMLElement) {
+		for (const input of Array.from(
+			valueEl.querySelectorAll("input, textarea, [contenteditable='true']"),
+		)) {
+			if (
+				input instanceof HTMLElement &&
+				!input.classList.contains(SELECT_CLASS)
+			) {
 				input.addClass("obsave-prop-native-hidden");
 			}
 		}
 	}
 
-	private activeFile(): TFile | null {
-		const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
-		return view?.file ?? null;
+	private fileForElement(el: HTMLElement): TFile | null {
+		const select =
+			el instanceof HTMLSelectElement
+				? el
+				: (el.querySelector(`select.${SELECT_CLASS}`) as HTMLSelectElement | null);
+		const storedPath = select?.dataset.filePath;
+		if (storedPath) {
+			const byPath = this.plugin.app.vault.getAbstractFileByPath(storedPath);
+			if (byPath instanceof TFile) {
+				return byPath;
+			}
+		}
+
+		for (const leaf of this.plugin.app.workspace.getLeavesOfType("markdown")) {
+			if (
+				leaf.view instanceof MarkdownView &&
+				leaf.view.file &&
+				leaf.view.containerEl.contains(el)
+			) {
+				return leaf.view.file;
+			}
+		}
+
+		return this.plugin.app.workspace.getActiveViewOfType(MarkdownView)?.file ?? null;
 	}
 
-	private async commit(key: string, value: string): Promise<void> {
-		const file = this.activeFile();
-		if (!file) {
+	private async commit(select: HTMLSelectElement): Promise<void> {
+		const key = select.dataset.propertyKey;
+		if (key !== "estado" && key !== "tipo") {
 			return;
 		}
-		await this.plugin.app.fileManager.processFrontMatter(file, (frontmatter) => {
-			frontmatter[key] = value;
-		});
+
+		const file = this.fileForElement(select);
+		if (!file) {
+			console.warn("[ObSave] No hay nota abierta para guardar", key);
+			return;
+		}
+
+		const canonical = this.canonicalize(key, select.value) || select.value;
+		if (!canonical) {
+			return;
+		}
+
+		this.writing = true;
+		select.value = canonical;
+		this.syncHiddenInput(select, canonical);
+
+		try {
+			await writeFrontmatterProperty(
+				this.plugin.app,
+				file,
+				key,
+				canonical,
+				this.plugin.settings,
+			);
+			this.plugin.notePropertiesChanged();
+		} catch (error) {
+			console.warn("[ObSave] No se pudo guardar la propiedad", key, error);
+		} finally {
+			window.setTimeout(() => {
+				this.writing = false;
+			}, 80);
+		}
+	}
+
+	private syncHiddenInput(select: HTMLSelectElement, value: string): void {
+		const valueEl = select.parentElement;
+		if (!valueEl) {
+			return;
+		}
+		for (const input of Array.from(valueEl.querySelectorAll("input, textarea"))) {
+			if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+				input.value = value;
+				input.dispatchEvent(new Event("input", { bubbles: true }));
+			}
+		}
 	}
 }
