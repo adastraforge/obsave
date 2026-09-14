@@ -1,6 +1,5 @@
 import type { App } from "obsidian";
 import { Notice, TFolder } from "obsidian";
-import type { LedgerManager } from "../ledger/LedgerManager";
 
 export const VAULT_TEMPLATE_FOLDERS = [
 	"00_Diarias",
@@ -17,37 +16,28 @@ function folderExists(app: App, folderPath: string): boolean {
 }
 
 /**
- * Genera la estructura plantilla en disco y la registra en el ledger local.
- * Operación estrictamente local: la subida a la nube es responsabilidad
- * exclusiva del `SyncEngine` en su próximo ciclo.
+ * Genera la estructura plantilla en disco. Operación estrictamente local:
+ * no hay manifiesto ni ciclo de subida a la nube.
  */
-export async function generateVaultTemplateFolders(
-	app: App,
-	ledger: LedgerManager,
-): Promise<string[]> {
+export async function generateVaultTemplateFolders(app: App): Promise<string[]> {
 	const created: string[] = [];
 
 	for (const folder of VAULT_TEMPLATE_FOLDERS) {
-		if (!folderExists(app, folder)) {
-			try {
-				await app.vault.createFolder(folder);
-				created.push(folder);
-			} catch (error) {
-				console.warn(`[ObSave] No se pudo crear «${folder}»:`, error);
-				continue;
-			}
+		if (folderExists(app, folder)) {
+			continue;
 		}
-		ledger.trackFolder(folder);
+		try {
+			await app.vault.createFolder(folder);
+			created.push(folder);
+		} catch (error) {
+			console.warn(`[ObSave] No se pudo crear «${folder}»:`, error);
+		}
 	}
-
-	await ledger.save();
 
 	if (created.length === 0) {
 		new Notice("ObSave: Todas las carpetas de plantilla ya existen.");
 	} else {
-		new Notice(
-			`ObSave: Carpetas creadas, pendientes de sincronizar — ${created.join(", ")}`,
-		);
+		new Notice(`ObSave: Carpetas creadas — ${created.join(", ")}`);
 	}
 
 	return created;

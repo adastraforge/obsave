@@ -6,93 +6,61 @@
 flowchart TB
     subgraph UI["Capa UI"]
         ST[SettingTab]
-        RI[Ribbon Icon]
-        NO[Notices / Status]
+        HV[ObSave Hub / ItemView]
+        CM[CaptureNoteModal]
+        RI[Ribbon layout-dashboard]
     end
 
-    subgraph Engine["Capa SyncEngine"]
-        SE[SyncEngine]
-        MR[Master-Replica Strategy]
-        QM[Queue Manager]
+    subgraph Prod["Capa productividad local"]
+        NC[noteCapture]
+        VS[vaultStructure]
+        RD[VaultReportDashboard]
+        NR[noteTypeRename]
     end
 
-    subgraph Adapters["Capa StorageAdapters"]
-        GA[Google Drive Adapter]
-        OA[OneDrive Adapter]
-        GH[GitHub / Git Adapter]
-        S3[S3 Adapter]
+    subgraph Vault["Obsidian Vault API"]
+        VA[vault.create / createFolder]
+        MC[metadataCache]
+        WS[workspace]
     end
 
-    subgraph Auth["Capa OAuthHandler"]
-        PKCE[OAuth2 PKCE Flow]
-        TK[Token Store]
-        RF[Token Refresh]
-    end
-
-    ST --> SE
-    RI --> SE
-    SE --> MR
-    SE --> QM
-    MR --> GA
-    MR --> OA
-    MR --> GH
-    MR --> S3
-    GA --> PKCE
-    OA --> PKCE
-    PKCE --> TK
-    TK --> RF
+    ST --> VS
+    ST --> NC
+    ST --> HV
+    HV --> NC
+    HV --> CM
+    HV --> RD
+    CM --> NC
+    RI --> HV
+    NC --> VA
+    VS --> VA
+    RD --> MC
+    RD --> WS
+    NR --> VA
 ```
 
 ## Definición de Capas
 
 ### 1. UI (Presentación)
-- **Responsabilidad:** Interacción con el usuario en Obsidian.
-- **Componentes:** `ObSaveSettingTab`, ribbon icon, notices de estado.
-- **Regla:** No contiene lógica de sincronización; delega al SyncEngine.
+- **Responsabilidad:** Ajustes, Hub lateral, modal de nueva nota y ribbon.
+- **Componentes:** `ObSaveSettingTab`, `ObSaveSidebarView`, `CaptureNoteModal`, `VaultReportDashboard`.
+- **Regla:** No hay motor de red ni estado de sync; las acciones delegan a la capa de productividad.
 
-### 2. SyncEngine (Dominio)
-- **Responsabilidad:** Orquestar la estrategia Master-Réplicas.
-- **Contratos:** Consume `StorageAdapter`, expone estado de sync (`idle` | `syncing` | `error`).
-- **Flujo:** Detectar cambios en Master → encolar → replicar a Réplicas.
+### 2. Productividad local (Dominio)
+- **Responsabilidad:** Crear estructura de carpetas, notas rápidas/nuevas y métricas de la bóveda.
+- **Contratos:** `generateVaultTemplateFolders(app)`, `createQuickDailyNote(app)`, `createCaptureNote(app, options)`, `computeVaultMetrics` vía `metadataCache`.
+- **Regla:** Solo el sistema de archivos nativo de Obsidian. Cero HTTP, OAuth o manifiestos remotos.
 
-### 3. StorageAdapters (Infraestructura)
-- **Responsabilidad:** Abstraer cada backend (Drive, OneDrive, Git, S3).
-- **Contrato:** Interface `StorageAdapter` en `src/types.ts`.
-- **Regla:** Cada adapter implementa `connect`, `pull`, `push`, `disconnect`.
+### 3. Capa retirada (v2.0.0)
+Hasta v1.2.3 existían `SyncEngine`, `StorageAdapters`, `OAuthHandler` y `LedgerManager`. Se eliminaron por completo: no hay proveedores, tokens ni temporizadores de auto-sync.
 
-### 4. OAuthHandler (Seguridad)
-- **Responsabilidad:** Flujo OAuth2 PKCE vía navegador nativo.
-- **Regla:** Sin ventanas colgadas ni esquemas `obsidian://` para tokens.
-- **Almacenamiento:** Tokens cifrados en settings del plugin (futuro).
+## Comandos activos
 
-## Modelo de Datos (Settings)
+1. `open-obsave-panel` — Abrir panel principal de ObSave
+2. `obsave-hub` — Abrir ObSave Hub lateral
+3. `obsave-quick-note` — Crear nota rápida ObSave
+4. `obsave-capture-note` — Crear nueva nota ObSave
 
-```typescript
-ObSaveSettings {
-  masterRepo: RepoConfig | null
-  replicaRepos: RepoConfig[]
-  syncIntervalMinutes: number
-  lastSyncAt: string | null
-}
+## Persistencia
 
-RepoConfig {
-  id: string
-  role: 'master' | 'replica'
-  provider: string
-  remoteUrl?: string
-  credentials?: EncryptedCredentials
-}
-```
-
-## Flujo de Sincronización (Target)
-
-```
-1. Usuario modifica vault local
-2. SyncEngine detecta delta respecto al Master
-3. Push al Master
-4. Para cada Réplica: pull desde Master → push a Réplica
-5. Actualizar ribbon icon + lastSyncAt
-```
-
-## Fase 1 — Estado Actual
-Solo UI + SyncEngine stub. Adapters y OAuthHandler son placeholders para fases posteriores.
+v2.0.0 no guarda ajustes de sync. Al cargar, se vacía `data.json` legado (tokens, `providerConfig`, ledger embebido) y se intentan borrar `ledger.json` / `.bak` / `.tmp` del directorio del plugin.

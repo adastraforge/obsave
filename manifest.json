@@ -1,9 +1,9 @@
 {
 	"id": "obsave",
 	"name": "ObSave",
-	"version": "1.2.3",
+	"version": "2.0.0",
 	"minAppVersion": "1.5.0",
-	"description": "Sincronización multi-repositorio y auto-respaldo sin intermediarios comerciales.",
+	"description": "Suite de productividad local: captura de notas, estructura de bóveda e informe operativo.",
 	"author": "Ad Astra Forge",
 	"authorUrl": "https://github.com/adastraforge/obsave",
 	"isDesktopOnly": true

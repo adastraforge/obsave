@@ -1,7 +1,7 @@
 {
 	"name": "obsave",
-	"version": "1.2.3",
-	"description": "Plugin Obsidian de sincronización multi-repositorio y auto-respaldo — Ad Astra Forge",
+	"version": "2.0.0",
+	"description": "Suite de productividad local para Obsidian — Ad Astra Forge",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
@@ -10,9 +10,9 @@
 	"keywords": [
 		"obsidian",
 		"obsidian-plugin",
-		"sync",
-		"backup",
-		"git"
+		"productivity",
+		"notes",
+		"dashboard"
 	],
 	"author": "Ad Astra Forge",
 	"license": "MIT",
@@ -22,8 +22,5 @@
 		"esbuild": "^0.21.5",
 		"obsidian": "latest",
 		"typescript": "^5.5.0"
-	},
-	"dependencies": {
-		"isomorphic-git": "^1.27.1"
 	}
 }

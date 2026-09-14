@@ -859,3 +859,24 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v1.2.3`
 
 ---
+
+## DEC-058 | 2026-09-14 | ObSave como suite de productividad local (sin sync remota)
+
+**Contexto:** El plugin nació como sincronizador multi-proveedor (GitHub, Drive, ledger, OAuth, auto-sync). Esa capa competía con el Hub de productividad —captura, estructura de bóveda e informe operativo— y arrastraba tokens, hilos de red y un manifiesto paralelo al vault.
+
+**Decisión:**
+1. v2.0.0 elimina `SyncEngine`, proveedores (`GoogleDriveProvider`, `GitHubProvider`, OneDrive, iCloud), OAuth PKCE, `LedgerManager`, `.obsave/ledger.json`, badges `FileStatusDecorator`, ribbon de nube y `autoSyncInterval`.
+2. Ajustes pierde «Respaldo y nube» y los asistentes de conexión. Quedan «Estructura de bóveda» y «Herramientas»; el botón del informe se llama **ObSave Hub**.
+3. Cuatro comandos activos. Se retira `obsave-vault-report` por redundante con `obsave-hub`.
+4. El Hub lateral es el dashboard único: cabecera `zap` / `file-plus` / `settings` sobre KPI, dona SVG, barras y listado por prioridad.
+5. Al cargar se vacía `data.json` legado y se borran restos de `ledger.json` para no dejar tokens en disco.
+6. `isomorphic-git` deja de ser dependencia. Carpetas plantilla, nota rápida y nueva nota son 100 % `app.vault`.
+
+**Alternativas descartadas:**
+- Dejar el motor de sync desactivado detrás de un flag: seguiría empaquetando OAuth, tokens y superficie de ataque.
+- Conservar el ledger local sin nube: añade I/O y badges sin un consumidor.
+- Mantener el comando del informe con otro nombre: duplicaba el Hub en la paleta de comandos.
+
+**Release:** `v2.0.0`
+
+---

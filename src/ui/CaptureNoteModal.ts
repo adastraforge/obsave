@@ -21,7 +21,7 @@ export class CaptureNoteModal extends Modal {
 	onOpen(): void {
 		const { contentEl, titleEl } = this;
 		contentEl.empty();
-		titleEl.setText("Captura de nota enriquecida");
+		titleEl.setText("Nueva nota");
 
 		this.alertEl = contentEl.createDiv({ cls: "obsave-alert hidden" });
 

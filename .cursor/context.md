@@ -1,16 +1,31 @@
 # ObSave — Contexto del Proyecto
 
 ## Marca y Visión
-**Ad Astra Forge** desarrolla **ObSave**, un plugin open-source y gratuito para Obsidian orientado a la sincronización multi-repositorio y auto-respaldo **sin intermediarios comerciales**.
+**Ad Astra Forge** desarrolla **ObSave**, un plugin open-source y gratuito para Obsidian: una **suite de productividad local** para capturar notas, estructurar la bóveda y consultar un informe operativo. Sin nube, sin OAuth y sin sincronización en segundo plano.
 
-El usuario mantiene control total de sus datos: el vault se sincroniza con **un único proveedor de nube** a la vez (GitHub, Google Drive, OneDrive o iCloud).
+Todas las operaciones usan el sistema de archivos nativo de Obsidian.
 
-## Fase Actual: Fase 1 — MVP Git Core Simplificado
+## Fase Actual: Suite de productividad local
 
-> **Estado de release:** Fase 1 **publicada oficialmente** — `v1.2.3`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v1.2.3`  
+> **Estado de release:** **publicada oficialmente** — `v2.0.0`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.0.0`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Reestructuración radical v2.0.0
+- Eliminados el motor de sync (`SyncEngine`), proveedores (`GoogleDriveProvider`, `GitHubProvider`, OneDrive, iCloud), OAuth2 PKCE, `LedgerManager`, manifiesto `.obsave/ledger.json`, badges (`FileStatusDecorator`) y el auto-sync en segundo plano.
+- Ajustes deja de mostrar «Respaldo y nube» y los asistentes de conexión. Al cargar, se vacía `data.json` legado y se intentan borrar `ledger.json` / `.bak` / `.tmp` del directorio del plugin.
+- Dependencia `isomorphic-git` retirada. Operaciones 100 % locales: carpetas plantilla, nota rápida y nueva nota.
+- Cuatro comandos: panel principal, Hub lateral, nota rápida, nueva nota. El comando redundante del informe se elimina.
+- El botón de Ajustes «Informe de bóveda» pasa a llamarse **ObSave Hub**.
+- Ribbon único `layout-dashboard` abre el Hub.
+
+### ObSave Hub lateral
+- `ObSaveSidebarView` (`ItemView`, tipo `obsave-hub`) en la hoja derecha: cabecera con nota rápida (`zap`), nueva nota (`file-plus`) y Ajustes (`settings`); el cuerpo es el informe operativo (KPI, dona SVG, barras por carpeta, listado por prioridad).
+- Módulos: `VaultReportDashboard.ts` (dashboard montable) y `ObSaveSidebarView.ts` (composición).
+- Abrir una nota desde el informe usa `getMostRecentLeaf`, nunca la hoja del propio hub.
+
+### Histórico (capa remota retirada)
 
 ### ObSave Hub lateral v1.2.3
 - `ObSaveSidebarView` (`ItemView`, tipo `obsave-hub`) en la hoja derecha, de propósito único: cabecera «ObSave Hub» con nota rápida (`zap`), nueva nota (`file-plus`) y Ajustes (`settings`); el cuerpo lo ocupa el informe operativo completo.

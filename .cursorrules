@@ -2,15 +2,15 @@
 
 ## Identidad del Proyecto
 - **Firma:** Ad Astra Forge
-- **Plugin:** ObSave (`obsave`) — sincronización multi-repositorio y auto-respaldo para Obsidian
-- **Stack:** TypeScript, Obsidian API, esbuild, Isomorphic-Git, OAuth2 PKCE
+- **Plugin:** ObSave (`obsave`) — suite de productividad local para Obsidian
+- **Stack:** TypeScript, Obsidian API, esbuild
 - **Licencia:** 100% Gratuito y Open Source
 
 ## Premisas Arquitectónicas (Inviolables)
 1. Sin suscripciones, llaves pagadas ocultas ni conectores bloqueados.
-2. OAuth2 PKCE vía redirección de navegador nativo para conectores comerciales.
-3. Esquema Master & Réplicas: un repositorio Master y N réplicas espejo.
-4. Git simplificado nativo: el usuario provee URL, usuario y token; el plugin gestiona `.git`.
+2. 100 % local: sin proveedores de nube, OAuth, ledger remoto ni sincronización en segundo plano.
+3. Todas las operaciones (carpetas plantilla, nota rápida, nueva nota, informe) usan el sistema de archivos nativo de Obsidian.
+4. El Hub lateral es el dashboard principal de productividad.
 
 ## Build Gate (Obligatorio)
 Antes de sugerir o ejecutar `git commit` o `git push`:
@@ -35,15 +35,15 @@ Cada vez que se solicite un **release** o **versión de producción**, el agente
 6. Actualizar `.cursor/context.md` y `.cursor/decision_log.md` confirmando el release oficial.
 
 ## Documentación Viva
-Tras cambios estructurales (nuevos módulos, capas, conectores, flujos OAuth o estrategia de sync):
+Tras cambios estructurales (nuevos módulos, capas, flujos de captura o estrategia del Hub):
 1. Actualizar `.cursor/context.md` si cambia visión, fase o premisas.
 2. Actualizar `.cursor/architecture.md` si cambian capas, diagramas o contratos.
 3. Registrar decisiones en `.cursor/decision_log.md` con fecha, contexto y alternativas descartadas.
 
 ## Estándares de Código
-- TypeScript estricto; interfaces en `src/types.ts`.
-- Separación de capas: UI → SyncEngine → StorageAdapters → OAuthHandler.
-- Sin dependencias comerciales bloqueadas; preferir APIs abiertas y OAuth directo.
+- TypeScript estricto.
+- Separación de capas: UI (Hub, Ajustes, modales) → productividad local (captura, estructura, informe).
+- Sin dependencias comerciales ni clientes de red.
 - Comentarios solo para lógica no obvia; el código debe ser autoexplicativo.
 - Seguir convenciones existentes del repo antes de introducir nuevos patrones.
 
