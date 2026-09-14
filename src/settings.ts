@@ -171,6 +171,15 @@ export function resolveType(raw: unknown, types: NoteType[]): NoteType | null {
 	);
 }
 
+/** Tinta legible sobre un fondo dado: evita el check blanco sobre amarillo. */
+export function readableInk(hex: string): string {
+	const normalized = normalizeHexColor(hex);
+	const r = parseInt(normalized.slice(1, 3), 16);
+	const g = parseInt(normalized.slice(3, 5), 16);
+	const b = parseInt(normalized.slice(5, 7), 16);
+	return r * 0.299 + g * 0.587 + b * 0.114 > 150 ? "#111827" : "#FFFFFF";
+}
+
 export function statusIcon(impact: HealthImpact): string {
 	if (impact === "positive") return "check-circle-2";
 	if (impact === "negative") return "x-circle";

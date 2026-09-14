@@ -8,7 +8,7 @@ import {
 	type ObSaveSettings,
 } from "../settings";
 
-type TimeBucketId = "overdue" | "today" | "week";
+type TimeBucketId = "overdue" | "today" | "week" | "attended";
 type CategoryMode = "time" | "status";
 
 interface NoteRef {
@@ -47,6 +47,7 @@ const TIME_BUCKETS: TimeBucketDefinition[] = [
 	{ id: "overdue", label: "Vencidas", icon: "alert-triangle", color: "#EF4444" },
 	{ id: "today", label: "Para hoy", icon: "clock", color: "#F97316" },
 	{ id: "week", label: "Esta semana", icon: "calendar-days", color: "#3B82F6" },
+	{ id: "attended", label: "Atendidas", icon: "check-circle-2", color: "#22C55E" },
 ];
 
 const VISIBLE_NOTES_STEP = 15;
@@ -120,6 +121,7 @@ function computeVaultMetrics(app: App, settings: ObSaveSettings): VaultMetrics {
 		overdue: [],
 		today: [],
 		week: [],
+		attended: [],
 	};
 	const statusBuckets: Record<string, NoteRef[]> = {};
 	for (const status of settings.statuses) {
@@ -159,6 +161,7 @@ function computeVaultMetrics(app: App, settings: ObSaveSettings): VaultMetrics {
 		statusBuckets[status.id]?.push(ref);
 
 		if (status.healthImpact === "positive") {
+			timeBuckets.attended.push(ref);
 			continue;
 		}
 		if (!due) {
@@ -185,6 +188,7 @@ function computeVaultMetrics(app: App, settings: ObSaveSettings): VaultMetrics {
 	timeBuckets.overdue.sort(byDueDate);
 	timeBuckets.today.sort(byDueDate);
 	timeBuckets.week.sort(byDueDate);
+	timeBuckets.attended.sort((a, b) => a.title.localeCompare(b.title));
 	for (const status of settings.statuses) {
 		statusBuckets[status.id].sort(byDueDate);
 	}
@@ -273,6 +277,18 @@ export class VaultReportDashboard {
 		return "overdue";
 	}
 
+	/** «Atendidas» hereda el color del primer estado positivo configurado. */
+	private timeColor(bucket: TimeBucketDefinition): string {
+		if (bucket.id !== "attended") {
+			return bucket.color;
+		}
+		return (
+			this.settings.statuses.find(
+				(status) => status.healthImpact === "positive",
+			)?.color ?? bucket.color
+		);
+	}
+
 	private renderSummaryBar(containerEl: HTMLElement, metrics: VaultMetrics): void {
 		const bar = containerEl.createDiv({ cls: "obsave-report-summary" });
 		const extra =
@@ -284,7 +300,13 @@ export class VaultReportDashboard {
 			text: `${metrics.totalNotes} notas · ${metrics.totalFolders} carpetas · ${metrics.unscheduled} sin programar${extra}`,
 		});
 
-		const refresh = bar.createEl("button", { cls: "obsave-icon-button" });
+		const actions = bar.createDiv({ cls: "obsave-report-summary-actions" });
+
+		const modes = actions.createDiv({ cls: "obsave-cat-toggle" });
+		this.renderModeButton(modes, "time", "Tiempo");
+		this.renderModeButton(modes, "status", "Estado");
+
+		const refresh = actions.createEl("button", { cls: "obsave-icon-button" });
 		setIcon(refresh, "refresh-cw");
 		setTooltip(refresh, "Recalcular métricas");
 		refresh.setAttribute("aria-label", "Recalcular métricas");
@@ -294,36 +316,65 @@ export class VaultReportDashboard {
 	private renderKpiGrid(containerEl: HTMLElement, metrics: VaultMetrics): void {
 		const grid = containerEl.createDiv({ cls: "obsave-kpi-grid" });
 
-		for (const status of this.settings.statuses) {
-			const count = metrics.statusBuckets[status.id]?.length ?? 0;
-			const card = grid.createDiv({ cls: "obsave-kpi-card" });
-			applyAccent(card, status.color);
-			card.setAttribute("role", "button");
-			card.setAttribute("tabindex", "0");
-			card.setAttribute("aria-label", `${status.name}: ${count} notas`);
-			setTooltip(card, `Filtrar por ${status.name}`);
-
-			const iconEl = card.createDiv({ cls: "obsave-kpi-icon" });
-			setIcon(iconEl, statusIcon(status.healthImpact));
-			card.createDiv({ cls: "obsave-kpi-value", text: String(count) });
-			card.createDiv({ cls: "obsave-kpi-label", text: status.name });
-
-			const activate = (): void => {
-				this.categoryMode = "status";
-				this.setActiveStatus(status.id);
-			};
-			card.addEventListener("click", activate);
-			card.addEventListener("keydown", (event) => {
-				if (event.key === "Enter" || event.key === " ") {
-					event.preventDefault();
-					activate();
-				}
-			});
-
-			this.kpiEls.set(status.id, card);
+		if (this.categoryMode === "time") {
+			for (const bucket of TIME_BUCKETS) {
+				this.renderKpiCard(grid, {
+					key: `time:${bucket.id}`,
+					label: bucket.label,
+					icon: bucket.icon,
+					color: this.timeColor(bucket),
+					count: metrics.timeBuckets[bucket.id].length,
+					onActivate: () => this.setActiveTime(bucket.id),
+				});
+			}
+		} else {
+			for (const status of this.settings.statuses) {
+				this.renderKpiCard(grid, {
+					key: `status:${status.id}`,
+					label: status.name,
+					icon: statusIcon(status.healthImpact),
+					color: status.color,
+					count: metrics.statusBuckets[status.id]?.length ?? 0,
+					onActivate: () => this.setActiveStatus(status.id),
+				});
+			}
 		}
 
 		this.syncActiveStyles();
+	}
+
+	private renderKpiCard(
+		containerEl: HTMLElement,
+		spec: {
+			key: string;
+			label: string;
+			icon: string;
+			color: string;
+			count: number;
+			onActivate: () => void;
+		},
+	): void {
+		const card = containerEl.createDiv({ cls: "obsave-kpi-card" });
+		applyAccent(card, spec.color);
+		card.setAttribute("role", "button");
+		card.setAttribute("tabindex", "0");
+		card.setAttribute("aria-label", `${spec.label}: ${spec.count} notas`);
+		setTooltip(card, `Ver ${spec.label.toLowerCase()}`);
+
+		const iconEl = card.createDiv({ cls: "obsave-kpi-icon" });
+		setIcon(iconEl, spec.icon);
+		card.createDiv({ cls: "obsave-kpi-value", text: String(spec.count) });
+		card.createDiv({ cls: "obsave-kpi-label", text: spec.label });
+
+		card.addEventListener("click", spec.onActivate);
+		card.addEventListener("keydown", (event) => {
+			if (event.key === "Enter" || event.key === " ") {
+				event.preventDefault();
+				spec.onActivate();
+			}
+		});
+
+		this.kpiEls.set(spec.key, card);
 	}
 
 	private renderCharts(containerEl: HTMLElement, metrics: VaultMetrics): void {
@@ -442,24 +493,20 @@ export class VaultReportDashboard {
 
 	private renderTabs(containerEl: HTMLElement, metrics: VaultMetrics): void {
 		const bar = containerEl.createDiv({ cls: "obsave-report-tabbar" });
-
-		const modes = bar.createDiv({ cls: "obsave-cat-toggle" });
-		this.renderModeButton(modes, "time", "Tiempo");
-		this.renderModeButton(modes, "status", "Estado");
-
 		const tabs = bar.createDiv({ cls: "obsave-report-tabs" });
 
 		if (this.categoryMode === "time") {
 			for (const bucket of TIME_BUCKETS) {
 				const count = metrics.timeBuckets[bucket.id].length;
+				const color = this.timeColor(bucket);
 				const tab = tabs.createEl("button", { cls: "obsave-report-tab" });
-				applyAccent(tab, bucket.color);
+				applyAccent(tab, color);
 				tab.createSpan({ text: bucket.label });
 				const badge = tab.createSpan({
 					cls: "obsave-tab-badge",
 					text: String(count),
 				});
-				applyAccent(badge, bucket.color);
+				applyAccent(badge, color);
 				tab.addEventListener("click", () => this.setActiveTime(bucket.id));
 				this.tabEls.set(`time:${bucket.id}`, tab);
 			}
@@ -514,11 +561,6 @@ export class VaultReportDashboard {
 	}
 
 	private setActiveTime(id: TimeBucketId): void {
-		this.categoryMode = "time";
-		if (this.activeTimeTab === id) {
-			this.syncActiveStyles();
-			return;
-		}
 		this.activeTimeTab = id;
 		this.visibleNotes = VISIBLE_NOTES_STEP;
 		this.syncActiveStyles();
@@ -526,36 +568,26 @@ export class VaultReportDashboard {
 	}
 
 	private setActiveStatus(id: string): void {
-		this.categoryMode = "status";
-		if (this.activeStatusId === id && this.tabEls.size > 0) {
-			this.syncActiveStyles();
-			this.renderList();
-			return;
-		}
 		this.activeStatusId = id;
 		this.visibleNotes = VISIBLE_NOTES_STEP;
-		if (this.tabEls.size === 0 || ![...this.tabEls.keys()].some((key) => key.startsWith("status:"))) {
-			this.render();
-			return;
-		}
 		this.syncActiveStyles();
 		this.renderList();
 	}
 
-	private syncActiveStyles(): void {
-		const activeKey =
-			this.categoryMode === "time"
-				? `time:${this.activeTimeTab}`
-				: `status:${this.activeStatusId}`;
+	private activeKey(): string {
+		return this.categoryMode === "time"
+			? `time:${this.activeTimeTab}`
+			: `status:${this.activeStatusId}`;
+	}
 
-		for (const [id, el] of this.tabEls) {
-			el.toggleClass("is-active", id === activeKey);
+	private syncActiveStyles(): void {
+		const activeKey = this.activeKey();
+
+		for (const [key, el] of this.tabEls) {
+			el.toggleClass("is-active", key === activeKey);
 		}
-		for (const [id, el] of this.kpiEls) {
-			el.toggleClass(
-				"is-active",
-				this.categoryMode === "status" && id === this.activeStatusId,
-			);
+		for (const [key, el] of this.kpiEls) {
+			el.toggleClass("is-active", key === activeKey);
 		}
 	}
 
@@ -607,7 +639,9 @@ export class VaultReportDashboard {
 			const color =
 				this.categoryMode === "status"
 					? note.status.color
-					: (timeBucket?.color ?? note.status.color);
+					: timeBucket
+						? this.timeColor(timeBucket)
+						: note.status.color;
 			const iconName =
 				this.categoryMode === "status"
 					? statusIcon(note.status.healthImpact)

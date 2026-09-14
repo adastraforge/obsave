@@ -8,6 +8,7 @@ import {
 import { createQuickDailyNote } from "../productivity/noteCapture";
 import {
 	HEALTH_IMPACT_OPTIONS,
+	readableInk,
 	STATUS_COLOR_PALETTE,
 	uniqueEntityId,
 	type HealthImpact,
@@ -228,12 +229,24 @@ export class ObSaveSettingTab extends PluginSettingTab {
 
 		const swatches = picker.createDiv({ cls: "obsave-color-palette" });
 		for (const hex of STATUS_COLOR_PALETTE) {
+			const selected = status.color.toUpperCase() === hex;
 			const swatch = swatches.createEl("button", {
 				cls: "obsave-color-swatch",
 				attr: { type: "button", "aria-label": hex },
 			});
+			setTooltip(swatch, hex);
+
+			// Inline y con prioridad: los selectores de botón de Ajustes
+			// (`.vertical-tab-content button`) ganan por especificidad a la hoja
+			// del plugin y dejaban todos los círculos en gris.
 			swatch.style.setProperty("--obsave-swatch", hex);
-			swatch.toggleClass("is-selected", status.color.toUpperCase() === hex);
+			swatch.style.setProperty("background-color", hex, "important");
+			swatch.style.setProperty("color", readableInk(hex), "important");
+			swatch.toggleClass("is-selected", selected);
+			if (selected) {
+				setIcon(swatch, "check");
+			}
+
 			swatch.addEventListener("click", () => {
 				status.color = hex;
 				void this.plugin.saveSettings();
@@ -245,6 +258,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 			cls: "obsave-color-native",
 			attr: { type: "color", "aria-label": "Color personalizado" },
 		});
+		setTooltip(custom, "Color personalizado (hexadecimal)");
 		custom.value = status.color;
 		custom.addEventListener("change", () => {
 			status.color = custom.value.toUpperCase();

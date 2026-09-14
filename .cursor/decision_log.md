@@ -900,3 +900,21 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v2.1.0`
 
 ---
+
+## DEC-060 | 2026-09-14 | Badges, selectores nativos y switch coherente (v2.1.1)
+
+**Contexto:** El color de estado no se veía en el explorador; las propiedades YAML eran texto libre; la paleta de Ajustes quedaba gris por la especificidad de `button` de Obsidian; el switch Tiempo/Estado no reconstruía los KPI.
+
+**Decisión:**
+1. `FileStatusDecorator` inyecta un punto a la izquierda del nombre (`.tree-item-inner`) con el hex del estado leído de `metadataCache`.
+2. `PropertySelectEnhancer` sustituye el input nativo de `estado`/`tipo` por un `<select>` de las opciones configuradas y persiste con `processFrontMatter`. `types.json` + `metadataTypeManager.setType` cubren fechas y tags.
+3. Los swatches de la paleta usan `background-color: #HEX !important` y un check Lucide sobre el color activo.
+4. El toggle vive en la cabecera del dashboard junto a recarga. Modo Tiempo: KPI Vencidas / Para hoy / Esta semana / Atendidas. Modo Estado: KPI de la lista configurada. Pestañas y listado siguen el mismo eje.
+
+**Alternativas descartadas:**
+- Tipo de propiedad enum nativo: Obsidian no lo expone; el select sobre el widget de texto es el contrato estable.
+- `::before` CSS para el badge: no puede leer el color dinámico de cada nota.
+
+**Release:** `v2.1.1`
+
+---

@@ -22,6 +22,79 @@ export interface CaptureNoteOptions {
 	estadoId?: string;
 }
 
+/**
+ * Tipos declarados en `types.json` del vault: fechas nativas y texto con
+ * selector ObSave (las opciones las pinta `PropertySelectEnhancer`).
+ */
+const PROPERTY_TYPES: Record<string, string> = {
+	tipo: "text",
+	estado: "text",
+	fecha_creacion: "datetime",
+	fecha_atencion: "date",
+	tags: "tags",
+};
+
+type TypeManager = {
+	setType?: (key: string, type: string) => void;
+};
+
+/**
+ * Registra los tipos de propiedad en `<config>/types.json` y en
+ * `metadataTypeManager` para que el panel nativo use fecha/texto/tags.
+ */
+export async function registerNotePropertyTypes(app: App): Promise<void> {
+	const manager = (app as App & { metadataTypeManager?: TypeManager })
+		.metadataTypeManager;
+	if (manager?.setType) {
+		for (const [key, value] of Object.entries(PROPERTY_TYPES)) {
+			try {
+				manager.setType(key, value);
+			} catch (error) {
+				console.warn(`[ObSave] No se pudo asignar tipo a «${key}»:`, error);
+			}
+		}
+	}
+
+	const path = `${app.vault.configDir}/types.json`;
+	const adapter = app.vault.adapter;
+	let parsed: Record<string, unknown> = {};
+
+	try {
+		if (await adapter.exists(path)) {
+			parsed = JSON.parse(await adapter.read(path)) as Record<string, unknown>;
+		}
+	} catch (error) {
+		// Un types.json ilegible es del usuario: no se sobrescribe a ciegas.
+		console.warn("[ObSave] types.json ilegible, no se registran propiedades:", error);
+		return;
+	}
+
+	const current =
+		parsed.types && typeof parsed.types === "object"
+			? { ...(parsed.types as Record<string, string>) }
+			: {};
+
+	let changed = false;
+	for (const [key, value] of Object.entries(PROPERTY_TYPES)) {
+		if (current[key] !== value) {
+			current[key] = value;
+			changed = true;
+		}
+	}
+	if (!changed) {
+		return;
+	}
+
+	try {
+		await adapter.write(
+			path,
+			`${JSON.stringify({ ...parsed, types: current }, null, 2)}\n`,
+		);
+	} catch (error) {
+		console.warn("[ObSave] No se pudo escribir types.json:", error);
+	}
+}
+
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/g;
 /** Prohibidos por Windows y macOS. */
 const OS_FORBIDDEN = /[\\/:*?"<>|]/g;
@@ -76,8 +149,10 @@ function resolveAvailablePath(
 }
 
 /**
- * Plantilla única para nota rápida y nueva nota: propiedades YAML,
- * encabezado y cuerpo vacío. Devuelve la línea donde debe caer el cursor.
+ * Plantilla única para nota rápida y nueva nota. `estado` y `tipo` se escriben
+ * con el nombre configurado: es lo que ofrece el autocompletado nativo de
+ * propiedades al reutilizar valores ya presentes en la bóveda.
+ * Devuelve la línea donde debe caer el cursor.
  */
 function buildNote(fields: {
 	tipo: string;
@@ -133,8 +208,8 @@ export async function createQuickDailyNote(
 	const target = resolveAvailablePath(app, folder, baseName);
 
 	const { content, cursorLine } = buildNote({
-		tipo: tipo.id,
-		estado: estado.id,
+		tipo: tipo.name,
+		estado: estado.name,
 		created: formatNowDateTime(),
 		atender: formatTodayDate(),
 		tags: [...DEFAULT_NOTE_TAGS],
@@ -166,8 +241,8 @@ export async function createCaptureNote(
 	const target = resolveAvailablePath(app, folder, baseName);
 
 	const { content, cursorLine } = buildNote({
-		tipo: tipo.id,
-		estado: estado.id,
+		tipo: tipo.name,
+		estado: estado.name,
 		created: formatNowDateTime(),
 		atender: options.fechaAtencion ?? formatTodayDate(),
 		tags: [...DEFAULT_NOTE_TAGS, ...(options.extraTags ?? [])],

@@ -7,10 +7,16 @@ Todas las operaciones usan el sistema de archivos nativo de Obsidian.
 
 ## Fase Actual: Suite de productividad local
 
-> **Estado de release:** **publicada oficialmente** — `v2.1.0`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.1.0`  
+> **Estado de release:** **publicada oficialmente** — `v2.1.1`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.1.1`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Pulido visual v2.1.1
+- Badge/dot de estado a la izquierda del nombre en el explorador (`FileStatusDecorator`), color exacto desde `metadataCache` + ajustes.
+- Propiedades nativas `estado` y `tipo` como `<select>` con las opciones configuradas; fechas como date/datetime en `types.json`.
+- Paleta de Ajustes: `background-color: #HEX !important`, hover con borde y check en el color activo.
+- Switch Tiempo/Estado en la cabecera del dashboard (junto a recarga): los KPI y las pestañas cambian de eje a la vez.
 
 ### Estados, tipos y colores dinámicos v2.1.0
 - Ajustes → **Configuración de propiedades**: gestor de estados (nombre, paleta de 10 colores + picker hex, impacto en salud, reordenar) y gestor de tipos (Diaria, Idea, Proyecto por defecto), desvinculados de las carpetas.

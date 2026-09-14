@@ -6,7 +6,12 @@ import {
 	ObSaveSidebarView,
 	openObSaveHub,
 } from "./ui/ObSaveSidebarView";
-import { createQuickDailyNote } from "./productivity/noteCapture";
+import {
+	createQuickDailyNote,
+	registerNotePropertyTypes,
+} from "./productivity/noteCapture";
+import { ObSaveFileStatusDecorator } from "./ui/FileStatusDecorator";
+import { PropertySelectEnhancer } from "./ui/PropertySelectEnhancer";
 import {
 	DEFAULT_SETTINGS,
 	hasLegacySyncPayload,
@@ -20,10 +25,19 @@ export default class ObSavePlugin extends Plugin {
 		types: DEFAULT_SETTINGS.types.map((type) => ({ ...type })),
 	};
 	private settingsTab!: ObSaveSettingTab;
+	private fileDecorator!: ObSaveFileStatusDecorator;
+	private propertySelects!: PropertySelectEnhancer;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		await this.removeLegacyLedgerFiles();
+		await registerNotePropertyTypes(this.app);
+
+		this.fileDecorator = new ObSaveFileStatusDecorator(this);
+		this.fileDecorator.install();
+
+		this.propertySelects = new PropertySelectEnhancer(this);
+		this.propertySelects.install();
 
 		this.registerView(
 			OBSAVE_HUB_VIEW_TYPE,
@@ -43,6 +57,7 @@ export default class ObSavePlugin extends Plugin {
 	}
 
 	onunload(): void {
+		this.fileDecorator?.uninstall();
 		console.log("ObSave plugin unloaded");
 	}
 
@@ -57,7 +72,10 @@ export default class ObSavePlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+		void registerNotePropertyTypes(this.app);
 		this.refreshHub();
+		this.fileDecorator?.refresh();
+		this.propertySelects?.refresh();
 	}
 
 	refreshHub(): void {

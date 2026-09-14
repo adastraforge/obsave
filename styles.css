@@ -195,16 +195,22 @@
 .obsave-report-summary {
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	flex-wrap: wrap;
+	gap: 8px 10px;
 	margin-bottom: 1em;
 }
 
 .obsave-report-summary-text {
 	font-size: 0.82em;
 	color: var(--text-muted);
+	flex: 1 1 140px;
+	min-width: 0;
 }
 
-.obsave-report-summary .obsave-icon-button {
+.obsave-report-summary-actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
 	margin-left: auto;
 }
 
@@ -512,6 +518,31 @@
 	white-space: nowrap;
 }
 
+/* Badge de estado en el explorador de archivos */
+
+.nav-file-title .obsave-status-dot,
+.tree-item-self .obsave-status-dot,
+.tree-item-inner .obsave-status-dot {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	min-width: 8px;
+	border-radius: 50%;
+	margin-right: 6px;
+	flex-shrink: 0;
+	align-self: center;
+	pointer-events: none;
+}
+
+.metadata-property-value .obsave-prop-select {
+	width: 100%;
+	max-width: 220px;
+}
+
+.metadata-property-value .obsave-prop-native-hidden {
+	display: none !important;
+}
+
 .obsave-link-button {
 	background: transparent;
 	box-shadow: none;
@@ -623,19 +654,37 @@
 }
 
 .obsave-color-swatch {
-	width: 18px;
-	height: 18px;
-	padding: 0;
+	--obsave-swatch: #888;
+	width: 22px;
+	height: 22px;
+	min-width: 22px;
+	padding: 0 !important;
+	margin: 0;
 	border-radius: 999px;
-	border: 2px solid transparent;
-	background: var(--obsave-swatch, #888);
-	box-shadow: none;
+	border: 2px solid transparent !important;
+	background-color: var(--obsave-swatch) !important;
+	background-image: none !important;
+	box-shadow: none !important;
 	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 }
 
-.obsave-color-swatch.is-selected {
-	border-color: var(--text-normal);
-	box-shadow: 0 0 0 1px var(--background-primary);
+.obsave-settings button.obsave-color-swatch:hover {
+	border-color: var(--text-muted) !important;
+	transform: scale(1.12);
+}
+
+.obsave-settings button.obsave-color-swatch.is-selected {
+	border-color: var(--text-normal) !important;
+	box-shadow: 0 0 0 2px var(--background-primary) !important;
+}
+
+.obsave-color-swatch .svg-icon {
+	width: 12px;
+	height: 12px;
+	stroke-width: 3;
 }
 
 .obsave-color-native {

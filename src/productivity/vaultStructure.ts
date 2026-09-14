@@ -42,9 +42,3 @@ export async function generateVaultTemplateFolders(app: App): Promise<string[]> 
 
 	return created;
 }
-
-/** `01_Proyectos` → `proyectos` */
-export function cleanFolderTypeName(folderPath: string): string {
-	const segment = folderPath.split("/").filter(Boolean).pop() ?? folderPath;
-	return segment.replace(/^\d{2}_/, "").toLowerCase();
-}
