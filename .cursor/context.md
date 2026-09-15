@@ -7,10 +7,14 @@ Todas las operaciones usan el sistema de archivos nativo de Obsidian.
 
 ## Fase Actual: Suite de productividad local
 
-> **Estado de release:** **publicada oficialmente** — `v2.2.0`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.2.0`  
+> **Estado de release:** **publicada oficialmente** — `v2.2.1`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.2.1`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Prefijo e iconos de prioridad v2.2.1
+- Notas automáticas: `Nota YYYY-MM-DD HHMM.md`.
+- Explorador: urgente triple chevron `#EF4444`, alta `chevrons-up` `#F97316`, normal sin icono, baja `chevron-down` `#A855F7`.
 
 ### Prioridad, Hub triple y captura v2.2.0
 - YAML `prioridad`: `urgente` | `alta` | `normal` | `baja` (defecto `normal`). Selector nativo; el explorador muestra Lucide solo si no es `normal`.

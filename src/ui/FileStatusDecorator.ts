@@ -1,12 +1,15 @@
 import { setIcon, TFile } from "obsidian";
 import type ObSavePlugin from "../main";
-import { resolvePriority, resolveStatus } from "../settings";
+import { resolvePriority, resolveStatus, type NotePriority } from "../settings";
 
 const DOT_CLASS = "obsave-status-dot";
 const PRIORITY_CLASS = "obsave-priority-icon";
 const FILE_EXPLORER_VIEW = "file-explorer";
 const REFRESH_DELAY_MS = 30;
 const TITLE_SELECTOR = ".nav-file-title[data-path], .tree-item-self.nav-file-title[data-path]";
+
+/** Triple chevron-up (Lucide no lo incluye). Trazo currentColor. */
+const TRIPLE_CHEVRONS_UP = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 7-5-5-5 5"/><path d="m17 13-5-5-5 5"/><path d="m17 19-5-5-5 5"/></svg>`;
 
 interface ExplorerItem {
 	selfEl?: HTMLElement;
@@ -213,7 +216,7 @@ export class ObSaveFileStatusDecorator {
 		}
 
 		if (priority.icon) {
-			const icon = this.ensurePriorityIcon(inner, priority.icon, priority.id);
+			const icon = this.ensurePriorityIcon(inner, priority);
 			icon.setAttribute("aria-label", `Prioridad: ${priority.name}`);
 			icon.setAttribute("title", `Prioridad: ${priority.name}`);
 		} else {
@@ -245,17 +248,26 @@ export class ObSaveFileStatusDecorator {
 
 	private ensurePriorityIcon(
 		el: HTMLElement,
-		icon: string,
-		priorityId: string,
+		priority: NotePriority,
 	): HTMLElement {
 		let node = el.querySelector(`:scope > .${PRIORITY_CLASS}`);
 		if (!(node instanceof HTMLElement)) {
 			node = el.createSpan({ cls: PRIORITY_CLASS });
 		}
 
-		node.className = `${PRIORITY_CLASS} obsave-priority-${priorityId}`;
+		node.className = `${PRIORITY_CLASS} obsave-priority-${priority.id}`;
+		node.style.setProperty("color", priority.color, "important");
 		node.empty();
-		setIcon(node, icon);
+		if (priority.id === "urgente") {
+			node.innerHTML = TRIPLE_CHEVRONS_UP;
+		} else {
+			setIcon(node, priority.icon);
+		}
+		const svg = node.querySelector("svg");
+		if (svg instanceof SVGElement) {
+			svg.style.setProperty("stroke", "currentColor", "important");
+			svg.style.setProperty("color", "inherit", "important");
+		}
 		return node;
 	}
 

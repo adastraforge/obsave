@@ -129,6 +129,13 @@ export function sanitizeFileName(raw: string): string {
 	return name || "Nota sin título";
 }
 
+const AUTO_NOTE_PREFIX = "Nota";
+
+/** Nombre automático: `Nota 2026-09-15 1207`. */
+export function automaticNoteName(): string {
+	return sanitizeFileName(`${AUTO_NOTE_PREFIX} ${formatTimestampForFilename()}`);
+}
+
 function notePath(folder: string, name: string): string {
 	return folder ? `${folder}/${name}.md` : `${name}.md`;
 }
@@ -221,7 +228,7 @@ export async function createQuickDailyNote(
 
 	const tipo = firstType(settings);
 	const estado = firstStatus(settings);
-	const baseName = sanitizeFileName(`${tipo.name} ${formatTimestampForFilename()}`);
+	const baseName = automaticNoteName();
 	const target = resolveAvailablePath(app, folder, baseName);
 
 	const { content, cursorLine } = buildNote({
@@ -254,7 +261,7 @@ export async function createCaptureNote(
 		firstStatus(settings);
 	const title = options.title?.trim();
 	const baseName = sanitizeFileName(
-		title || `${tipo.name} ${formatTimestampForFilename()}`,
+		title || automaticNoteName(),
 	);
 	const target = resolveAvailablePath(app, folder, baseName);
 

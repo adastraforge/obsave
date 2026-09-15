@@ -969,3 +969,19 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v2.2.0`
 
 ---
+
+## DEC-064 | 2026-09-15 | Prefijo «Nota» e iconos de prioridad con color (v2.2.1)
+
+**Contexto:** El nombre automático usaba el primer tipo (`Diaria`). Los iconos de prioridad no distinguían urgente de alta y los colores dependían del tema.
+
+**Decisión:**
+1. Prefijo fijo `Nota YYYY-MM-DD HHMM` en nota rápida, menú contextual y captura sin título.
+2. Explorador: urgente = triple chevron `#EF4444`; alta = `chevrons-up` `#F97316`; normal = vacío; baja = `chevron-down` `#A855F7`. Color vía CSS `currentColor` en el SVG.
+
+**Alternativas descartadas:**
+- Seguir usando `tipo.name` en el filename (cambia si el usuario renombra el tipo).
+- Mismo `chevrons-up` para urgente y alta: ilegible sin color.
+
+**Release:** `v2.2.1`
+
+---

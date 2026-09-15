@@ -35,14 +35,14 @@ export const NOTE_PRIORITIES: NotePriority[] = [
 		name: "Urgente",
 		icon: "chevrons-up",
 		kpiIcon: "chevrons-up",
-		color: "#DC2626",
+		color: "#EF4444",
 	},
 	{
 		id: "alta",
 		name: "Alta",
-		icon: "chevron-up",
-		kpiIcon: "chevron-up",
-		color: "#D97706",
+		icon: "chevrons-up",
+		kpiIcon: "chevrons-up",
+		color: "#F97316",
 	},
 	{
 		id: "normal",
@@ -56,7 +56,7 @@ export const NOTE_PRIORITIES: NotePriority[] = [
 		name: "Baja",
 		icon: "chevron-down",
 		kpiIcon: "chevron-down",
-		color: "#9CA3AF",
+		color: "#A855F7",
 	},
 ];
 

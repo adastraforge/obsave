@@ -553,19 +553,41 @@
 .obsave-priority-icon svg {
 	width: 14px;
 	height: 14px;
+	stroke: currentColor;
+	color: inherit;
+	fill: none;
 }
 
 .obsave-priority-urgente {
-	color: var(--text-error);
+	color: #EF4444 !important;
+	width: 16px;
+	height: 16px;
+	min-width: 16px;
+}
+
+.obsave-priority-urgente svg {
+	width: 16px;
+	height: 16px;
+	stroke: currentColor !important;
+	color: inherit !important;
 }
 
 .obsave-priority-alta {
-	color: var(--text-muted);
+	color: #F97316 !important;
+}
+
+.obsave-priority-alta svg {
+	stroke: currentColor !important;
+	color: inherit !important;
 }
 
 .obsave-priority-baja {
-	color: var(--text-faint);
-	opacity: 0.75;
+	color: #A855F7 !important;
+}
+
+.obsave-priority-baja svg {
+	stroke: currentColor !important;
+	color: inherit !important;
 }
 
 .metadata-property-value .obsave-prop-select {
