@@ -10,6 +10,7 @@ import {
 import {
 	firstStatus,
 	firstType,
+	readableInk,
 	resolvePriority,
 	resolveStatus,
 	resolveType,
@@ -156,6 +157,7 @@ export class PlannerView {
 		const collapsed = this.collapsedFolders.has(group.folder);
 		const section = root.createDiv({ cls: "obsave-planner-group" });
 		const header = section.createEl("button", { cls: "obsave-planner-group-header" });
+		header.toggleClass("is-collapsed", collapsed);
 		header.setAttribute("aria-expanded", String(!collapsed));
 		const chevron = header.createSpan({ cls: "obsave-planner-group-chevron" });
 		setIcon(chevron, collapsed ? "chevron-right" : "chevron-down");
@@ -188,49 +190,56 @@ export class PlannerView {
 
 	private paintCard(containerEl: HTMLElement, card: PlannerCard): void {
 		const el = containerEl.createDiv({ cls: "obsave-planner-card" });
+		if (this.expanded.has(card.file.path)) {
+			el.addClass("is-expanded");
+		}
 
-		const titleRow = el.createDiv({ cls: "obsave-planner-card-title-row" });
-		appendPriorityIcon(titleRow, card.priority);
-		const title = titleRow.createEl("button", {
+		const header = el.createDiv({ cls: "obsave-planner-card-header" });
+		const title = header.createEl("button", {
 			cls: "obsave-planner-card-title",
 			text: card.title,
 		});
 		setTooltip(title, card.file.path);
 		title.addEventListener("click", () => void this.openNote(card.file));
+		appendPriorityIcon(header, card.priority);
 
 		const badges = el.createDiv({ cls: "obsave-planner-badges" });
-		this.badge(badges, card.status.name, card.status.color, true);
+		this.statusPill(badges, card.status);
 		this.badge(badges, card.tipo.name);
 		if (card.dueLabel) {
 			this.badge(badges, card.dueLabel);
 		}
 
-		if (card.preview) {
-			el.createDiv({ cls: "obsave-planner-preview", text: card.preview });
-		}
+		el.createDiv({
+			cls: "obsave-planner-preview",
+			text: card.preview || "Sin detalle.",
+		});
 
 		this.paintComments(el, card);
 	}
 
-	private badge(
-		parent: HTMLElement,
-		label: string,
-		color?: string,
-		accent = false,
-	): void {
-		const badge = parent.createSpan({ cls: "obsave-planner-badge", text: label });
-		if (accent && color) {
-			badge.addClass("is-status");
-			badge.style.setProperty("--obsave-accent", color);
-		}
+	private statusPill(parent: HTMLElement, status: NoteStatus): void {
+		const badge = parent.createSpan({
+			cls: "obsave-planner-badge is-status",
+			text: status.name,
+		});
+		badge.style.setProperty("--obsave-accent", status.color);
+		badge.style.backgroundColor = status.color;
+		badge.style.color = readableInk(status.color);
+	}
+
+	private badge(parent: HTMLElement, label: string): void {
+		parent.createSpan({ cls: "obsave-planner-badge", text: label });
 	}
 
 	private paintComments(cardEl: HTMLElement, card: PlannerCard): void {
 		const path = card.file.path;
 		const open = this.expanded.has(path);
-		const section = cardEl.createDiv({ cls: "obsave-planner-comments" });
+		const footer = cardEl.createDiv({ cls: "obsave-planner-card-footer" });
 
-		const toggle = section.createEl("button", { cls: "obsave-planner-comments-toggle" });
+		const toggle = footer.createEl("button", {
+			cls: "obsave-planner-comments-toggle",
+		});
 		const icon = toggle.createSpan({ cls: "obsave-planner-comments-icon" });
 		setIcon(icon, "message-circle");
 		toggle.createSpan({
@@ -252,7 +261,7 @@ export class PlannerView {
 			return;
 		}
 
-		const body = section.createDiv({ cls: "obsave-planner-comments-body" });
+		const body = cardEl.createDiv({ cls: "obsave-planner-comments-body" });
 		if (card.comments.length === 0) {
 			body.createDiv({
 				cls: "obsave-planner-comments-empty",

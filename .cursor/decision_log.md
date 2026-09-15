@@ -1002,3 +1002,17 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v2.3.0`
 
 ---
+
+## DEC-066 | 2026-09-15 | Planner en cuadrícula de tarjetas (v2.3.1)
+
+**Contexto:** Las tarjetas del Planner ocupaban todo el ancho en una lista vertical; no se leía como un tablero.
+
+**Decisión:** Grid `repeat(auto-fill, minmax(200px, 1fr))` por carpeta. Cada nota es una card compacta: título a la izquierda, prioridad a la derecha, píldora de estado con el hex, preview a 2 líneas y `message-circle` en el footer.
+
+**Alternativas descartadas:**
+- Una sola columna fluida (el síntoma original).
+- Kanban por estado: el contrato sigue siendo agrupar por carpeta.
+
+**Release:** `v2.3.1`
+
+---

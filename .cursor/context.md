@@ -7,10 +7,13 @@ Todas las operaciones usan el sistema de archivos nativo de Obsidian.
 
 ## Fase Actual: Suite de productividad local
 
-> **Estado de release:** **publicada oficialmente** — `v2.3.0`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.3.0`  
+> **Estado de release:** **publicada oficialmente** — `v2.3.1`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.3.1`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Planner en cuadrícula v2.3.1
+- Planner: CSS Grid `auto-fill / minmax(200px, 1fr)`. Tarjetas compactas: título + prioridad a la derecha, píldora de estado, preview a 2 líneas, comentarios en el footer.
 
 ### Planner y comentarios v2.3.0
 - Hub: switch de cabecera Informe (`bar-chart-3`) / Planner (`layout-grid`).
