@@ -7,10 +7,14 @@ Todas las operaciones usan el sistema de archivos nativo de Obsidian.
 
 ## Fase Actual: Suite de productividad local
 
-> **Estado de release:** **publicada oficialmente** — `v2.1.2`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.1.2`  
+> **Estado de release:** **publicada oficialmente** — `v2.1.3`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.1.3`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Resolución de TFile v2.1.3
+- El selector de `estado`/`tipo` toma el archivo del leaf Markdown que contiene el widget. Si `data-file-path` no coincide, se invalida. Sin leaf contenedor no se escribe YAML.
+- El badge del explorador se ancla a `.nav-file-title[data-path]` con igualdad estricta a `file.path`. `metadataCache.on("changed")` pinta solo esa ruta.
 
 ### Persistencia de propiedades v2.1.2
 - El selector nativo de `estado`/`tipo` escribe al instante con `processFrontMatter`; acepta id (`pausadas`) o nombre (`Pausadas`) y persiste la etiqueta canónica.

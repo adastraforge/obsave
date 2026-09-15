@@ -11,8 +11,11 @@ const SELECT_CLASS = "obsave-prop-select";
 
 /**
  * Sustituye el input nativo de `estado`/`tipo` por un `<select>` y persiste
- * de inmediato con `processFrontMatter`. El archivo se resuelve desde el leaf
- * que contiene el widget, no desde la vista activa (el Hub puede tener el foco).
+ * de inmediato con `processFrontMatter`.
+ *
+ * Fuente de verdad del TFile: el leaf Markdown cuyo `containerEl` contiene
+ * el widget. `data-file-path` se corrige si está stale; sin leaf contenedor
+ * no se escribe YAML.
  */
 export class PropertySelectEnhancer {
 	private writing = false;
@@ -67,7 +70,6 @@ export class PropertySelectEnhancer {
 			return;
 		}
 
-		const file = this.fileForElement(prop);
 		let select = valueEl.querySelector(
 			`select.${SELECT_CLASS}`,
 		) as HTMLSelectElement | null;
@@ -79,9 +81,7 @@ export class PropertySelectEnhancer {
 		}
 
 		select.dataset.propertyKey = key;
-		if (file) {
-			select.dataset.filePath = file.path;
-		}
+		const file = this.fileForElement(select);
 
 		if (document.activeElement === select) {
 			return;
@@ -165,19 +165,8 @@ export class PropertySelectEnhancer {
 		}
 	}
 
-	private fileForElement(el: HTMLElement): TFile | null {
-		const select =
-			el instanceof HTMLSelectElement
-				? el
-				: (el.querySelector(`select.${SELECT_CLASS}`) as HTMLSelectElement | null);
-		const storedPath = select?.dataset.filePath;
-		if (storedPath) {
-			const byPath = this.plugin.app.vault.getAbstractFileByPath(storedPath);
-			if (byPath instanceof TFile) {
-				return byPath;
-			}
-		}
-
+	/** Leaf Markdown cuyo containerEl envuelve el widget. Sin fallback a vista activa. */
+	private fileFromContainingLeaf(el: HTMLElement): TFile | null {
 		for (const leaf of this.plugin.app.workspace.getLeavesOfType("markdown")) {
 			if (
 				leaf.view instanceof MarkdownView &&
@@ -187,8 +176,39 @@ export class PropertySelectEnhancer {
 				return leaf.view.file;
 			}
 		}
+		return null;
+	}
 
-		return this.plugin.app.workspace.getActiveViewOfType(MarkdownView)?.file ?? null;
+	private selectFrom(el: HTMLElement): HTMLSelectElement | null {
+		if (el instanceof HTMLSelectElement) {
+			return el;
+		}
+		return el.querySelector(`select.${SELECT_CLASS}`) as HTMLSelectElement | null;
+	}
+
+	/**
+	 * Fuente de verdad: `view.file` del leaf contenedor.
+	 * Si `data-file-path` no coincide, se invalida y se escribe el path del leaf.
+	 * Sin leaf contenedor: null (el commit no escribe).
+	 */
+	private fileForElement(el: HTMLElement): TFile | null {
+		const select = this.selectFrom(el);
+		const file = this.fileFromContainingLeaf(el);
+		if (!file) {
+			if (select?.dataset.filePath) {
+				delete select.dataset.filePath;
+			}
+			return null;
+		}
+
+		if (select) {
+			if (select.dataset.filePath && select.dataset.filePath !== file.path) {
+				delete select.dataset.filePath;
+			}
+			select.dataset.filePath = file.path;
+		}
+
+		return file;
 	}
 
 	private async commit(select: HTMLSelectElement): Promise<void> {
@@ -199,7 +219,10 @@ export class PropertySelectEnhancer {
 
 		const file = this.fileForElement(select);
 		if (!file) {
-			console.warn("[ObSave] No hay nota abierta para guardar", key);
+			console.warn(
+				"[ObSave] Commit abortado: el selector no está en un leaf Markdown válido",
+				key,
+			);
 			return;
 		}
 
@@ -220,7 +243,7 @@ export class PropertySelectEnhancer {
 				canonical,
 				this.plugin.settings,
 			);
-			this.plugin.notePropertiesChanged();
+			this.plugin.notePropertiesChanged(file);
 		} catch (error) {
 			console.warn("[ObSave] No se pudo guardar la propiedad", key, error);
 		} finally {

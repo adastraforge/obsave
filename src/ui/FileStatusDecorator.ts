@@ -4,7 +4,7 @@ import { resolveStatus } from "../settings";
 
 const DOT_CLASS = "obsave-status-dot";
 const FILE_EXPLORER_VIEW = "file-explorer";
-	const REFRESH_DELAY_MS = 30;
+const REFRESH_DELAY_MS = 30;
 const TITLE_SELECTOR = ".nav-file-title[data-path], .tree-item-self.nav-file-title[data-path]";
 
 interface ExplorerItem {
@@ -21,24 +21,31 @@ interface ExplorerView {
 
 /**
  * Punto de color a la izquierda del nombre de cada nota en el explorador.
- * Lee `estado` desde `metadataCache` y usa el hex configurado.
+ * Se ancla solo a `.nav-file-title[data-path]` con igualdad estricta a `file.path`.
  */
 export class ObSaveFileStatusDecorator {
 	private timer: number | null = null;
+	private pendingPaths: Set<string> | null = null;
 
 	constructor(private plugin: ObSavePlugin) {}
 
 	install(): void {
 		const { app } = this.plugin;
-		const refresh = (): void => this.requestRefresh();
+		const refreshAll = (): void => this.requestRefresh();
 
-		this.plugin.registerEvent(app.workspace.on("layout-change", refresh));
-		this.plugin.registerEvent(app.workspace.on("file-open", refresh));
-		this.plugin.registerEvent(app.metadataCache.on("changed", refresh));
-		this.plugin.registerEvent(app.metadataCache.on("resolved", refresh));
-		this.plugin.registerEvent(app.vault.on("create", refresh));
-		this.plugin.registerEvent(app.vault.on("rename", refresh));
-		this.plugin.registerEvent(app.vault.on("delete", refresh));
+		this.plugin.registerEvent(app.workspace.on("layout-change", refreshAll));
+		this.plugin.registerEvent(app.workspace.on("file-open", refreshAll));
+		this.plugin.registerEvent(
+			app.metadataCache.on("changed", (file) => {
+				if (file instanceof TFile) {
+					this.requestPathRefresh(file.path);
+				}
+			}),
+		);
+		this.plugin.registerEvent(app.metadataCache.on("resolved", refreshAll));
+		this.plugin.registerEvent(app.vault.on("create", refreshAll));
+		this.plugin.registerEvent(app.vault.on("rename", refreshAll));
+		this.plugin.registerEvent(app.vault.on("delete", refreshAll));
 
 		this.requestRefresh();
 	}
@@ -48,60 +55,138 @@ export class ObSaveFileStatusDecorator {
 			window.clearTimeout(this.timer);
 			this.timer = null;
 		}
+		this.pendingPaths = null;
 		document.querySelectorAll(`.${DOT_CLASS}`).forEach((dot) => dot.remove());
 	}
 
 	requestRefresh(): void {
+		this.pendingPaths = null;
+		this.scheduleFlush();
+	}
+
+	private requestPathRefresh(path: string): void {
+		if (this.pendingPaths === null && this.timer !== null) {
+			this.scheduleFlush();
+			return;
+		}
+		if (this.pendingPaths === null) {
+			this.pendingPaths = new Set();
+		}
+		this.pendingPaths.add(path);
+		this.scheduleFlush();
+	}
+
+	private scheduleFlush(): void {
 		if (this.timer !== null) {
 			window.clearTimeout(this.timer);
 		}
 		this.timer = window.setTimeout(() => {
 			this.timer = null;
+			const paths = this.pendingPaths;
+			this.pendingPaths = null;
+			if (paths && paths.size > 0) {
+				for (const path of paths) {
+					this.refreshPath(path);
+				}
+				return;
+			}
 			this.refresh();
 		}, REFRESH_DELAY_MS);
 	}
 
 	refresh(): void {
 		const { app } = this.plugin;
-		const decorated = new Set<HTMLElement>();
-
 		for (const leaf of app.workspace.getLeavesOfType(FILE_EXPLORER_VIEW)) {
 			const view = leaf.view as unknown as ExplorerView;
+			const root = view.containerEl ?? leaf.view.containerEl;
+			const seen = new Set<string>();
+
 			if (view.fileItems) {
-				for (const item of Object.values(view.fileItems)) {
-					const path = item.file?.path;
-					const host = this.hostForItem(item);
-					if (!path || !host) {
+				for (const [key, item] of Object.entries(view.fileItems)) {
+					const path = key;
+					if (!path || seen.has(path)) {
 						continue;
 					}
-					this.applyDot(host, path);
-					decorated.add(host);
+					seen.add(path);
+					const selfTitle = this.titleFromItem(item, path);
+					if (selfTitle) {
+						this.applyDot(selfTitle, path);
+						continue;
+					}
+					this.applyPathInRoot(root, path);
 				}
 			}
 
-			const root = view.containerEl ?? leaf.view.containerEl;
-			for (const title of Array.from(root.querySelectorAll(TITLE_SELECTOR))) {
-				if (!(title instanceof HTMLElement)) {
-					continue;
-				}
+			for (const title of this.fileTitles(root)) {
 				const path = title.getAttribute("data-path");
-				if (!path) {
+				if (!path || seen.has(path)) {
 					continue;
 				}
+				seen.add(path);
 				this.applyDot(title, path);
-				decorated.add(title);
 			}
 		}
 	}
 
-	private hostForItem(item: ExplorerItem): HTMLElement | null {
-		return item.innerEl ?? item.selfEl ?? item.el ?? null;
+	refreshPath(path: string): void {
+		const { app } = this.plugin;
+		for (const leaf of app.workspace.getLeavesOfType(FILE_EXPLORER_VIEW)) {
+			const view = leaf.view as unknown as ExplorerView;
+			const root = view.containerEl ?? leaf.view.containerEl;
+			this.applyPathInRoot(root, path);
+		}
+	}
+
+	private titleFromItem(item: ExplorerItem, path: string): HTMLElement | null {
+		const candidates = [item.selfEl, item.innerEl];
+		for (const node of candidates) {
+			if (!(node instanceof HTMLElement)) {
+				continue;
+			}
+			if (node.matches(TITLE_SELECTOR) && node.getAttribute("data-path") === path) {
+				return node;
+			}
+			const title = node.closest(TITLE_SELECTOR);
+			if (
+				title instanceof HTMLElement &&
+				title.getAttribute("data-path") === path
+			) {
+				return title;
+			}
+		}
+		return null;
+	}
+
+	private applyPathInRoot(root: HTMLElement, path: string): void {
+		const titles = this.titlesForPath(root, path);
+		if (titles.length === 0) {
+			return;
+		}
+		for (const title of titles) {
+			this.applyDot(title, path);
+		}
+	}
+
+	private fileTitles(root: HTMLElement): HTMLElement[] {
+		return Array.from(root.querySelectorAll(TITLE_SELECTOR)).filter(
+			(node): node is HTMLElement => node instanceof HTMLElement,
+		);
+	}
+
+	private titlesForPath(root: HTMLElement, path: string): HTMLElement[] {
+		return this.fileTitles(root).filter(
+			(title) => title.getAttribute("data-path") === path,
+		);
 	}
 
 	private applyDot(host: HTMLElement, path: string): void {
+		if (host.getAttribute("data-path") !== path || !host.matches(TITLE_SELECTOR)) {
+			return;
+		}
+
 		const { app, settings } = this.plugin;
 		const file = app.vault.getAbstractFileByPath(path);
-		if (!(file instanceof TFile) || file.extension !== "md") {
+		if (!(file instanceof TFile) || file.extension !== "md" || file.path !== path) {
 			this.removeDot(host);
 			return;
 		}
@@ -114,11 +199,9 @@ export class ObSaveFileStatusDecorator {
 		}
 
 		const inner =
-			host.matches(".tree-item-inner, .nav-file-title-content")
-				? host
-				: (host.querySelector(
-						".tree-item-inner, .nav-file-title-content",
-					) as HTMLElement | null) ?? host;
+			(host.querySelector(
+				":scope > .tree-item-inner, :scope > .nav-file-title-content",
+			) as HTMLElement | null) ?? host;
 
 		const dot = this.ensureDot(inner);
 		dot.style.setProperty("background-color", status.color, "important");

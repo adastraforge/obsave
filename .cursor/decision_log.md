@@ -935,3 +935,19 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v2.1.2`
 
 ---
+
+## DEC-062 | 2026-09-15 | TFile del leaf contenedor y badge por data-path (v2.1.3)
+
+**Contexto:** Al cambiar `estado` en una nota, `processFrontMatter` mutaba otra (p. ej. «Sistema de diseño») porque `fileForElement` priorizaba `data-file-path` stale tras reutilizar el DOM de Propiedades en el mismo leaf.
+
+**Decisión:**
+1. Fuente de verdad: `leaf.view.file` del Markdown cuyo `containerEl` contiene el widget. Si `data-file-path` no coincide, se descarta. Sin leaf contenedor el commit aborta; no hay fallback a `getActiveViewOfType`.
+2. El decorador recorre `Object.entries(fileItems)` (clave = path canónico) y ancla el punto solo a `.nav-file-title[data-path]` con igualdad estricta. `metadataCache.on("changed", file)` refresca únicamente esa ruta.
+
+**Alternativas descartadas:**
+- Seguir usando `data-file-path` como primer criterio (reintroduce writes cruzados).
+- Pintar el badge desde `item.el` o `item.file.path` sin validar `data-path`.
+
+**Release:** `v2.1.3`
+
+---

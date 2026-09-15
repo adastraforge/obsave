@@ -43,7 +43,7 @@ export default class ObSavePlugin extends Plugin {
 		this.registerEvent(
 			this.app.metadataCache.on("changed", (file) => {
 				if (file instanceof TFile && file.extension === "md") {
-					this.notePropertiesChanged();
+					this.notePropertiesChanged(file);
 				}
 			}),
 		);
@@ -91,8 +91,10 @@ export default class ObSavePlugin extends Plugin {
 		this.propertySelects?.refresh();
 	}
 
-	notePropertiesChanged(): void {
-		this.fileDecorator?.refresh();
+	notePropertiesChanged(file?: TFile): void {
+		if (file) {
+			this.fileDecorator?.refreshPath(file.path);
+		}
 		this.scheduleHubRefresh();
 	}
 

@@ -69,3 +69,5 @@ Hasta v1.2.3 existían `SyncEngine`, `StorageAdapters`, `OAuthHandler` y `Ledger
 ## Persistencia
 
 v2.1.0 persiste estados y tipos en `data.json`. Las claves de sync v1.x se ignoran; los archivos `ledger.json` / `.bak` / `.tmp` se intentan borrar al cargar.
+
+v2.1.3: el YAML de `estado`/`tipo` se escribe solo sobre `view.file` del leaf Markdown que contiene el selector. El badge del explorador se asocia por `data-path === file.path`; un cambio de metadatos actualiza únicamente esa ruta.
