@@ -1016,3 +1016,16 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v2.3.1`
 
 ---
+
+## DEC-067 | 2026-09-15 | Homologación estética del Planner (v2.3.2)
+
+**Contexto:** Las cards del Planner no coincidían con el Informe: el título era un botón de Obsidian (barra oscura) y el textarea de comentarios era rígido.
+
+**Decisión:**
+1. Superficie de card como el dashboard (`border-radius: 10px`, acento izquierdo, hover con `--interactive-accent`).
+2. Clic en toda la tarjeta abre la nota; comentarios, composer e iconos usan `stopPropagation`.
+3. Composer de una línea con `send`; fecha atenuada; `pencil`/`trash-2` discretos.
+
+**Release:** `v2.3.2`
+
+---

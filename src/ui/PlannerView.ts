@@ -190,17 +190,26 @@ export class PlannerView {
 
 	private paintCard(containerEl: HTMLElement, card: PlannerCard): void {
 		const el = containerEl.createDiv({ cls: "obsave-planner-card" });
+		el.style.setProperty("--obsave-accent", card.status.color);
 		if (this.expanded.has(card.file.path)) {
 			el.addClass("is-expanded");
 		}
+		el.setAttribute("role", "button");
+		el.setAttribute("tabindex", "0");
+		setTooltip(el, card.file.path);
+		el.addEventListener("click", () => void this.openNote(card.file));
+		el.addEventListener("keydown", (event) => {
+			if (event.key === "Enter" || event.key === " ") {
+				event.preventDefault();
+				void this.openNote(card.file);
+			}
+		});
 
 		const header = el.createDiv({ cls: "obsave-planner-card-header" });
-		const title = header.createEl("button", {
+		header.createSpan({
 			cls: "obsave-planner-card-title",
 			text: card.title,
 		});
-		setTooltip(title, card.file.path);
-		title.addEventListener("click", () => void this.openNote(card.file));
 		appendPriorityIcon(header, card.priority);
 
 		const badges = el.createDiv({ cls: "obsave-planner-badges" });
@@ -236,6 +245,7 @@ export class PlannerView {
 		const path = card.file.path;
 		const open = this.expanded.has(path);
 		const footer = cardEl.createDiv({ cls: "obsave-planner-card-footer" });
+		this.isolate(footer);
 
 		const toggle = footer.createEl("button", {
 			cls: "obsave-planner-comments-toggle",
@@ -248,7 +258,8 @@ export class PlannerView {
 		});
 		toggle.setAttribute("aria-expanded", String(open));
 		setTooltip(toggle, "Comentarios");
-		toggle.addEventListener("click", () => {
+		toggle.addEventListener("click", (event) => {
+			event.stopPropagation();
 			if (this.expanded.has(path)) {
 				this.expanded.delete(path);
 			} else {
@@ -262,6 +273,7 @@ export class PlannerView {
 		}
 
 		const body = cardEl.createDiv({ cls: "obsave-planner-comments-body" });
+		this.isolate(body);
 		if (card.comments.length === 0) {
 			body.createDiv({
 				cls: "obsave-planner-comments-empty",
@@ -274,23 +286,30 @@ export class PlannerView {
 		}
 
 		const composer = body.createDiv({ cls: "obsave-planner-composer" });
-		const input = composer.createEl("textarea", {
+		const input = composer.createEl("input", {
 			cls: "obsave-planner-composer-input",
-			attr: { rows: "2", placeholder: "Añadir comentario…" },
+			attr: {
+				type: "text",
+				placeholder: "Escribe un comentario…",
+			},
 		});
 		input.value = this.drafts.get(path) ?? "";
 		input.addEventListener("input", () => {
 			this.drafts.set(path, input.value);
 		});
-		const add = composer.createEl("button", {
-			cls: "obsave-icon-button",
-			attr: { "aria-label": "Añadir comentario" },
+		const send = composer.createEl("button", {
+			cls: "obsave-planner-composer-send",
+			attr: { "aria-label": "Enviar comentario" },
 		});
-		setIcon(add, "plus");
-		setTooltip(add, "Añadir comentario");
-		add.addEventListener("click", () => void this.onAdd(card.file, input));
+		setIcon(send, "send");
+		setTooltip(send, "Enviar");
+		send.addEventListener("click", (event) => {
+			event.stopPropagation();
+			void this.onAdd(card.file, input);
+		});
 		input.addEventListener("keydown", (event) => {
-			if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+			event.stopPropagation();
+			if (event.key === "Enter") {
 				event.preventDefault();
 				void this.onAdd(card.file, input);
 			}
@@ -303,50 +322,65 @@ export class PlannerView {
 		comment: NoteComment,
 	): void {
 		const row = parent.createDiv({ cls: "obsave-planner-comment" });
+		this.isolate(row);
 		const editing = this.editing.get(card.file.path) === comment.id;
 
 		if (editing) {
-			const input = row.createEl("textarea", {
+			const composer = row.createDiv({ cls: "obsave-planner-composer" });
+			const input = composer.createEl("input", {
 				cls: "obsave-planner-composer-input",
-				attr: { rows: "2" },
+				attr: { type: "text" },
 			});
 			input.value = comment.texto;
 			const actions = row.createDiv({ cls: "obsave-planner-comment-actions" });
-			const save = actions.createEl("button", { cls: "obsave-icon-button" });
+			const save = actions.createEl("button", { cls: "obsave-planner-comment-action" });
 			setIcon(save, "check");
 			setTooltip(save, "Guardar");
-			save.addEventListener("click", () =>
-				void this.onUpdate(card.file, comment.id, input.value),
-			);
-			const cancel = actions.createEl("button", { cls: "obsave-icon-button" });
+			save.addEventListener("click", (event) => {
+				event.stopPropagation();
+				void this.onUpdate(card.file, comment.id, input.value);
+			});
+			const cancel = actions.createEl("button", { cls: "obsave-planner-comment-action" });
 			setIcon(cancel, "x");
 			setTooltip(cancel, "Cancelar");
-			cancel.addEventListener("click", () => {
+			cancel.addEventListener("click", (event) => {
+				event.stopPropagation();
 				this.editing.delete(card.file.path);
 				this.render();
 			});
 			return;
 		}
 
-		row.createDiv({ cls: "obsave-planner-comment-meta", text: comment.fecha });
-		row.createDiv({ cls: "obsave-planner-comment-text", text: comment.texto });
+		const copy = row.createDiv({ cls: "obsave-planner-comment-copy" });
+		copy.createDiv({ cls: "obsave-planner-comment-meta", text: comment.fecha });
+		copy.createDiv({ cls: "obsave-planner-comment-text", text: comment.texto });
 		const actions = row.createDiv({ cls: "obsave-planner-comment-actions" });
-		const edit = actions.createEl("button", { cls: "obsave-icon-button" });
+		const edit = actions.createEl("button", { cls: "obsave-planner-comment-action" });
 		setIcon(edit, "pencil");
 		setTooltip(edit, "Editar comentario");
-		edit.addEventListener("click", () => {
+		edit.addEventListener("click", (event) => {
+			event.stopPropagation();
 			this.editing.set(card.file.path, comment.id);
 			this.render();
 		});
 		const remove = actions.createEl("button", {
-			cls: "obsave-icon-button is-danger",
+			cls: "obsave-planner-comment-action is-danger",
 		});
 		setIcon(remove, "trash-2");
 		setTooltip(remove, "Eliminar comentario");
-		remove.addEventListener("click", () => void this.onDelete(card.file, comment.id));
+		remove.addEventListener("click", (event) => {
+			event.stopPropagation();
+			void this.onDelete(card.file, comment.id);
+		});
 	}
 
-	private async onAdd(file: TFile, input: HTMLTextAreaElement): Promise<void> {
+	private isolate(el: HTMLElement): void {
+		el.addEventListener("click", (event) => event.stopPropagation());
+		el.addEventListener("keydown", (event) => event.stopPropagation());
+		el.addEventListener("pointerdown", (event) => event.stopPropagation());
+	}
+
+	private async onAdd(file: TFile, input: HTMLInputElement): Promise<void> {
 		const created = await addComment(this.app, file, input.value);
 		if (!created) {
 			return;
