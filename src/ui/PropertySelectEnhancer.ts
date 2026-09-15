@@ -1,16 +1,24 @@
 import { MarkdownView, TFile } from "obsidian";
 import type ObSavePlugin from "../main";
 import {
+	canonicalPriorityName,
 	canonicalStatusName,
 	canonicalTypeName,
 	coercePropertyValue,
+	NOTE_PRIORITIES,
 } from "../settings";
 import { writeFrontmatterProperty } from "../utils/frontmatter";
 
 const SELECT_CLASS = "obsave-prop-select";
 
+type PropertyKey = "estado" | "tipo" | "prioridad";
+
+function isPropertyKey(key: string | null | undefined): key is PropertyKey {
+	return key === "estado" || key === "tipo" || key === "prioridad";
+}
+
 /**
- * Sustituye el input nativo de `estado`/`tipo` por un `<select>` y persiste
+ * Sustituye el input nativo de `estado`/`tipo`/`prioridad` por un `<select>` y persiste
  * de inmediato con `processFrontMatter`.
  *
  * Fuente de verdad del TFile: el leaf Markdown cuyo `containerEl` contiene
@@ -56,7 +64,7 @@ export class PropertySelectEnhancer {
 
 	private enhance(prop: HTMLElement): void {
 		const key = prop.dataset.propertyKey ?? prop.getAttribute("data-property-key");
-		if (key !== "estado" && key !== "tipo") {
+		if (!isPropertyKey(key)) {
 			return;
 		}
 
@@ -91,16 +99,19 @@ export class PropertySelectEnhancer {
 		this.hideNativeInput(valueEl);
 	}
 
-	private optionsFor(key: "estado" | "tipo"): string[] {
+	private optionsFor(key: PropertyKey): string[] {
 		if (key === "estado") {
 			return this.plugin.settings.statuses.map((status) => status.name);
 		}
-		return this.plugin.settings.types.map((type) => type.name);
+		if (key === "tipo") {
+			return this.plugin.settings.types.map((type) => type.name);
+		}
+		return NOTE_PRIORITIES.map((item) => item.name);
 	}
 
 	private currentValue(
 		valueEl: HTMLElement,
-		key: "estado" | "tipo",
+		key: PropertyKey,
 		file: TFile | null,
 	): string {
 		if (file) {
@@ -118,11 +129,14 @@ export class PropertySelectEnhancer {
 		return this.optionsFor(key)[0] ?? "";
 	}
 
-	private canonicalize(key: "estado" | "tipo", raw: unknown): string {
+	private canonicalize(key: PropertyKey, raw: unknown): string {
 		if (key === "estado") {
 			return canonicalStatusName(raw, this.plugin.settings.statuses) ?? "";
 		}
-		return canonicalTypeName(raw, this.plugin.settings.types) ?? "";
+		if (key === "tipo") {
+			return canonicalTypeName(raw, this.plugin.settings.types) ?? "";
+		}
+		return canonicalPriorityName(raw);
 	}
 
 	private fill(
@@ -141,7 +155,7 @@ export class PropertySelectEnhancer {
 			}
 		}
 		const display = this.canonicalize(
-			(select.dataset.propertyKey as "estado" | "tipo") ?? "estado",
+			(select.dataset.propertyKey as PropertyKey) ?? "estado",
 			current,
 		) || current;
 		if (display && !Array.from(select.options).some((option) => option.value === display)) {
@@ -213,7 +227,7 @@ export class PropertySelectEnhancer {
 
 	private async commit(select: HTMLSelectElement): Promise<void> {
 		const key = select.dataset.propertyKey;
-		if (key !== "estado" && key !== "tipo") {
+		if (!isPropertyKey(key)) {
 			return;
 		}
 
@@ -233,16 +247,16 @@ export class PropertySelectEnhancer {
 
 		this.writing = true;
 		select.value = canonical;
-		this.syncHiddenInput(select, canonical);
 
 		try {
-			await writeFrontmatterProperty(
+			const persisted = await writeFrontmatterProperty(
 				this.plugin.app,
 				file,
 				key,
 				canonical,
 				this.plugin.settings,
 			);
+			this.syncHiddenInput(select, persisted);
 			this.plugin.notePropertiesChanged(file);
 		} catch (error) {
 			console.warn("[ObSave] No se pudo guardar la propiedad", key, error);

@@ -534,6 +534,40 @@
 	pointer-events: none;
 }
 
+.nav-file-title .obsave-priority-icon,
+.tree-item-self .obsave-priority-icon,
+.tree-item-inner .obsave-priority-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	margin-right: 4px;
+	flex-shrink: 0;
+	align-self: center;
+	pointer-events: none;
+	line-height: 0;
+}
+
+.obsave-priority-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+.obsave-priority-urgente {
+	color: var(--text-error);
+}
+
+.obsave-priority-alta {
+	color: var(--text-muted);
+}
+
+.obsave-priority-baja {
+	color: var(--text-faint);
+	opacity: 0.75;
+}
+
 .metadata-property-value .obsave-prop-select {
 	width: 100%;
 	max-width: 220px;
@@ -558,6 +592,7 @@
 
 .obsave-cat-toggle {
 	display: inline-flex;
+	flex-wrap: wrap;
 	gap: 2px;
 	padding: 2px;
 	border-radius: 8px;
@@ -567,12 +602,13 @@
 .obsave-cat-toggle-btn {
 	background: transparent;
 	box-shadow: none;
-	padding: 4px 10px;
+	padding: 4px 7px;
 	border-radius: 6px;
-	font-size: 0.78em;
+	font-size: 0.72em;
 	font-weight: 600;
 	color: var(--text-muted);
 	cursor: pointer;
+	white-space: nowrap;
 }
 
 .obsave-cat-toggle-btn.is-active {

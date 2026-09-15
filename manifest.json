@@ -1,7 +1,7 @@
 {
 	"id": "obsave",
 	"name": "ObSave",
-	"version": "2.1.3",
+	"version": "2.2.0",
 	"minAppVersion": "1.5.0",
 	"description": "Suite de productividad local: captura de notas, estructura de bóveda e informe operativo.",
 	"author": "Ad Astra Forge",

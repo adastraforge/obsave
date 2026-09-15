@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import { MarkdownView, Notice, TFile } from "obsidian";
 import {
+	DEFAULT_PRIORITY_ID,
 	firstStatus,
 	firstType,
 	type ObSaveSettings,
@@ -29,6 +30,7 @@ export interface CaptureNoteOptions {
 const PROPERTY_TYPES: Record<string, string> = {
 	tipo: "text",
 	estado: "text",
+	prioridad: "text",
 	fecha_creacion: "datetime",
 	fecha_atencion: "date",
 	tags: "tags",
@@ -127,6 +129,10 @@ export function sanitizeFileName(raw: string): string {
 	return name || "Nota sin título";
 }
 
+function notePath(folder: string, name: string): string {
+	return folder ? `${folder}/${name}.md` : `${name}.md`;
+}
+
 /** Añade `(2)`, `(3)`… hasta encontrar un nombre libre en la carpeta. */
 function resolveAvailablePath(
 	app: App,
@@ -136,16 +142,23 @@ function resolveAvailablePath(
 	let candidate = baseName;
 	let suffix = 1;
 
-	while (app.vault.getAbstractFileByPath(`${folder}/${candidate}.md`)) {
+	while (app.vault.getAbstractFileByPath(notePath(folder, candidate))) {
 		suffix++;
 		candidate = `${baseName} (${suffix})`;
 	}
 
 	return {
-		path: `${folder}/${candidate}.md`,
+		path: notePath(folder, candidate),
 		name: candidate,
 		collided: suffix > 1,
 	};
+}
+
+export function normalizeFolderPath(folder: string): string {
+	if (!folder || folder === "/") {
+		return "";
+	}
+	return folder.replace(/\/+$/, "");
 }
 
 /**
@@ -157,6 +170,7 @@ function resolveAvailablePath(
 function buildNote(fields: {
 	tipo: string;
 	estado: string;
+	prioridad?: string;
 	created: string;
 	atender: string;
 	tags: string[];
@@ -166,6 +180,7 @@ function buildNote(fields: {
 		fecha_creacion: fields.created,
 		fecha_atencion: fields.atender,
 		estado: fields.estado,
+		prioridad: fields.prioridad ?? DEFAULT_PRIORITY_ID,
 		tags: fields.tags,
 	});
 
@@ -190,6 +205,9 @@ async function openNoteAtBody(
 }
 
 async function ensureFolder(app: App, folder: string): Promise<void> {
+	if (!folder) {
+		return;
+	}
 	if (!app.vault.getAbstractFileByPath(folder)) {
 		await app.vault.createFolder(folder);
 	}
@@ -199,8 +217,7 @@ export async function createQuickDailyNote(
 	app: App,
 	settings: ObSaveSettings,
 ): Promise<TFile | null> {
-	const folder = "00_Diarias";
-	await ensureFolder(app, folder);
+	const folder = "";
 
 	const tipo = firstType(settings);
 	const estado = firstStatus(settings);
@@ -210,6 +227,7 @@ export async function createQuickDailyNote(
 	const { content, cursorLine } = buildNote({
 		tipo: tipo.name,
 		estado: estado.name,
+		prioridad: DEFAULT_PRIORITY_ID,
 		created: formatNowDateTime(),
 		atender: formatTodayDate(),
 		tags: [...DEFAULT_NOTE_TAGS],
@@ -226,7 +244,7 @@ export async function createCaptureNote(
 	settings: ObSaveSettings,
 	options: CaptureNoteOptions,
 ): Promise<TFile> {
-	const folder = options.folder.replace(/\/+$/, "");
+	const folder = normalizeFolderPath(options.folder);
 	await ensureFolder(app, folder);
 
 	const tipo =
@@ -243,6 +261,7 @@ export async function createCaptureNote(
 	const { content, cursorLine } = buildNote({
 		tipo: tipo.name,
 		estado: estado.name,
+		prioridad: DEFAULT_PRIORITY_ID,
 		created: formatNowDateTime(),
 		atender: options.fechaAtencion ?? formatTodayDate(),
 		tags: [...DEFAULT_NOTE_TAGS, ...(options.extraTags ?? [])],

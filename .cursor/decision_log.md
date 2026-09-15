@@ -951,3 +951,21 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v2.1.3`
 
 ---
+
+## DEC-063 | 2026-09-15 | Prioridad, Hub triple y captura en raíz/carpeta (v2.2.0)
+
+**Contexto:** Faltaba un eje de urgencia independiente del estado; la nota rápida iba a `00_Diarias`; no había atajo contextual para crear en una carpeta.
+
+**Decisión:**
+1. Propiedad YAML `prioridad` con ids fijos (`urgente`, `alta`, `normal`, `baja`). Selector nativo; el explorador usa Lucide (`chevrons-up` / `chevron-up` / `chevron-down`) y omite icono en `normal`.
+2. Hub: switch Tiempo | Estado | Prioridad. KPI y pestañas del modo Prioridad recuentan las 4 categorías.
+3. Nota rápida en la raíz. `file-menu` en `TFolder` → «Nueva nota de ObSave aquí».
+
+**Alternativas descartadas:**
+- Prioridad configurable como los estados: añade ruido; el catálogo de 4 niveles es el contrato de productividad.
+- Icono en `normal`: contradice el diseño silencioso.
+- Abrir el modal en el menú contextual: más fricción que crear al instante en esa carpeta.
+
+**Release:** `v2.2.0`
+
+---

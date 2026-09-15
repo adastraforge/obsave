@@ -1,4 +1,4 @@
-import { Plugin, TFile } from "obsidian";
+import { Plugin, TFile, TFolder } from "obsidian";
 import { ObSaveSettingTab } from "./ui/ObSaveSettingTab";
 import { CaptureNoteModal } from "./ui/CaptureNoteModal";
 import {
@@ -7,6 +7,7 @@ import {
 	openObSaveHub,
 } from "./ui/ObSaveSidebarView";
 import {
+	createCaptureNote,
 	createQuickDailyNote,
 	registerNotePropertyTypes,
 } from "./productivity/noteCapture";
@@ -45,6 +46,24 @@ export default class ObSavePlugin extends Plugin {
 				if (file instanceof TFile && file.extension === "md") {
 					this.notePropertiesChanged(file);
 				}
+			}),
+		);
+
+		this.registerEvent(
+			this.app.workspace.on("file-menu", (menu, file) => {
+				if (!(file instanceof TFolder)) {
+					return;
+				}
+				menu.addItem((item) => {
+					item
+						.setTitle("Nueva nota de ObSave aquí")
+						.setIcon("file-plus")
+						.onClick(() => {
+							void createCaptureNote(this.app, this.settings, {
+								folder: file.path,
+							});
+						});
+				});
 			}),
 		);
 

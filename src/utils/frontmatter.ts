@@ -1,5 +1,6 @@
 import type { App, TFile } from "obsidian";
 import {
+	canonicalPriorityId,
 	canonicalStatusName,
 	canonicalTypeName,
 	stripPropertyQuotes,
@@ -11,6 +12,7 @@ export interface NoteFrontmatterFields {
 	fecha_creacion?: string;
 	fecha_atencion?: string;
 	estado?: string;
+	prioridad?: string;
 	tags?: string[];
 }
 
@@ -87,6 +89,11 @@ export function parseFrontmatter(content: string): {
 		const estadoMatch = line.match(/^estado:\s*(.+)$/);
 		if (estadoMatch) {
 			frontmatter.estado = stripPropertyQuotes(estadoMatch[1]);
+			continue;
+		}
+		const prioridadMatch = line.match(/^prioridad:\s*(.+)$/);
+		if (prioridadMatch) {
+			frontmatter.prioridad = stripPropertyQuotes(prioridadMatch[1]);
 		}
 	}
 
@@ -98,6 +105,7 @@ export function updateNoteTipo(content: string, newTipo: string): string {
 	const nowDisplay = frontmatter.fecha_creacion ?? formatNowDateTime();
 	const fechaAtencion = frontmatter.fecha_atencion ?? formatTodayDate();
 	const estado = frontmatter.estado ?? "pendientes";
+	const prioridad = frontmatter.prioridad ?? "normal";
 	const tags = frontmatter.tags?.length
 		? frontmatter.tags
 		: [...DEFAULT_NOTE_TAGS];
@@ -107,6 +115,7 @@ export function updateNoteTipo(content: string, newTipo: string): string {
 		fecha_creacion: nowDisplay,
 		fecha_atencion: fechaAtencion,
 		estado,
+		prioridad,
 		tags,
 	});
 
@@ -135,6 +144,7 @@ export function buildFrontmatterYaml(fields: NoteFrontmatterFields): string {
 		`fecha_creacion: ${fields.fecha_creacion ?? formatNowDateTime()}`,
 		`fecha_atencion: ${fields.fecha_atencion ?? formatTodayDate()}`,
 		`estado: ${fields.estado ?? "pendientes"}`,
+		`prioridad: ${fields.prioridad ?? "normal"}`,
 	];
 
 	if (tags.length > 0) {
@@ -146,20 +156,22 @@ export function buildFrontmatterYaml(fields: NoteFrontmatterFields): string {
 }
 
 /**
- * Escribe `estado` o `tipo` al instante. Acepta id (`pausadas`) o nombre
- * (`Pausadas`) y persiste siempre la etiqueta configurada.
+ * Escribe `estado`, `tipo` o `prioridad` al instante.
+ * `estado`/`tipo` persisten el nombre configurado; `prioridad` el id YAML.
  */
 export async function writeFrontmatterProperty(
 	app: App,
 	file: TFile,
-	key: "estado" | "tipo",
+	key: "estado" | "tipo" | "prioridad",
 	raw: string,
 	settings: ObSaveSettings,
 ): Promise<string> {
 	const canonical =
 		key === "estado"
 			? (canonicalStatusName(raw, settings.statuses) ?? raw.trim())
-			: (canonicalTypeName(raw, settings.types) ?? raw.trim());
+			: key === "tipo"
+				? (canonicalTypeName(raw, settings.types) ?? raw.trim())
+				: canonicalPriorityId(raw);
 
 	await app.fileManager.processFrontMatter(file, (frontmatter) => {
 		frontmatter[key] = canonical;

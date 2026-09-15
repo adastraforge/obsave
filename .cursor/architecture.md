@@ -15,7 +15,7 @@ flowchart TB
         NC[noteCapture]
         VS[vaultStructure]
         RD[VaultReportDashboard]
-        STG[settings estados/tipos]
+        STG[settings estados/tipos/prioridad]
     end
 
     subgraph Vault["Obsidian Vault API"]
@@ -71,3 +71,5 @@ Hasta v1.2.3 existían `SyncEngine`, `StorageAdapters`, `OAuthHandler` y `Ledger
 v2.1.0 persiste estados y tipos en `data.json`. Las claves de sync v1.x se ignoran; los archivos `ledger.json` / `.bak` / `.tmp` se intentan borrar al cargar.
 
 v2.1.3: el YAML de `estado`/`tipo` se escribe solo sobre `view.file` del leaf Markdown que contiene el selector. El badge del explorador se asocia por `data-path === file.path`; un cambio de metadatos actualiza únicamente esa ruta.
+
+v2.2.0: `prioridad` (`urgente`/`alta`/`normal`/`baja`) en el YAML; Hub con eje Tiempo | Estado | Prioridad; nota rápida en la raíz; menú contextual de carpeta.

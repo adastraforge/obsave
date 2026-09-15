@@ -1,8 +1,9 @@
-import { TFile } from "obsidian";
+import { setIcon, TFile } from "obsidian";
 import type ObSavePlugin from "../main";
-import { resolveStatus } from "../settings";
+import { resolvePriority, resolveStatus } from "../settings";
 
 const DOT_CLASS = "obsave-status-dot";
+const PRIORITY_CLASS = "obsave-priority-icon";
 const FILE_EXPLORER_VIEW = "file-explorer";
 const REFRESH_DELAY_MS = 30;
 const TITLE_SELECTOR = ".nav-file-title[data-path], .tree-item-self.nav-file-title[data-path]";
@@ -20,8 +21,8 @@ interface ExplorerView {
 }
 
 /**
- * Punto de color a la izquierda del nombre de cada nota en el explorador.
- * Se ancla solo a `.nav-file-title[data-path]` con igualdad estricta a `file.path`.
+ * Punto de estado y, si aplica, icono de prioridad a la izquierda del nombre.
+ * `normal` no muestra icono. Se ancla a `.nav-file-title[data-path]`.
  */
 export class ObSaveFileStatusDecorator {
 	private timer: number | null = null;
@@ -56,7 +57,9 @@ export class ObSaveFileStatusDecorator {
 			this.timer = null;
 		}
 		this.pendingPaths = null;
-		document.querySelectorAll(`.${DOT_CLASS}`).forEach((dot) => dot.remove());
+		document.querySelectorAll(`.${DOT_CLASS}, .${PRIORITY_CLASS}`).forEach((node) => {
+			node.remove();
+		});
 	}
 
 	requestRefresh(): void {
@@ -110,7 +113,7 @@ export class ObSaveFileStatusDecorator {
 					seen.add(path);
 					const selfTitle = this.titleFromItem(item, path);
 					if (selfTitle) {
-						this.applyDot(selfTitle, path);
+						this.applyDecorations(selfTitle, path);
 						continue;
 					}
 					this.applyPathInRoot(root, path);
@@ -123,7 +126,7 @@ export class ObSaveFileStatusDecorator {
 					continue;
 				}
 				seen.add(path);
-				this.applyDot(title, path);
+				this.applyDecorations(title, path);
 			}
 		}
 	}
@@ -163,7 +166,7 @@ export class ObSaveFileStatusDecorator {
 			return;
 		}
 		for (const title of titles) {
-			this.applyDot(title, path);
+			this.applyDecorations(title, path);
 		}
 	}
 
@@ -179,7 +182,7 @@ export class ObSaveFileStatusDecorator {
 		);
 	}
 
-	private applyDot(host: HTMLElement, path: string): void {
+	private applyDecorations(host: HTMLElement, path: string): void {
 		if (host.getAttribute("data-path") !== path || !host.matches(TITLE_SELECTOR)) {
 			return;
 		}
@@ -187,14 +190,7 @@ export class ObSaveFileStatusDecorator {
 		const { app, settings } = this.plugin;
 		const file = app.vault.getAbstractFileByPath(path);
 		if (!(file instanceof TFile) || file.extension !== "md" || file.path !== path) {
-			this.removeDot(host);
-			return;
-		}
-
-		const estado = app.metadataCache.getFileCache(file)?.frontmatter?.estado;
-		const status = resolveStatus(estado, settings.statuses);
-		if (!status) {
-			this.removeDot(host);
+			this.clearMarkers(host);
 			return;
 		}
 
@@ -203,27 +199,72 @@ export class ObSaveFileStatusDecorator {
 				":scope > .tree-item-inner, :scope > .nav-file-title-content",
 			) as HTMLElement | null) ?? host;
 
-		const dot = this.ensureDot(inner);
-		dot.style.setProperty("background-color", status.color, "important");
-		dot.setAttribute("aria-label", `Estado: ${status.name}`);
-		dot.setAttribute("title", status.name);
+		const cache = app.metadataCache.getFileCache(file)?.frontmatter;
+		const status = resolveStatus(cache?.estado, settings.statuses);
+		const priority = resolvePriority(cache?.prioridad);
+
+		if (status) {
+			const dot = this.ensureDot(inner);
+			dot.style.setProperty("background-color", status.color, "important");
+			dot.setAttribute("aria-label", `Estado: ${status.name}`);
+			dot.setAttribute("title", status.name);
+		} else {
+			this.removeByClass(inner, DOT_CLASS);
+		}
+
+		if (priority.icon) {
+			const icon = this.ensurePriorityIcon(inner, priority.icon, priority.id);
+			icon.setAttribute("aria-label", `Prioridad: ${priority.name}`);
+			icon.setAttribute("title", `Prioridad: ${priority.name}`);
+		} else {
+			this.removeByClass(inner, PRIORITY_CLASS);
+		}
+
+		this.placeMarkers(inner);
+	}
+
+	private placeMarkers(inner: HTMLElement): void {
+		const dot = inner.querySelector(`:scope > .${DOT_CLASS}`);
+		const priority = inner.querySelector(`:scope > .${PRIORITY_CLASS}`);
+		if (dot instanceof HTMLElement) {
+			inner.prepend(dot);
+		}
+		if (priority instanceof HTMLElement) {
+			inner.prepend(priority);
+		}
 	}
 
 	private ensureDot(el: HTMLElement): HTMLElement {
 		const existing = el.querySelector(`:scope > .${DOT_CLASS}`);
 		if (existing instanceof HTMLElement) {
-			if (el.firstElementChild !== existing) {
-				el.prepend(existing);
-			}
 			return existing;
 		}
 
-		const dot = el.createSpan({ cls: DOT_CLASS });
-		el.prepend(dot);
-		return dot;
+		return el.createSpan({ cls: DOT_CLASS });
 	}
 
-	private removeDot(el: HTMLElement): void {
-		el.querySelectorAll(`.${DOT_CLASS}`).forEach((dot) => dot.remove());
+	private ensurePriorityIcon(
+		el: HTMLElement,
+		icon: string,
+		priorityId: string,
+	): HTMLElement {
+		let node = el.querySelector(`:scope > .${PRIORITY_CLASS}`);
+		if (!(node instanceof HTMLElement)) {
+			node = el.createSpan({ cls: PRIORITY_CLASS });
+		}
+
+		node.className = `${PRIORITY_CLASS} obsave-priority-${priorityId}`;
+		node.empty();
+		setIcon(node, icon);
+		return node;
+	}
+
+	private clearMarkers(el: HTMLElement): void {
+		this.removeByClass(el, DOT_CLASS);
+		this.removeByClass(el, PRIORITY_CLASS);
+	}
+
+	private removeByClass(el: HTMLElement, className: string): void {
+		el.querySelectorAll(`.${className}`).forEach((node) => node.remove());
 	}
 }

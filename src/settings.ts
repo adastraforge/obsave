@@ -17,6 +17,51 @@ export interface ObSaveSettings {
 	types: NoteType[];
 }
 
+export type NotePriorityId = "urgente" | "alta" | "normal" | "baja";
+
+export interface NotePriority {
+	id: NotePriorityId;
+	name: string;
+	/** Vacío en `normal`: cero ruido en el explorador. */
+	icon: string;
+	kpiIcon: string;
+	color: string;
+}
+
+/** Catálogo fijo. YAML canónico = `id` (`urgente`, no `Urgente`). */
+export const NOTE_PRIORITIES: NotePriority[] = [
+	{
+		id: "urgente",
+		name: "Urgente",
+		icon: "chevrons-up",
+		kpiIcon: "chevrons-up",
+		color: "#DC2626",
+	},
+	{
+		id: "alta",
+		name: "Alta",
+		icon: "chevron-up",
+		kpiIcon: "chevron-up",
+		color: "#D97706",
+	},
+	{
+		id: "normal",
+		name: "Normal",
+		icon: "",
+		kpiIcon: "minus",
+		color: "#6B7280",
+	},
+	{
+		id: "baja",
+		name: "Baja",
+		icon: "chevron-down",
+		kpiIcon: "chevron-down",
+		color: "#9CA3AF",
+	},
+];
+
+export const DEFAULT_PRIORITY_ID: NotePriorityId = "normal";
+
 /** Paleta de 10 colores para el gestor de estados. */
 export const STATUS_COLOR_PALETTE = [
 	"#EAB308",
@@ -205,6 +250,37 @@ export function canonicalTypeName(
 	types: NoteType[],
 ): string | null {
 	return resolveType(raw, types)?.name ?? null;
+}
+
+export function defaultPriority(): NotePriority {
+	return NOTE_PRIORITIES.find((item) => item.id === DEFAULT_PRIORITY_ID) ?? NOTE_PRIORITIES[2];
+}
+
+/**
+ * Resuelve `prioridad` por id o nombre. Ausente o desconocido → `normal`.
+ */
+export function resolvePriority(raw: unknown): NotePriority {
+	const value = coercePropertyValue(raw);
+	if (!value) {
+		return defaultPriority();
+	}
+	const key = normalizeKey(value);
+	return (
+		NOTE_PRIORITIES.find(
+			(item) =>
+				item.id === key ||
+				normalizeKey(item.name) === key ||
+				item.name === value,
+		) ?? defaultPriority()
+	);
+}
+
+export function canonicalPriorityId(raw: unknown): NotePriorityId {
+	return resolvePriority(raw).id;
+}
+
+export function canonicalPriorityName(raw: unknown): string {
+	return resolvePriority(raw).name;
 }
 
 /** Tinta legible sobre un fondo dado: evita el check blanco sobre amarillo. */

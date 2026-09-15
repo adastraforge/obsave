@@ -71,7 +71,7 @@ export class ObSaveSidebarView extends ItemView {
 		this.addHeaderButton(
 			actions,
 			"zap",
-			"Nota rápida — crea y abre una nota diaria al instante",
+			"Nota rápida — crea la nota en la raíz de la bóveda",
 			() => void createQuickDailyNote(this.app, this.plugin.settings),
 		);
 		this.addHeaderButton(

@@ -7,10 +7,15 @@ Todas las operaciones usan el sistema de archivos nativo de Obsidian.
 
 ## Fase Actual: Suite de productividad local
 
-> **Estado de release:** **publicada oficialmente** — `v2.1.3`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.1.3`  
+> **Estado de release:** **publicada oficialmente** — `v2.2.0`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.2.0`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Prioridad, Hub triple y captura v2.2.0
+- YAML `prioridad`: `urgente` | `alta` | `normal` | `baja` (defecto `normal`). Selector nativo; el explorador muestra Lucide solo si no es `normal`.
+- Hub: switch Tiempo | Estado | Prioridad. KPI y listas de las 4 categorías en modo Prioridad.
+- Nota rápida en la raíz de la bóveda. Clic derecho en carpeta → «Nueva nota de ObSave aquí».
 
 ### Resolución de TFile v2.1.3
 - El selector de `estado`/`tipo` toma el archivo del leaf Markdown que contiene el widget. Si `data-file-path` no coincide, se invalida. Sin leaf contenedor no se escribe YAML.
@@ -24,13 +29,13 @@ Todas las operaciones usan el sistema de archivos nativo de Obsidian.
 - Badge/dot de estado a la izquierda del nombre en el explorador (`FileStatusDecorator`), color exacto desde `metadataCache` + ajustes.
 - Propiedades nativas `estado` y `tipo` como `<select>` con las opciones configuradas; fechas como date/datetime en `types.json`.
 - Paleta de Ajustes: `background-color: #HEX !important`, hover con borde y check en el color activo.
-- Switch Tiempo/Estado en la cabecera del dashboard (junto a recarga): los KPI y las pestañas cambian de eje a la vez.
+- Switch Tiempo/Estado/Prioridad en la cabecera del dashboard (junto a recarga): los KPI y las pestañas cambian de eje a la vez.
 
 ### Estados, tipos y colores dinámicos v2.1.0
 - Ajustes → **Configuración de propiedades**: gestor de estados (nombre, paleta de 10 colores + picker hex, impacto en salud, reordenar) y gestor de tipos (Diaria, Idea, Proyecto por defecto), desvinculados de las carpetas.
 - Estados por defecto: Pendientes (#EAB308, neutral), Pausadas (#6B7280, neutral), Canceladas (#EF4444, negativo), Atendidas (#22C55E, positivo).
 - Nota rápida y nueva nota usan el primer estado y el primer tipo; el cuerpo es `## Detalle` con el cursor en la línea siguiente.
-- Hub: KPI, pestañas de estado, badges y segmentos de la dona SVG usan el color configurado. Selector Tiempo / Estado. Salud: positivos suman, negativos restan, neutrales no cuentan; vencida + negativo penaliza ×2.
+- Hub: KPI, pestañas de estado, badges y segmentos de la dona SVG usan el color configurado. Selector Tiempo / Estado / Prioridad. Salud: positivos suman, negativos restan, neutrales no cuentan; vencida + negativo penaliza ×2.
 
 ### Reestructuración radical v2.0.0
 - Eliminados el motor de sync (`SyncEngine`), proveedores (`GoogleDriveProvider`, `GitHubProvider`, OneDrive, iCloud), OAuth2 PKCE, `LedgerManager`, manifiesto `.obsave/ledger.json`, badges (`FileStatusDecorator`) y el auto-sync en segundo plano.

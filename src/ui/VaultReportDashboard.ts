@@ -2,14 +2,18 @@ import type { App } from "obsidian";
 import { Notice, setIcon, setTooltip, TFile } from "obsidian";
 import {
 	firstStatus,
+	NOTE_PRIORITIES,
+	resolvePriority,
 	resolveStatus,
 	statusIcon,
+	type NotePriority,
+	type NotePriorityId,
 	type NoteStatus,
 	type ObSaveSettings,
 } from "../settings";
 
 type TimeBucketId = "overdue" | "today" | "week" | "attended";
-type CategoryMode = "time" | "status";
+type CategoryMode = "time" | "status" | "priority";
 
 interface NoteRef {
 	path: string;
@@ -17,6 +21,7 @@ interface NoteRef {
 	folder: string;
 	due: Date | null;
 	status: NoteStatus;
+	priority: NotePriority;
 	overdue: boolean;
 }
 
@@ -37,6 +42,7 @@ interface VaultMetrics {
 	totalNotes: number;
 	timeBuckets: Record<TimeBucketId, NoteRef[]>;
 	statusBuckets: Record<string, NoteRef[]>;
+	priorityBuckets: Record<NotePriorityId, NoteRef[]>;
 	byFolder: FolderCount[];
 	unscheduled: number;
 	healthPercent: number;
@@ -127,6 +133,12 @@ function computeVaultMetrics(app: App, settings: ObSaveSettings): VaultMetrics {
 	for (const status of settings.statuses) {
 		statusBuckets[status.id] = [];
 	}
+	const priorityBuckets: Record<NotePriorityId, NoteRef[]> = {
+		urgente: [],
+		alta: [],
+		normal: [],
+		baja: [],
+	};
 
 	const folderCounts = new Map<string, number>();
 	const files = app.vault.getMarkdownFiles();
@@ -142,6 +154,7 @@ function computeVaultMetrics(app: App, settings: ObSaveSettings): VaultMetrics {
 		const frontmatter = cache?.frontmatter;
 		const status =
 			resolveStatus(frontmatter?.estado, settings.statuses) ?? fallback;
+		const priority = resolvePriority(frontmatter?.prioridad);
 		const due = toDateOnly(frontmatter?.fecha_atencion);
 		const overdue = due !== null && due.getTime() < today.getTime();
 
@@ -155,10 +168,12 @@ function computeVaultMetrics(app: App, settings: ObSaveSettings): VaultMetrics {
 			folder,
 			due,
 			status,
+			priority,
 			overdue,
 		};
 		classified.push(ref);
 		statusBuckets[status.id]?.push(ref);
+		priorityBuckets[priority.id].push(ref);
 
 		if (status.healthImpact === "positive") {
 			timeBuckets.attended.push(ref);
@@ -192,12 +207,16 @@ function computeVaultMetrics(app: App, settings: ObSaveSettings): VaultMetrics {
 	for (const status of settings.statuses) {
 		statusBuckets[status.id].sort(byDueDate);
 	}
+	for (const priority of NOTE_PRIORITIES) {
+		priorityBuckets[priority.id].sort(byDueDate);
+	}
 
 	return {
 		totalFolders: app.vault.getAllFolders().length,
 		totalNotes: files.length,
 		timeBuckets,
 		statusBuckets,
+		priorityBuckets,
 		byFolder: [...folderCounts.entries()]
 			.map(([folder, count]) => ({ folder, count }))
 			.sort((a, b) => b.count - a.count || a.folder.localeCompare(b.folder)),
@@ -216,6 +235,7 @@ export class VaultReportDashboard {
 	private categoryMode: CategoryMode = "time";
 	private activeTimeTab: TimeBucketId = "overdue";
 	private activeStatusId = "";
+	private activePriorityId: NotePriorityId = "urgente";
 	private visibleNotes = VISIBLE_NOTES_STEP;
 	private showAllFolders = false;
 	private filter = "";
@@ -252,6 +272,7 @@ export class VaultReportDashboard {
 		if (!this.initialized) {
 			this.activeStatusId = this.settings.statuses[0]?.id ?? "";
 			this.activeTimeTab = this.defaultTimeTab(metrics);
+			this.activePriorityId = this.defaultPriorityTab(metrics);
 			this.initialized = true;
 		}
 		if (!this.settings.statuses.some((status) => status.id === this.activeStatusId)) {
@@ -275,6 +296,15 @@ export class VaultReportDashboard {
 			}
 		}
 		return "overdue";
+	}
+
+	private defaultPriorityTab(metrics: VaultMetrics): NotePriorityId {
+		for (const priority of NOTE_PRIORITIES) {
+			if (metrics.priorityBuckets[priority.id].length > 0) {
+				return priority.id;
+			}
+		}
+		return "urgente";
 	}
 
 	/** «Atendidas» hereda el color del primer estado positivo configurado. */
@@ -305,6 +335,7 @@ export class VaultReportDashboard {
 		const modes = actions.createDiv({ cls: "obsave-cat-toggle" });
 		this.renderModeButton(modes, "time", "Tiempo");
 		this.renderModeButton(modes, "status", "Estado");
+		this.renderModeButton(modes, "priority", "Prioridad");
 
 		const refresh = actions.createEl("button", { cls: "obsave-icon-button" });
 		setIcon(refresh, "refresh-cw");
@@ -327,7 +358,7 @@ export class VaultReportDashboard {
 					onActivate: () => this.setActiveTime(bucket.id),
 				});
 			}
-		} else {
+		} else if (this.categoryMode === "status") {
 			for (const status of this.settings.statuses) {
 				this.renderKpiCard(grid, {
 					key: `status:${status.id}`,
@@ -336,6 +367,17 @@ export class VaultReportDashboard {
 					color: status.color,
 					count: metrics.statusBuckets[status.id]?.length ?? 0,
 					onActivate: () => this.setActiveStatus(status.id),
+				});
+			}
+		} else {
+			for (const priority of NOTE_PRIORITIES) {
+				this.renderKpiCard(grid, {
+					key: `priority:${priority.id}`,
+					label: priority.name,
+					icon: priority.kpiIcon,
+					color: priority.color,
+					count: metrics.priorityBuckets[priority.id].length,
+					onActivate: () => this.setActivePriority(priority.id),
 				});
 			}
 		}
@@ -510,7 +552,7 @@ export class VaultReportDashboard {
 				tab.addEventListener("click", () => this.setActiveTime(bucket.id));
 				this.tabEls.set(`time:${bucket.id}`, tab);
 			}
-		} else {
+		} else if (this.categoryMode === "status") {
 			for (const status of this.settings.statuses) {
 				const count = metrics.statusBuckets[status.id]?.length ?? 0;
 				const tab = tabs.createEl("button", { cls: "obsave-report-tab" });
@@ -523,6 +565,20 @@ export class VaultReportDashboard {
 				applyAccent(badge, status.color);
 				tab.addEventListener("click", () => this.setActiveStatus(status.id));
 				this.tabEls.set(`status:${status.id}`, tab);
+			}
+		} else {
+			for (const priority of NOTE_PRIORITIES) {
+				const count = metrics.priorityBuckets[priority.id].length;
+				const tab = tabs.createEl("button", { cls: "obsave-report-tab" });
+				applyAccent(tab, priority.color);
+				tab.createSpan({ text: priority.name });
+				const badge = tab.createSpan({
+					cls: "obsave-tab-badge",
+					text: String(count),
+				});
+				applyAccent(badge, priority.color);
+				tab.addEventListener("click", () => this.setActivePriority(priority.id));
+				this.tabEls.set(`priority:${priority.id}`, tab);
 			}
 		}
 
@@ -574,10 +630,21 @@ export class VaultReportDashboard {
 		this.renderList();
 	}
 
+	private setActivePriority(id: NotePriorityId): void {
+		this.activePriorityId = id;
+		this.visibleNotes = VISIBLE_NOTES_STEP;
+		this.syncActiveStyles();
+		this.renderList();
+	}
+
 	private activeKey(): string {
-		return this.categoryMode === "time"
-			? `time:${this.activeTimeTab}`
-			: `status:${this.activeStatusId}`;
+		if (this.categoryMode === "time") {
+			return `time:${this.activeTimeTab}`;
+		}
+		if (this.categoryMode === "status") {
+			return `status:${this.activeStatusId}`;
+		}
+		return `priority:${this.activePriorityId}`;
 	}
 
 	private syncActiveStyles(): void {
@@ -599,7 +666,10 @@ export class VaultReportDashboard {
 		if (this.categoryMode === "time") {
 			return metrics.timeBuckets[this.activeTimeTab];
 		}
-		return metrics.statusBuckets[this.activeStatusId] ?? [];
+		if (this.categoryMode === "status") {
+			return metrics.statusBuckets[this.activeStatusId] ?? [];
+		}
+		return metrics.priorityBuckets[this.activePriorityId] ?? [];
 	}
 
 	private renderList(): void {
@@ -618,7 +688,8 @@ export class VaultReportDashboard {
 					(note) =>
 						note.title.toLowerCase().includes(needle) ||
 						note.folder.toLowerCase().includes(needle) ||
-						note.status.name.toLowerCase().includes(needle),
+						note.status.name.toLowerCase().includes(needle) ||
+						note.priority.name.toLowerCase().includes(needle),
 				)
 			: all;
 
@@ -634,18 +705,23 @@ export class VaultReportDashboard {
 
 		const today = startOfDay(new Date());
 		const timeBucket = TIME_BUCKETS.find((bucket) => bucket.id === this.activeTimeTab);
+		const priority = NOTE_PRIORITIES.find((item) => item.id === this.activePriorityId);
 
 		for (const note of notes.slice(0, this.visibleNotes)) {
 			const color =
 				this.categoryMode === "status"
 					? note.status.color
-					: timeBucket
-						? this.timeColor(timeBucket)
-						: note.status.color;
+					: this.categoryMode === "priority"
+						? (priority?.color ?? note.priority.color)
+						: timeBucket
+							? this.timeColor(timeBucket)
+							: note.status.color;
 			const iconName =
 				this.categoryMode === "status"
 					? statusIcon(note.status.healthImpact)
-					: (timeBucket?.icon ?? "file-text");
+					: this.categoryMode === "priority"
+						? (priority?.kpiIcon ?? note.priority.kpiIcon)
+						: (timeBucket?.icon ?? "file-text");
 
 			const row = container.createDiv({ cls: "obsave-note-row" });
 			applyAccent(row, color);
@@ -666,7 +742,9 @@ export class VaultReportDashboard {
 				text:
 					this.categoryMode === "time"
 						? note.status.name
-						: note.folder,
+						: this.categoryMode === "priority"
+							? note.status.name
+							: note.folder,
 			});
 
 			const open = (): void => void this.openNote(note.path);

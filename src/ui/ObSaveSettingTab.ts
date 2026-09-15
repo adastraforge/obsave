@@ -100,7 +100,7 @@ export class ObSaveSettingTab extends PluginSettingTab {
 					section,
 					"Nota rápida",
 					"zap",
-					"Crea una nota en 00_Diarias y abre el editor listo para escribir.",
+					"Crea una nota en la raíz de la bóveda y abre el editor listo para escribir.",
 					() => void createQuickDailyNote(this.app, this.plugin.settings),
 				);
 				this.renderActionButton(
