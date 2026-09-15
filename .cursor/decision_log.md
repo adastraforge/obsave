@@ -985,3 +985,20 @@ Formato: **ID** | Fecha | Decisión | Contexto | Alternativas descartadas
 **Release:** `v2.2.1`
 
 ---
+
+## DEC-065 | 2026-09-15 | Planner por carpetas y comentarios YAML (v2.3.0)
+
+**Contexto:** El Hub solo ofrecía métricas. Faltaba una vista operativa de notas por carpeta y un hilo de comentarios local, sin nube.
+
+**Decisión:**
+1. Segmented control de iconos Lucide en la cabecera: Informe (`bar-chart-3`) y Planner (`layout-grid`). El modo se conserva al refrescar metadatos.
+2. `PlannerView` agrupa tarjetas por carpeta: título, icono de prioridad, badges, extracto de `## Detalle` y comentarios.
+3. `commentManager` persiste `comentarios: [{ id, fecha, texto }]` con `processFrontMatter` sobre el TFile de la tarjeta. Crear / editar (`pencil`) / borrar (`trash-2`) en la propia tarjeta. El recuento usa `message-circle`, no emoji.
+
+**Alternativas descartadas:**
+- Comentarios en el cuerpo Markdown: mezclaría prosa y metadatos; el YAML es consultable y no altera `## Detalle`.
+- Reconstruir todo el Hub al cambiar de vista: perdía el eje Tiempo/Estado del informe.
+
+**Release:** `v2.3.0`
+
+---

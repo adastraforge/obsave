@@ -213,3 +213,28 @@ export function formatTimestampForFilename(): string {
 function capitalize(value: string): string {
 	return value.charAt(0).toUpperCase() + value.slice(1);
 }
+
+/** Primeras líneas de `## Detalle`, sin markup, para la tarjeta del Planner. */
+export function extractDetallePreview(content: string, maxChars = 160): string {
+	const { body } = parseFrontmatter(content);
+	const heading = body.match(/^## Detalle\s*$/m);
+	if (heading?.index == null) {
+		return "";
+	}
+	const slice = body.slice(heading.index).replace(/^## Detalle\s*/, "");
+	const untilNext = slice.search(/\n##\s+/);
+	const section = untilNext >= 0 ? slice.slice(0, untilNext) : slice;
+	const text = section
+		.replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+		.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+		.replace(/[#>*_`~]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+	if (!text) {
+		return "";
+	}
+	if (text.length <= maxChars) {
+		return text;
+	}
+	return `${text.slice(0, maxChars).trim()}…`;
+}

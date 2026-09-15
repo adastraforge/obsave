@@ -1,15 +1,12 @@
-import { setIcon, TFile } from "obsidian";
+import { TFile } from "obsidian";
 import type ObSavePlugin from "../main";
 import { resolvePriority, resolveStatus, type NotePriority } from "../settings";
+import { paintPriorityIcon, PRIORITY_ICON_CLASS } from "./priorityIcon";
 
 const DOT_CLASS = "obsave-status-dot";
-const PRIORITY_CLASS = "obsave-priority-icon";
 const FILE_EXPLORER_VIEW = "file-explorer";
 const REFRESH_DELAY_MS = 30;
 const TITLE_SELECTOR = ".nav-file-title[data-path], .tree-item-self.nav-file-title[data-path]";
-
-/** Triple chevron-up (Lucide no lo incluye). Trazo currentColor. */
-const TRIPLE_CHEVRONS_UP = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 7-5-5-5 5"/><path d="m17 13-5-5-5 5"/><path d="m17 19-5-5-5 5"/></svg>`;
 
 interface ExplorerItem {
 	selfEl?: HTMLElement;
@@ -60,7 +57,7 @@ export class ObSaveFileStatusDecorator {
 			this.timer = null;
 		}
 		this.pendingPaths = null;
-		document.querySelectorAll(`.${DOT_CLASS}, .${PRIORITY_CLASS}`).forEach((node) => {
+		document.querySelectorAll(`.${DOT_CLASS}, .${PRIORITY_ICON_CLASS}`).forEach((node) => {
 			node.remove();
 		});
 	}
@@ -220,7 +217,7 @@ export class ObSaveFileStatusDecorator {
 			icon.setAttribute("aria-label", `Prioridad: ${priority.name}`);
 			icon.setAttribute("title", `Prioridad: ${priority.name}`);
 		} else {
-			this.removeByClass(inner, PRIORITY_CLASS);
+			this.removeByClass(inner, PRIORITY_ICON_CLASS);
 		}
 
 		this.placeMarkers(inner);
@@ -228,12 +225,12 @@ export class ObSaveFileStatusDecorator {
 
 	private placeMarkers(inner: HTMLElement): void {
 		const dot = inner.querySelector(`:scope > .${DOT_CLASS}`);
-		const priority = inner.querySelector(`:scope > .${PRIORITY_CLASS}`);
+		const priorityEl = inner.querySelector(`:scope > .${PRIORITY_ICON_CLASS}`);
 		if (dot instanceof HTMLElement) {
 			inner.prepend(dot);
 		}
-		if (priority instanceof HTMLElement) {
-			inner.prepend(priority);
+		if (priorityEl instanceof HTMLElement) {
+			inner.prepend(priorityEl);
 		}
 	}
 
@@ -250,30 +247,17 @@ export class ObSaveFileStatusDecorator {
 		el: HTMLElement,
 		priority: NotePriority,
 	): HTMLElement {
-		let node = el.querySelector(`:scope > .${PRIORITY_CLASS}`);
+		let node = el.querySelector(`:scope > .${PRIORITY_ICON_CLASS}`);
 		if (!(node instanceof HTMLElement)) {
-			node = el.createSpan({ cls: PRIORITY_CLASS });
+			node = el.createSpan({ cls: PRIORITY_ICON_CLASS });
 		}
-
-		node.className = `${PRIORITY_CLASS} obsave-priority-${priority.id}`;
-		node.style.setProperty("color", priority.color, "important");
-		node.empty();
-		if (priority.id === "urgente") {
-			node.innerHTML = TRIPLE_CHEVRONS_UP;
-		} else {
-			setIcon(node, priority.icon);
-		}
-		const svg = node.querySelector("svg");
-		if (svg instanceof SVGElement) {
-			svg.style.setProperty("stroke", "currentColor", "important");
-			svg.style.setProperty("color", "inherit", "important");
-		}
+		paintPriorityIcon(node, priority);
 		return node;
 	}
 
 	private clearMarkers(el: HTMLElement): void {
 		this.removeByClass(el, DOT_CLASS);
-		this.removeByClass(el, PRIORITY_CLASS);
+		this.removeByClass(el, PRIORITY_ICON_CLASS);
 	}
 
 	private removeByClass(el: HTMLElement, className: string): void {

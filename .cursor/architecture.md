@@ -7,6 +7,7 @@ flowchart TB
     subgraph UI["Capa UI"]
         ST[SettingTab]
         HV[ObSave Hub / ItemView]
+        PV[PlannerView]
         CM[CaptureNoteModal]
         RI[Ribbon layout-dashboard]
     end
@@ -15,6 +16,7 @@ flowchart TB
         NC[noteCapture]
         VS[vaultStructure]
         RD[VaultReportDashboard]
+        CMT[commentManager]
         STG[settings estados/tipos/prioridad]
     end
 
@@ -30,6 +32,9 @@ flowchart TB
     HV --> NC
     HV --> CM
     HV --> RD
+    HV --> PV
+    PV --> CMT
+    CMT --> VA
     CM --> NC
     RI --> HV
     ST --> STG
@@ -45,12 +50,12 @@ flowchart TB
 
 ### 1. UI (Presentación)
 - **Responsabilidad:** Ajustes, Hub lateral, modal de nueva nota y ribbon.
-- **Componentes:** `ObSaveSettingTab`, `ObSaveSidebarView`, `CaptureNoteModal`, `VaultReportDashboard`.
+- **Componentes:** `ObSaveSettingTab`, `ObSaveSidebarView`, `CaptureNoteModal`, `VaultReportDashboard`, `PlannerView`.
 - **Regla:** No hay motor de red ni estado de sync; las acciones delegan a la capa de productividad.
 
 ### 2. Productividad local (Dominio)
 - **Responsabilidad:** Crear estructura de carpetas, notas rápidas/nuevas y métricas de la bóveda.
-- **Contratos:** `generateVaultTemplateFolders(app)`, `createQuickDailyNote(app, settings)`, `createCaptureNote(app, settings, options)`, métricas vía `metadataCache` con colores de estado.
+- **Contratos:** `generateVaultTemplateFolders(app)`, `createQuickDailyNote(app, settings)`, `createCaptureNote(app, settings, options)`, `addComment` / `updateComment` / `deleteComment` vía `processFrontMatter`, métricas vía `metadataCache` con colores de estado.
 - **Regla:** Solo el sistema de archivos nativo de Obsidian. Cero HTTP, OAuth o manifiestos remotos. Tipos desvinculados de las carpetas.
 
 ### 3. Persistencia local
@@ -73,3 +78,5 @@ v2.1.0 persiste estados y tipos en `data.json`. Las claves de sync v1.x se ignor
 v2.1.3: el YAML de `estado`/`tipo` se escribe solo sobre `view.file` del leaf Markdown que contiene el selector. El badge del explorador se asocia por `data-path === file.path`; un cambio de metadatos actualiza únicamente esa ruta.
 
 v2.2.0: `prioridad` (`urgente`/`alta`/`normal`/`baja`) en el YAML; Hub con eje Tiempo | Estado | Prioridad; nota rápida en la raíz; menú contextual de carpeta.
+
+v2.3.0: Hub Informe/Planner. Comentarios en `frontmatter.comentarios` (`id`, `fecha`, `texto`) escritos con `processFrontMatter` sobre el TFile de la tarjeta.

@@ -1,0 +1,371 @@
+import type { App } from "obsidian";
+import { Notice, setIcon, setTooltip, TFile } from "obsidian";
+import {
+	addComment,
+	deleteComment,
+	parseComments,
+	updateComment,
+	type NoteComment,
+} from "../productivity/commentManager";
+import {
+	firstStatus,
+	firstType,
+	resolvePriority,
+	resolveStatus,
+	resolveType,
+	type NotePriority,
+	type NoteStatus,
+	type NoteType,
+	type ObSaveSettings,
+} from "../settings";
+import { extractDetallePreview } from "../utils/frontmatter";
+import { appendPriorityIcon } from "./priorityIcon";
+
+const PRIORITY_RANK: Record<string, number> = {
+	urgente: 0,
+	alta: 1,
+	normal: 2,
+	baja: 3,
+};
+
+interface PlannerCard {
+	file: TFile;
+	title: string;
+	folder: string;
+	status: NoteStatus;
+	tipo: NoteType;
+	priority: NotePriority;
+	dueLabel: string;
+	preview: string;
+	comments: NoteComment[];
+}
+
+interface PlannerGroup {
+	folder: string;
+	cards: PlannerCard[];
+}
+
+function folderLabel(path: string): string {
+	return path === "/" || path === "" ? "Raíz" : path;
+}
+
+/**
+ * Vista de tarjetas agrupadas por carpeta: estado, tipo, fecha, detalle y comentarios.
+ */
+export class PlannerView {
+	private renderGen = 0;
+	private expanded = new Set<string>();
+	private collapsedFolders = new Set<string>();
+	private drafts = new Map<string, string>();
+	private editing = new Map<string, string>();
+
+	constructor(
+		private app: App,
+		private containerEl: HTMLElement,
+		private settings: ObSaveSettings,
+	) {}
+
+	render(): void {
+		void this.renderAsync();
+	}
+
+	private async renderAsync(): Promise<void> {
+		const gen = ++this.renderGen;
+		const groups = await this.collect();
+		if (gen !== this.renderGen) {
+			return;
+		}
+		this.paint(groups);
+	}
+
+	private async collect(): Promise<PlannerGroup[]> {
+		const fallbackStatus = firstStatus(this.settings);
+		const fallbackType = firstType(this.settings);
+		const byFolder = new Map<string, PlannerCard[]>();
+
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const folder = file.parent?.path || "/";
+			const cache = this.app.metadataCache.getFileCache(file);
+			const frontmatter = cache?.frontmatter;
+			let preview = "";
+			try {
+				const content = await this.app.vault.cachedRead(file);
+				preview = extractDetallePreview(content);
+			} catch {
+				preview = "";
+			}
+
+			const card: PlannerCard = {
+				file,
+				title: file.basename,
+				folder,
+				status:
+					resolveStatus(frontmatter?.estado, this.settings.statuses) ??
+					fallbackStatus,
+				tipo:
+					resolveType(frontmatter?.tipo, this.settings.types) ?? fallbackType,
+				priority: resolvePriority(frontmatter?.prioridad),
+				dueLabel:
+					typeof frontmatter?.fecha_atencion === "string"
+						? frontmatter.fecha_atencion.trim()
+						: "",
+				preview,
+				comments: parseComments(frontmatter?.comentarios),
+			};
+
+			const list = byFolder.get(folder) ?? [];
+			list.push(card);
+			byFolder.set(folder, list);
+		}
+
+		return [...byFolder.entries()]
+			.sort(([a], [b]) => folderLabel(a).localeCompare(folderLabel(b)))
+			.map(([folder, cards]) => ({
+				folder,
+				cards: cards.sort((a, b) => {
+					const rank =
+						(PRIORITY_RANK[a.priority.id] ?? 9) -
+						(PRIORITY_RANK[b.priority.id] ?? 9);
+					if (rank !== 0) {
+						return rank;
+					}
+					return a.title.localeCompare(b.title);
+				}),
+			}));
+	}
+
+	private paint(groups: PlannerGroup[]): void {
+		const root = this.containerEl;
+		root.empty();
+		root.addClass("obsave-planner");
+
+		if (groups.length === 0) {
+			root.createEl("p", {
+				cls: "setting-item-description",
+				text: "No hay notas en la bóveda.",
+			});
+			return;
+		}
+
+		for (const group of groups) {
+			this.paintGroup(root, group);
+		}
+	}
+
+	private paintGroup(root: HTMLElement, group: PlannerGroup): void {
+		const collapsed = this.collapsedFolders.has(group.folder);
+		const section = root.createDiv({ cls: "obsave-planner-group" });
+		const header = section.createEl("button", { cls: "obsave-planner-group-header" });
+		header.setAttribute("aria-expanded", String(!collapsed));
+		const chevron = header.createSpan({ cls: "obsave-planner-group-chevron" });
+		setIcon(chevron, collapsed ? "chevron-right" : "chevron-down");
+		header.createSpan({
+			cls: "obsave-planner-group-title",
+			text: folderLabel(group.folder),
+		});
+		header.createSpan({
+			cls: "obsave-planner-group-count",
+			text: String(group.cards.length),
+		});
+		header.addEventListener("click", () => {
+			if (this.collapsedFolders.has(group.folder)) {
+				this.collapsedFolders.delete(group.folder);
+			} else {
+				this.collapsedFolders.add(group.folder);
+			}
+			this.render();
+		});
+
+		if (collapsed) {
+			return;
+		}
+
+		const list = section.createDiv({ cls: "obsave-planner-cards" });
+		for (const card of group.cards) {
+			this.paintCard(list, card);
+		}
+	}
+
+	private paintCard(containerEl: HTMLElement, card: PlannerCard): void {
+		const el = containerEl.createDiv({ cls: "obsave-planner-card" });
+
+		const titleRow = el.createDiv({ cls: "obsave-planner-card-title-row" });
+		appendPriorityIcon(titleRow, card.priority);
+		const title = titleRow.createEl("button", {
+			cls: "obsave-planner-card-title",
+			text: card.title,
+		});
+		setTooltip(title, card.file.path);
+		title.addEventListener("click", () => void this.openNote(card.file));
+
+		const badges = el.createDiv({ cls: "obsave-planner-badges" });
+		this.badge(badges, card.status.name, card.status.color, true);
+		this.badge(badges, card.tipo.name);
+		if (card.dueLabel) {
+			this.badge(badges, card.dueLabel);
+		}
+
+		if (card.preview) {
+			el.createDiv({ cls: "obsave-planner-preview", text: card.preview });
+		}
+
+		this.paintComments(el, card);
+	}
+
+	private badge(
+		parent: HTMLElement,
+		label: string,
+		color?: string,
+		accent = false,
+	): void {
+		const badge = parent.createSpan({ cls: "obsave-planner-badge", text: label });
+		if (accent && color) {
+			badge.addClass("is-status");
+			badge.style.setProperty("--obsave-accent", color);
+		}
+	}
+
+	private paintComments(cardEl: HTMLElement, card: PlannerCard): void {
+		const path = card.file.path;
+		const open = this.expanded.has(path);
+		const section = cardEl.createDiv({ cls: "obsave-planner-comments" });
+
+		const toggle = section.createEl("button", { cls: "obsave-planner-comments-toggle" });
+		const icon = toggle.createSpan({ cls: "obsave-planner-comments-icon" });
+		setIcon(icon, "message-circle");
+		toggle.createSpan({
+			cls: "obsave-planner-comments-count",
+			text: String(card.comments.length),
+		});
+		toggle.setAttribute("aria-expanded", String(open));
+		setTooltip(toggle, "Comentarios");
+		toggle.addEventListener("click", () => {
+			if (this.expanded.has(path)) {
+				this.expanded.delete(path);
+			} else {
+				this.expanded.add(path);
+			}
+			this.render();
+		});
+
+		if (!open) {
+			return;
+		}
+
+		const body = section.createDiv({ cls: "obsave-planner-comments-body" });
+		if (card.comments.length === 0) {
+			body.createDiv({
+				cls: "obsave-planner-comments-empty",
+				text: "Sin comentarios.",
+			});
+		}
+
+		for (const comment of card.comments) {
+			this.paintComment(body, card, comment);
+		}
+
+		const composer = body.createDiv({ cls: "obsave-planner-composer" });
+		const input = composer.createEl("textarea", {
+			cls: "obsave-planner-composer-input",
+			attr: { rows: "2", placeholder: "Añadir comentario…" },
+		});
+		input.value = this.drafts.get(path) ?? "";
+		input.addEventListener("input", () => {
+			this.drafts.set(path, input.value);
+		});
+		const add = composer.createEl("button", {
+			cls: "obsave-icon-button",
+			attr: { "aria-label": "Añadir comentario" },
+		});
+		setIcon(add, "plus");
+		setTooltip(add, "Añadir comentario");
+		add.addEventListener("click", () => void this.onAdd(card.file, input));
+		input.addEventListener("keydown", (event) => {
+			if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+				event.preventDefault();
+				void this.onAdd(card.file, input);
+			}
+		});
+	}
+
+	private paintComment(
+		parent: HTMLElement,
+		card: PlannerCard,
+		comment: NoteComment,
+	): void {
+		const row = parent.createDiv({ cls: "obsave-planner-comment" });
+		const editing = this.editing.get(card.file.path) === comment.id;
+
+		if (editing) {
+			const input = row.createEl("textarea", {
+				cls: "obsave-planner-composer-input",
+				attr: { rows: "2" },
+			});
+			input.value = comment.texto;
+			const actions = row.createDiv({ cls: "obsave-planner-comment-actions" });
+			const save = actions.createEl("button", { cls: "obsave-icon-button" });
+			setIcon(save, "check");
+			setTooltip(save, "Guardar");
+			save.addEventListener("click", () =>
+				void this.onUpdate(card.file, comment.id, input.value),
+			);
+			const cancel = actions.createEl("button", { cls: "obsave-icon-button" });
+			setIcon(cancel, "x");
+			setTooltip(cancel, "Cancelar");
+			cancel.addEventListener("click", () => {
+				this.editing.delete(card.file.path);
+				this.render();
+			});
+			return;
+		}
+
+		row.createDiv({ cls: "obsave-planner-comment-meta", text: comment.fecha });
+		row.createDiv({ cls: "obsave-planner-comment-text", text: comment.texto });
+		const actions = row.createDiv({ cls: "obsave-planner-comment-actions" });
+		const edit = actions.createEl("button", { cls: "obsave-icon-button" });
+		setIcon(edit, "pencil");
+		setTooltip(edit, "Editar comentario");
+		edit.addEventListener("click", () => {
+			this.editing.set(card.file.path, comment.id);
+			this.render();
+		});
+		const remove = actions.createEl("button", {
+			cls: "obsave-icon-button is-danger",
+		});
+		setIcon(remove, "trash-2");
+		setTooltip(remove, "Eliminar comentario");
+		remove.addEventListener("click", () => void this.onDelete(card.file, comment.id));
+	}
+
+	private async onAdd(file: TFile, input: HTMLTextAreaElement): Promise<void> {
+		const created = await addComment(this.app, file, input.value);
+		if (!created) {
+			return;
+		}
+		this.drafts.delete(file.path);
+		this.expanded.add(file.path);
+		this.render();
+	}
+
+	private async onUpdate(file: TFile, id: string, texto: string): Promise<void> {
+		await updateComment(this.app, file, id, texto);
+		this.editing.delete(file.path);
+		this.render();
+	}
+
+	private async onDelete(file: TFile, id: string): Promise<void> {
+		await deleteComment(this.app, file, id);
+		this.render();
+	}
+
+	private async openNote(file: TFile): Promise<void> {
+		const leaf =
+			this.app.workspace.getMostRecentLeaf() ??
+			this.app.workspace.getLeaf("tab");
+		if (!leaf) {
+			new Notice(`No se encontró ${file.path}`);
+			return;
+		}
+		await leaf.openFile(file);
+	}
+}

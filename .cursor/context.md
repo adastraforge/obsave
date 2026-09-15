@@ -7,10 +7,14 @@ Todas las operaciones usan el sistema de archivos nativo de Obsidian.
 
 ## Fase Actual: Suite de productividad local
 
-> **Estado de release:** **publicada oficialmente** — `v2.2.1`  
-> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.2.1`  
+> **Estado de release:** **publicada oficialmente** — `v2.3.0`  
+> GitHub Release: `https://github.com/adastraforge/obsave/releases/tag/v2.3.0`  
 > BRAT: `https://github.com/adastraforge/obsave` — artefactos: `manifest.json` + `main.js` + `styles.css`  
 > Pipeline: `.github/workflows/release.yml` (trigger: push tag `v*`)
+
+### Planner y comentarios v2.3.0
+- Hub: switch de cabecera Informe (`bar-chart-3`) / Planner (`layout-grid`).
+- Planner: tarjetas por carpeta con prioridad, badges, extracto de `## Detalle` y comentarios CRUD en YAML (`comentarios: [{ id, fecha, texto }]`).
 
 ### Prefijo e iconos de prioridad v2.2.1
 - Notas automáticas: `Nota YYYY-MM-DD HHMM.md`.
@@ -50,9 +54,10 @@ Todas las operaciones usan el sistema de archivos nativo de Obsidian.
 - Ribbon único `layout-dashboard` abre el Hub.
 
 ### ObSave Hub lateral
-- `ObSaveSidebarView` (`ItemView`, tipo `obsave-hub`) en la hoja derecha: cabecera con nota rápida (`zap`), nueva nota (`file-plus`) y Ajustes (`settings`); el cuerpo es el informe operativo (KPI, dona SVG, barras por carpeta, listado por prioridad).
-- Módulos: `VaultReportDashboard.ts` (dashboard montable) y `ObSaveSidebarView.ts` (composición).
-- Abrir una nota desde el informe usa `getMostRecentLeaf`, nunca la hoja del propio hub.
+- `ObSaveSidebarView` (`ItemView`, tipo `obsave-hub`) en la hoja derecha: cabecera con switch Informe/Planner (`bar-chart-3` / `layout-grid`), nota rápida (`zap`), nueva nota (`file-plus`) y Ajustes (`settings`).
+- Informe: KPI, dona SVG, barras por carpeta, listado. Planner: tarjetas por carpeta con comentarios YAML.
+- Módulos: `VaultReportDashboard.ts`, `PlannerView.ts`, `commentManager.ts` y `ObSaveSidebarView.ts`.
+- Abrir una nota desde el informe o el planner usa `getMostRecentLeaf`, nunca la hoja del propio hub.
 
 ### Histórico (capa remota retirada)
 
